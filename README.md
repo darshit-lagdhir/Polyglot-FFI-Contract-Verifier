@@ -380,7 +380,14 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── RUNTIME_MONITORING_IMPLEMENTATION.md
 │   ├── DIAGNOSTICS_MAPPING_IMPLEMENTATION.md
 │   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   └── CI_INTEGRATION.md
+│   ├── REPORT_GENERATION_IMPLEMENTATION.md
+│   ├── CI_INTEGRATION.md
+│   ├── PERFORMANCE_CONSIDERATIONS.md
+│   ├── SECURITY_CONSIDERATIONS.md
+│   ├── LIMITATIONS_AND_NON_GOALS.md
+│   ├── ERROR_HANDLING_PATTERNS.md
+│   ├── LOGGING_STRATEGY.md
+│   └── BEST_PRACTICES.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       #  validation
 ├── validate_ingestion.py           #  validation
@@ -394,6 +401,7 @@ Polyglot-FFI-Contract-Verifier/
 ├── validate_diagnostics_mapping.py    # 0
 ├── validate_report_generation.py      # 1
 ├── validate_ci_integration.py         # 2
+├── validate_cross_cutting_concerns.py # 3
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -413,12 +421,31 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **0: Diagnostics Mapping** - Functional
 - [x] **1: Report Generation** - Functional
 - [x] **2: CI/CD Integration** - Functional
-- [ ] **3: Cross-Cutting Concerns** - Planned
+- [x] **3: Cross-Cutting Concerns** - Documented
+- [ ] **4: End-to-End Integration** - Planned
 
 ### 🔄 In Progress
 
 ### 📋 Planned
-- **4**: End-to-End Integration
+- **5**: Final Polish & Documentation
+
+## System Characteristics
+
+### Performance
+- Suitable for development-time and CI verification
+- Typical verification time: 10 seconds to 5 minutes depending on interface size
+- See `docs/PERFORMANCE_CONSIDERATIONS.md` for details
+
+### Security
+- Designed for trusted development environments
+- Native code runs with full privileges (no sandboxing)
+- See `docs/SECURITY_CONSIDERATIONS.md` for threat model
+
+### Limitations
+- Windows x64 only (v1.0)
+- C interfaces only (C++ via extern "C")
+- Python adapters only (v1.0)
+- See `docs/LIMITATIONS_AND_NON_GOALS.md` for complete list
 - **5**: Final Polish & Documentation
 
 ## Architectural Principles
@@ -457,4 +484,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: 2 Complete ✅ | **Next**: 3 - Cross-Cutting Concerns
+**Status**: 3 Complete ✅ | **Next**: 4 - End-to-End Integration
