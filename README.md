@@ -40,10 +40,12 @@ The Polyglot FFI Contract Verifier reframes FFI correctness as a **contract veri
 
 ## Current Status
 
-**Phase 1 Complete** ✅ - Execution Context and Orchestration Layer
+**Phase 1 Complete** ✅ - Execution Context and Orchestration Layer  
+**Phase 2 Complete** ✅ - Native Interface Ingestion
 
-The foundational orchestration and execution context subsystem is fully implemented and validated. This provides:
+The foundational orchestration layer and native interface ingestion are fully implemented and validated.
 
+### Phase 1: Execution Context and Orchestration
 - Immutable execution context capturing all environmental details
 - Deterministic 8-step context construction process
 - Complete CLI with 9 commands for pipeline control
@@ -52,6 +54,25 @@ The foundational orchestration and execution context subsystem is fully implemen
 
 See [`docs/ORCHESTRATION_IMPLEMENTATION.md`](docs/ORCHESTRATION_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 2: Native Interface Ingestion
+- Compiler-grade ABI extraction using libclang
+- Struct layouts with explicit padding detection
+- Calling convention detection (cdecl, stdcall, fastcall, win64)
+- Complete type information with recursive representation
+- Source location tracking for all symbols
+- Full provenance metadata linking to ExecutionContext
+
+**Key Features**:
+- ✅ libclang integration with Windows/MSVC support
+- ✅ Explicit padding fields in struct layouts
+- ✅ Platform-aware compilation (Windows x64)
+- ✅ Comprehensive error reporting
+
+**Artifacts Produced**:
+- `artifacts/native_interface.json` - Complete ABI description
+
+See [`docs/INGESTION_IMPLEMENTATION.md`](docs/INGESTION_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Prerequisites
@@ -59,15 +80,17 @@ See [`docs/ORCHESTRATION_IMPLEMENTATION.md`](docs/ORCHESTRATION_IMPLEMENTATION.m
 - **Windows x64** (v1.0 requirement)
 - **Python 3.11+**
 - **MSVC compiler** (Visual Studio)
+- **libclang** (for native interface ingestion)
 
 ### Installation
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/Polyglot-FFI-Contract-Verifier.git
+git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
 cd Polyglot-FFI-Contract-Verifier
 
-# No additional dependencies required for Phase 1
+# Install dependencies
+pip install libclang
 ```
 
 ### Basic Usage
@@ -84,8 +107,9 @@ python polyglot_ffi_verifier.py generate-tests
 # Display execution context
 python polyglot_ffi_verifier.py context
 
-# Validate implementation
-python validate_orchestration.py
+# Validate implementations
+python validate_orchestration.py  # Phase 1
+python validate_ingestion.py      # Phase 2
 ```
 
 ## Architecture
@@ -156,25 +180,32 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── core/
 │   │   ├── execution_context.py    # ExecutionContext and Builder
 │   │   └── orchestration.py        # Pipeline orchestration and CLI
-│   └── stages/                     # Pipeline stage implementations (future)
+│   ├── ingestion/                  # Native interface ingestion
+│   │   ├── native_interface_analyzer.py
+│   │   ├── compiler_frontend.py
+│   │   ├── abi_extractor.py
+│   │   └── source_location_tracker.py
+│   └── stages/                     # Future pipeline stages
 ├── docs/
-│   └── ORCHESTRATION_IMPLEMENTATION.md   # Detailed implementation docs
-├── polyglot_ffi_verifier.py              # Main entry point
-├── validate_orchestration.py             # Validation suite
-├── quick_test.py                         # Quick smoke test
-└── README.md                             # This file
+│   ├── ORCHESTRATION_IMPLEMENTATION.md
+│   └── INGESTION_IMPLEMENTATION.md
+├── polyglot_ffi_verifier.py        # Main entry point
+├── validate_orchestration.py       # Phase 1 validation
+├── validate_ingestion.py           # Phase 2 validation
+├── quick_test.py                   # Quick smoke test
+└── README.md                       # This file
 ```
 
 ## Development Roadmap
 
 ### ✅ Completed
 - **Phase 1**: Execution Context and Orchestration Layer
-
-### 🔄 In Progress
 - **Phase 2**: Native Interface Ingestion
 
-### 📋 Planned
+### 🔄 In Progress
 - **Phase 3**: Intermediate Representation
+
+### 📋 Planned
 - **Phase 4**: Contract Synthesis
 - **Phase 5**: Language Adapter Generation
 - **Phase 6**: Test Generation
@@ -195,7 +226,8 @@ Polyglot-FFI-Contract-Verifier/
 
 ## Documentation
 
-- **[Orchestration Implementation](docs/ORCHESTRATION_IMPLEMENTATION.md)** - Detailed Phase 1 documentation
+- **[Orchestration Implementation](docs/ORCHESTRATION_IMPLEMENTATION.md)** - Phase 1 detailed documentation
+- **[Ingestion Implementation](docs/INGESTION_IMPLEMENTATION.md)** - Phase 2 detailed documentation
 
 ## Contributing
 
@@ -218,4 +250,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 1 Complete ✅ | **Next**: Phase 2 - Native Interface Ingestion
+**Status**: Phase 2 Complete ✅ | **Next**: Phase 3 - IR Normalization

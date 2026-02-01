@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 
 from .execution_context import ExecutionContext, ExecutionContextBuilder
+from ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
 
 
 class ErrorType(Enum):
@@ -95,6 +96,22 @@ class PipelineOrchestrator:
         """
         self.context = context
         self._stage_registry: Dict[PipelineStage, Callable] = {}
+        self._register_default_stages()
+    
+    def _register_default_stages(self) -> None:
+        """Register default stage handlers."""
+        self.register_stage(PipelineStage.INGEST, self._handle_ingest_stage)
+    
+    def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle native interface ingestion stage."""
+        analyzer = NativeInterfaceAnalyzer()
+        artifact = analyzer.analyze(
+            header_path=context.native_library.interface_header_path,
+            library_path=context.native_library.library_path,
+            context=context
+        )
+        analyzer.save_artifact(artifact, context.artifacts.native_interface_path)
+        return {"artifact_path": context.artifacts.native_interface_path}
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
@@ -247,7 +264,7 @@ class PipelineOrchestrator:
             StageError: If expected artifacts are missing
         """
         expected_artifacts = {
-            PipelineStage.INGEST: [self.context.artifacts.intermediate_representation_path],
+            PipelineStage.INGEST: [self.context.artifacts.native_interface_path],
             PipelineStage.SYNTHESIZE: [self.context.artifacts.contract_path],
             PipelineStage.GENERATE_ADAPTERS: [],  # Adapters stored in result
             PipelineStage.GENERATE_TESTS: [self.context.artifacts.test_plan_path],
@@ -582,7 +599,7 @@ class CLIOrchestrator:
                 result = orchestrator.execute_stage(PipelineStage.INGEST)
                 if verbosity != "quiet":
                     print(f"✓ Native interface ingestion completed")
-                    print(f"  IR artifact: {context.artifacts.intermediate_representation_path}")
+                    print(f"  Interface artifact: {context.artifacts.native_interface_path}")
                 return 0
                 
         except (FileNotFoundError, ValueError, RuntimeError, PermissionError) as e:
