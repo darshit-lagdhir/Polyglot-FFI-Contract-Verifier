@@ -38,6 +38,25 @@ The Polyglot FFI Contract Verifier reframes FFI correctness as a **contract veri
 - ✅ **Incremental Adoption** - Verify individual functions or entire interfaces
 - ✅ **CI Integration Ready** - Machine-readable outputs for automated workflows
 
+## What You Get
+
+**Input:**
+```c
+// interface.h
+struct Config {
+    int mode;
+    void* data;
+};
+
+int process(struct Config* cfg);
+```
+
+**Outcome:**
+- ✅ **Detected** that `struct Config` has 4 bytes of padding between `mode` and `data` on x64.
+- ✅ **Verified** that specific language bindings allocate the struct with correct size (16 bytes, not 12).
+- ✅ **Confirmed** calling convention is `cdecl` (standard for C).
+- ✅ **Generated** report explaining why incorrect struct size would cause a heap corruption crash.
+
 ## Current Status
 
 **Phase 1 Complete** ✅ - Execution Context and Orchestration Layer  
@@ -91,6 +110,9 @@ cd Polyglot-FFI-Contract-Verifier
 
 # Install dependencies
 pip install libclang
+
+# Note: You may need to set LIBCLANG_PATH environment variable if libclang is not in your PATH
+# Example: set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
 ```
 
 ### Basic Usage
@@ -126,47 +148,54 @@ The system is organized as a deterministic, artifact-driven pipeline:
 ┌─────────────────────────────────────────────────────────────────┐
 │  Stage 1: Native Interface Ingestion                            │
 │  Input:  C header, library                                      │
+│  Output: Native Interface Artifact (native_interface.json)      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 2: IR Normalization                                      │
+│  Input:  Native Interface Artifact                              │
 │  Output: Intermediate Representation (IR)                       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 2: Contract Synthesis                                    │
+│  Stage 3: Contract Synthesis                                    │
 │  Input:  Intermediate Representation                            │
 │  Output: FFI Contract                                           │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 3: Language Adapter Generation                           │
+│  Stage 4: Language Adapter Generation                           │
 │  Input:  FFI Contract                                           │
 │  Output: Runtime Verification Adapters                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 4: Test Generation                                       │
+│  Stage 5: Test Plan Generation                                  │
 │  Input:  FFI Contract                                           │
 │  Output: Test Plan                                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 5: Verification Execution                                │
+│  Stage 6: Verification Execution                                │
 │  Input:  Adapters, Test Plan                                   │
 │  Output: Execution Log                                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 6: Diagnostics Mapping                                   │
+│  Stage 7: Diagnostics Mapping                                   │
 │  Input:  Execution Log, Contract                                │
-│  Output: Diagnostics Report                                     │
+│  Output: Diagnostics Artifact                                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 7: Report Generation                                     │
+│  Stage 8: Report Generation                                     │
 │  Input:  Diagnostics                                            │
 │  Output: Human-Readable Report                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -177,15 +206,11 @@ The system is organized as a deterministic, artifact-driven pipeline:
 ```
 Polyglot-FFI-Contract-Verifier/
 ├── src/
-│   ├── core/
-│   │   ├── execution_context.py    # ExecutionContext and Builder
-│   │   └── orchestration.py        # Pipeline orchestration and CLI
-│   ├── ingestion/                  # Native interface ingestion
-│   │   ├── native_interface_analyzer.py
-│   │   ├── compiler_frontend.py
-│   │   ├── abi_extractor.py
-│   │   └── source_location_tracker.py
-│   └── stages/                     # Future pipeline stages
+│   ├── core/                       # Phase 1: Orchestration & context
+│   ├── ingestion/                  # Phase 2: Native interface ingestion
+│   ├── representation/             # Phase 3: IR normalization (upcoming)
+│   ├── synthesis/                  # Phase 4: Contract synthesis (planned)
+│   └── ...                         # Additional phases
 ├── docs/
 │   ├── ORCHESTRATION_IMPLEMENTATION.md
 │   └── INGESTION_IMPLEMENTATION.md
@@ -203,16 +228,21 @@ Polyglot-FFI-Contract-Verifier/
 - **Phase 2**: Native Interface Ingestion
 
 ### 🔄 In Progress
-- **Phase 3**: Intermediate Representation
+- **Phase 3**: Intermediate Representation Normalization
 
 ### 📋 Planned
-- **Phase 4**: Contract Synthesis
-- **Phase 5**: Language Adapter Generation
-- **Phase 6**: Test Generation
-- **Phase 7**: Verification Execution
-- **Phase 8**: Diagnostics Mapping
-- **Phase 9**: Report Generation
-- **Phases 10-15**: Advanced features and extensions
+- **Phase 4**: Contract Synthesis Engine
+- **Phase 5**: Contract Schema & Versioning
+- **Phase 6**: Language Adapter Generation (Python)
+- **Phase 7**: Test Plan Generation
+- **Phase 8**: Verification Engine Execution
+- **Phase 9**: Runtime Monitoring & Crash Handling
+- **Phase 10**: Diagnostics Mapping
+- **Phase 11**: Reporting (Human-Readable)
+- **Phase 12**: Machine-Readable Output & CI Integration
+- **Phase 13**: Cross-Cutting Concerns
+- **Phase 14**: End-to-End Integration
+- **Phase 15**: Final Polish & Documentation
 
 ## Architectural Principles
 
