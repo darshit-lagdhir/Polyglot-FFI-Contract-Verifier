@@ -23,6 +23,7 @@ from src.synthesis.contract_synthesizer import ContractSynthesizer
 from src.contract.schema_validator import ContractSchemaValidator
 from src.contract.contract_comparator import ContractComparator
 from src.contract.compatibility_report_generator import CompatibilityReportGenerator
+from src.adapters.adapter_generator import AdapterGenerator
 
 
 class ErrorType(Enum):
@@ -111,6 +112,7 @@ class PipelineOrchestrator:
         self.register_stage(PipelineStage.SYNTHESIZE, self._handle_synthesize_stage)
         self.register_stage(PipelineStage.VALIDATE_SCHEMA, self._handle_validate_schema_stage)
         self.register_stage(PipelineStage.COMPARE_CONTRACTS, self._handle_compare_contracts_stage)
+        self.register_stage(PipelineStage.GENERATE_ADAPTERS, self._handle_generate_adapters_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -176,6 +178,12 @@ class PipelineOrchestrator:
             "report_path": report_path,
             "summary": diff["summary"]
         }
+
+    def _handle_generate_adapters_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle language adapter generation (Phase 6)."""
+        generator = AdapterGenerator()
+        metadata = generator.generate(context)
+        return metadata
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
