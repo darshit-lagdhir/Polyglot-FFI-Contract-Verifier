@@ -15,6 +15,7 @@ import sys
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
+import importlib
 
 from .execution_context import ExecutionContext, ExecutionContextBuilder
 from src.ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
@@ -27,6 +28,7 @@ from src.adapters.adapter_generator import AdapterGenerator
 from src.testing.test_plan_generator import TestPlanGenerator
 from src.verification.verification_executor import VerificationExecutor
 from src.monitoring.monitored_verification_executor import MonitoredVerificationExecutor
+from src.diagnostics.diagnostic_mapper import DiagnosticMapper
 
 
 class ErrorType(Enum):
@@ -118,6 +120,7 @@ class PipelineOrchestrator:
         self.register_stage(PipelineStage.GENERATE_ADAPTERS, self._handle_generate_adapters_stage)
         self.register_stage(PipelineStage.GENERATE_TESTS, self._handle_generate_tests_stage)
         self.register_stage(PipelineStage.EXECUTE, self._handle_execute_stage)
+        self.register_stage(PipelineStage.DIAGNOSE, self._handle_diagnose_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -207,6 +210,12 @@ class PipelineOrchestrator:
             
         log = executor.execute(context)
         return log["execution_summary"]
+
+    def _handle_diagnose_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle diagnostics mapping (Phase 10)."""
+        mapper = DiagnosticMapper()
+        diagnostics = mapper.map_diagnostics(context)
+        return diagnostics["summary"]
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """

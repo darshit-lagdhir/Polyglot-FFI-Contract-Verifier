@@ -184,6 +184,19 @@ See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTIO
 
 See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 10: Diagnostics Mapping and Failure Classification
+- Automatic categorization of failures (buffer overflow, null pointer, etc.)
+- Severity assessment and exploitability analysis
+- Traceability from raw crashes to specific contract constraints
+- Aggregation of related violations to reduce reporting noise
+- Actionable remediation recommendations with code snippets
+
+**Artifacts Produced**:
+- `artifacts/diagnostics.json` - Machine-readable diagnostics
+- `artifacts/violation_summary.txt` - Human-readable summary
+
+See [`docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md`](docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Prerequisites
@@ -231,6 +244,7 @@ python validate_adapter_generation.py  # Phase 6
 python validate_test_plan_generation.py # Phase 7
 python validate_verification_execution.py # Phase 8
 python validate_runtime_monitoring.py     # Phase 9
+python validate_diagnostics_mapping.py    # Phase 10
 ```
 
 ## Architecture
@@ -355,12 +369,12 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **Phase 7: Test Plan Generation** - Functional
 - [x] **Phase 8: Verification Execution** - Functional
 - [x] **Phase 9: Runtime Monitoring & Crash Detection** - Functional
+- [x] **Phase 10: Diagnostics Mapping** - Functional
 
 ### 🔄 In Progress
-- **Phase 10**: Diagnostics Mapping
 
 ### 📋 Planned
-- **Phase 11**: Reporting (Human-Readable)
+- [ ] **Phase 11: Report Generation** - Planned
 - **Phase 12**: Machine-Readable Output & CI Integration
 - **Phase 13**: Cross-Cutting Concerns
 - **Phase 14**: End-to-End Integration
@@ -402,4 +416,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 8 Complete ✅ | **Next**: Phase 9 - Runtime Monitoring
+**Status**: Phase 10 Complete ✅ | **Next**: Phase 11 - Report Generation
