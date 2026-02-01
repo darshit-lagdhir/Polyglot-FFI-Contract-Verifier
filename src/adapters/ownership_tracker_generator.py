@@ -1,0 +1,85 @@
+"""
+Ownership Tracker Generator
+Generates the memory ownership tracking module for the adapter.
+"""
+
+class OwnershipTrackerGenerator:
+    """
+    Produces the Python code for the ownership tracker in the generated adapter.
+    """
+    
+    def generate_ownership_module(self, library_name: str) -> str:
+        """Generates the full source code for the ownership tracking module."""
+        return f'''"""
+Generated ownership tracker for {library_name}.
+
+Auto-created by Polyglot FFI Contract Verifier.
+DO NOT EDIT MANUALLY.
+"""
+
+import weakref
+from . import {library_name}_exceptions as exceptions
+
+class OwnershipTracker:
+    """
+    Tracks memory ownership across the FFI boundary.
+    
+    Detects:
+      - Use-after-transfer (using pointer after ownership was transferred)
+      - Double-transfer (transferring ownership of same pointer twice)
+    """
+    
+    def __init__(self):
+        self._borrowed_pointers = weakref.WeakSet()
+        self._transferred_pointers = set()
+    
+    def mark_borrowed(self, ptr):
+        """
+        Mark a pointer as borrowed (caller retains ownership).
+        """
+        if ptr is not None and bool(ptr):
+            # We track the ID of the object if possible, 
+            # or the address for pointer types
+            try:
+                import ctypes
+                if isinstance(ptr, (ctypes._Pointer, ctypes.c_void_p)):
+                    addr = ctypes.addressof(ptr.contents) if hasattr(ptr, 'contents') else ptr.value
+                    self._borrowed_pointers.add(addr)
+                else:
+                    self._borrowed_pointers.add(id(ptr))
+            except:
+                self._borrowed_pointers.add(id(ptr))
+    
+    def mark_transferred(self, ptr):
+        """
+        Mark a pointer as transferred (callee takes ownership).
+        """
+        if ptr is None or not bool(ptr):
+            return
+            
+        ptr_id = id(ptr)
+        if ptr_id in self._transferred_pointers:
+            raise exceptions.OwnershipViolation(
+                "ownership_double_transfer",
+                f"Pointer {{hex(ptr_id)}} has already been transferred"
+            )
+        
+        self._transferred_pointers.add(ptr_id)
+        
+    def check_valid(self, ptr):
+        """
+        Check if a pointer is still valid to use.
+        """
+        if ptr is None or not bool(ptr):
+            return
+            
+        ptr_id = id(ptr)
+        if ptr_id in self._transferred_pointers:
+            raise exceptions.OwnershipViolation(
+                "ownership_use_after_transfer",
+                f"Pointer {{hex(ptr_id)}} was transferred and is no longer valid"
+            )
+
+# Global tracker instance
+_tracker = OwnershipTracker()
+'''
