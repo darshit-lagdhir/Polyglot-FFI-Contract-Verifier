@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 
 from .execution_context import ExecutionContext, ExecutionContextBuilder
-from ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
+from src.ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
+from src.representation.ir_normalizer import IRNormalizer
 
 class ErrorType(Enum):
     """Classification of error types for proper handling."""
@@ -93,6 +94,7 @@ class PipelineOrchestrator:
     def _register_default_stages(self) -> None:
         """Register default stage handlers."""
         self.register_stage(PipelineStage.INGEST, self._handle_ingest_stage)
+        self.register_stage(PipelineStage.SYNTHESIZE, self._handle_synthesize_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -104,6 +106,18 @@ class PipelineOrchestrator:
         )
         analyzer.save_artifact(artifact, context.artifacts.native_interface_path)
         return {"artifact_path": context.artifacts.native_interface_path}
+
+    def _handle_synthesize_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle IR normalization and contract synthesis ( & 4)."""
+        # : IR Normalization
+        normalizer = IRNormalizer()
+        ir_artifact = normalizer.normalize(context)
+        
+        # Ensure path is available in context (it should be from ExecutionContextBuilder)
+        ir_path = context.artifacts.intermediate_representation_path
+        normalizer.save_artifact(ir_artifact, ir_path)
+        
+        return {"ir_artifact_path": ir_path}
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
@@ -209,7 +223,7 @@ class PipelineOrchestrator:
         """
         required_artifacts = {
             PipelineStage.INGEST: [],
-            PipelineStage.SYNTHESIZE: [self.context.artifacts.intermediate_representation_path],
+            PipelineStage.SYNTHESIZE: [self.context.artifacts.native_interface_path],
             PipelineStage.GENERATE_ADAPTERS: [self.context.artifacts.contract_path],
             PipelineStage.GENERATE_TESTS: [self.context.artifacts.contract_path],
             PipelineStage.EXECUTE: [
@@ -235,7 +249,8 @@ class PipelineOrchestrator:
     def _get_producing_stage(self, artifact_path: str) -> str:
         """Determine which stage produces a given artifact."""
         artifact_map = {
-            self.context.artifacts.intermediate_representation_path: "ingest",
+            self.context.artifacts.native_interface_path: "ingest",
+            self.context.artifacts.intermediate_representation_path: "synthesize",
             self.context.artifacts.contract_path: "synthesize",
             self.context.artifacts.test_plan_path: "generate-tests",
             self.context.artifacts.execution_log_path: "execute",
@@ -257,7 +272,7 @@ class PipelineOrchestrator:
         """
         expected_artifacts = {
             PipelineStage.INGEST: [self.context.artifacts.native_interface_path],
-            PipelineStage.SYNTHESIZE: [self.context.artifacts.contract_path],
+            PipelineStage.SYNTHESIZE: [self.context.artifacts.intermediate_representation_path],
             PipelineStage.GENERATE_ADAPTERS: [],  # Adapters stored in result
             PipelineStage.GENERATE_TESTS: [self.context.artifacts.test_plan_path],
             PipelineStage.EXECUTE: [self.context.artifacts.execution_log_path],

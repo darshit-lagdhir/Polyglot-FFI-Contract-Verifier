@@ -208,7 +208,7 @@ Polyglot-FFI-Contract-Verifier/
 ├── src/
 │   ├── core/                       # : Orchestration & context
 │   ├── ingestion/                  # : Native interface ingestion
-│   ├── representation/             # : IR normalization (upcoming)
+│   ├── representation/             # : IR normalization
 │   ├── synthesis/                  # : Contract synthesis (planned)
 │   └── ...                         # Additional phases
 ├── docs/
@@ -217,6 +217,7 @@ Polyglot-FFI-Contract-Verifier/
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       #  validation
 ├── validate_ingestion.py           #  validation
+├── validate_ir_normalization.py    #  validation
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -226,12 +227,12 @@ Polyglot-FFI-Contract-Verifier/
 ### ✅ Completed
 - ****: Execution Context and Orchestration Layer
 - ****: Native Interface Ingestion
-
-### 🔄 In Progress
 - ****: Intermediate Representation Normalization
 
-### 📋 Planned
+### 🔄 In Progress
 - ****: Contract Synthesis Engine
+
+### 📋 Planned
 - ****: Contract Schema & Versioning
 - ****: Language Adapter Generation (Python)
 - ****: Test Plan Generation
@@ -280,4 +281,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**:  ✅ | **Next**:  - IR Normalization
+**Status**:  ✅ | **Next**:  - Contract Synthesis
