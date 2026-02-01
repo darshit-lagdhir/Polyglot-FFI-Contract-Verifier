@@ -38,6 +38,7 @@ class PlatformIdentification:
 class CompilerInformation:
     """Compiler and tooling information."""
     compiler_name: str
+    compiler_path: str
     compiler_version: str
     compiler_flags: List[str]
     include_paths: List[str]
@@ -51,6 +52,7 @@ class NativeLibraryInformation:
     library_hash: str
     library_load_paths: List[str]
     additional_dependencies: List[str]
+    interface_header_path: str
 
 @dataclass(frozen=True)
 class TargetLanguageRuntime:
@@ -82,6 +84,7 @@ class ProvenanceMetadata:
 class ArtifactPaths:
     """Paths for artifacts and working directory."""
     working_directory: str
+    native_interface_path: str
     intermediate_representation_path: str
     contract_path: str
     test_plan_path: str
@@ -221,7 +224,7 @@ class ExecutionContextBuilder:
         )
         
         # STEP 3: Native Library Validation
-        self._validate_native_library(library_file)
+        self._validate_native_library(library_file, header_file)
         
         # STEP 4: Target Language Runtime Resolution
         self._resolve_target_runtime(python_interpreter, ffi_mechanism)
@@ -296,11 +299,12 @@ class ExecutionContextBuilder:
         
         self._compiler = CompilerInformation(
             compiler_name=compiler_name,
+            compiler_path=os.path.abspath(compiler_path),
             compiler_version=compiler_version,
             compiler_flags=list(compiler_flags),
             include_paths=resolved_includes,
             preprocessor_macros=dict(preprocessor_macros),
-            standard_library_version=None  # Could be detected if needed
+            standard_library_version=None
         )
     
     def _detect_msvc(self) -> str:
@@ -375,9 +379,10 @@ class ExecutionContextBuilder:
         except Exception as e:
             raise RuntimeError(f"Failed to query compiler version: {e}")
     
-    def _validate_native_library(self, library_file: str) -> None:
+    def _validate_native_library(self, library_file: str, header_file: str) -> None:
         """STEP 3: Validate native library and compute hash."""
         library_path = os.path.abspath(library_file)
+        header_path = os.path.abspath(header_file)
         
         if not os.path.exists(library_path):
             raise FileNotFoundError(f"Native library not found: {library_path}")
@@ -402,7 +407,8 @@ class ExecutionContextBuilder:
             library_path=library_path,
             library_hash=library_hash,
             library_load_paths=load_paths,
-            additional_dependencies=[]
+            additional_dependencies=[],
+            interface_header_path=header_path
         )
     
     def _compute_file_hash(self, file_path: str) -> str:
@@ -562,6 +568,9 @@ class ExecutionContextBuilder:
         # Resolve all artifact paths
         self._artifacts = ArtifactPaths(
             working_directory=working_dir,
+            native_interface_path=os.path.join(
+                artifacts_dir, "native_interface.json"
+            ),
             intermediate_representation_path=os.path.join(
                 artifacts_dir, "intermediate_representation.json"
             ),
