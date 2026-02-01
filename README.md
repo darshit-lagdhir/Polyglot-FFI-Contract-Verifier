@@ -380,7 +380,14 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── RUNTIME_MONITORING_IMPLEMENTATION.md
 │   ├── DIAGNOSTICS_MAPPING_IMPLEMENTATION.md
 │   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   └── CI_INTEGRATION.md
+│   ├── REPORT_GENERATION_IMPLEMENTATION.md
+│   ├── CI_INTEGRATION.md
+│   ├── PERFORMANCE_CONSIDERATIONS.md
+│   ├── SECURITY_CONSIDERATIONS.md
+│   ├── LIMITATIONS_AND_NON_GOALS.md
+│   ├── ERROR_HANDLING_PATTERNS.md
+│   ├── LOGGING_STRATEGY.md
+│   └── BEST_PRACTICES.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       # Phase 1 validation
 ├── validate_ingestion.py           # Phase 2 validation
@@ -394,6 +401,7 @@ Polyglot-FFI-Contract-Verifier/
 ├── validate_diagnostics_mapping.py    # Phase 10
 ├── validate_report_generation.py      # Phase 11
 ├── validate_ci_integration.py         # Phase 12
+├── validate_cross_cutting_concerns.py # Phase 13
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -413,12 +421,31 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **Phase 10: Diagnostics Mapping** - Functional
 - [x] **Phase 11: Report Generation** - Functional
 - [x] **Phase 12: CI/CD Integration** - Functional
-- [ ] **Phase 13: Cross-Cutting Concerns** - Planned
+- [x] **Phase 13: Cross-Cutting Concerns** - Documented
+- [ ] **Phase 14: End-to-End Integration** - Planned
 
 ### 🔄 In Progress
 
 ### 📋 Planned
-- **Phase 14**: End-to-End Integration
+- **Phase 15**: Final Polish & Documentation
+
+## System Characteristics
+
+### Performance
+- Suitable for development-time and CI verification
+- Typical verification time: 10 seconds to 5 minutes depending on interface size
+- See `docs/PERFORMANCE_CONSIDERATIONS.md` for details
+
+### Security
+- Designed for trusted development environments
+- Native code runs with full privileges (no sandboxing)
+- See `docs/SECURITY_CONSIDERATIONS.md` for threat model
+
+### Limitations
+- Windows x64 only (v1.0)
+- C interfaces only (C++ via extern "C")
+- Python adapters only (v1.0)
+- See `docs/LIMITATIONS_AND_NON_GOALS.md` for complete list
 - **Phase 15**: Final Polish & Documentation
 
 ## Architectural Principles
@@ -457,4 +484,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 12 Complete ✅ | **Next**: Phase 13 - Cross-Cutting Concerns
+**Status**: Phase 13 Complete ✅ | **Next**: Phase 14 - End-to-End Integration
