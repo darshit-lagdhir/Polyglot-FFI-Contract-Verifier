@@ -75,6 +75,7 @@ class VerificationConfiguration:
     per_test_timeout_seconds: int
     total_timeout_seconds: int
     crash_handling_mode: str
+    enable_crash_detection: bool
     verbosity_level: str
 
 
@@ -196,6 +197,7 @@ class ExecutionContextBuilder:
         per_test_timeout: int = 5,
         total_timeout: int = 300,
         crash_handling_mode: str = "monitor",
+        enable_crash_detection: bool = True,
         verbosity: str = "normal",
         working_directory: Optional[str] = None
     ) -> ExecutionContext:
@@ -245,6 +247,7 @@ class ExecutionContextBuilder:
             per_test_timeout,
             total_timeout,
             crash_handling_mode,
+            enable_crash_detection,
             verbosity
         )
         
@@ -486,13 +489,17 @@ class ExecutionContextBuilder:
         per_test_timeout: int,
         total_timeout: int,
         crash_handling_mode: str,
+        enable_crash_detection: bool,
         verbosity: str
     ) -> None:
         """STEP 5: Configure verification parameters."""
-        # Generate deterministic seed if not provided
+        # Deterministic seed generation if not provided
         if random_seed is None:
-            random_seed = self._generate_deterministic_seed(library_file)
-        
+            # Hash library path and filename for a stable seed per library
+            lib_path = os.path.abspath(library_file)
+            seed_source = f"{lib_path}:{os.path.basename(lib_path)}"
+            random_seed = abs(hash(seed_source)) % (2**32)
+            
         # Validate crash handling mode
         if crash_handling_mode not in ["monitor", "fail-fast"]:
             raise ValueError(
@@ -512,6 +519,7 @@ class ExecutionContextBuilder:
             per_test_timeout_seconds=per_test_timeout,
             total_timeout_seconds=total_timeout,
             crash_handling_mode=crash_handling_mode,
+            enable_crash_detection=enable_crash_detection,
             verbosity_level=verbosity
         )
     

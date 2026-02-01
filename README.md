@@ -171,6 +171,19 @@ See [`docs/TEST_PLAN_GENERATION_IMPLEMENTATION.md`](docs/TEST_PLAN_GENERATION_IM
 
 See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 9: Runtime Monitoring and Crash Detection
+- Subprocess-based isolation (crashes don't terminate the verifier)
+- Platform-specific failure detection (Windows SEH, Linux Signals)
+- Heuristic classification of memory safety violations (Null deref, Buffer overflow)
+- Detailed crash context capture (address, registers, timing)
+- Automated crash report generation and execution log augmentation
+
+**Artifacts Produced**:
+- `artifacts/crashes/` - Directory of detailed crash reports
+- `artifacts/execution_log.json` - Augmented with crash diagnostics
+
+See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Prerequisites
@@ -217,6 +230,7 @@ python validate_contract_versioning.py # Phase 5
 python validate_adapter_generation.py  # Phase 6
 python validate_test_plan_generation.py # Phase 7
 python validate_verification_execution.py # Phase 8
+python validate_runtime_monitoring.py     # Phase 9
 ```
 
 ## Architecture
@@ -332,23 +346,20 @@ Polyglot-FFI-Contract-Verifier/
 ## Development Roadmap
 
 ### ✅ Completed
-- **Phase 1**: Execution Context and Orchestration Layer
-- **Phase 2**: Native Interface Ingestion
-- **Phase 3**: Intermediate Representation Normalization
-- **Phase 4**: Contract Synthesis Engine
-- **Phase 5**: Contract Schema Versioning
-- **Phase 6**: Language Adapter Generation (Python)
-- **Phase 7**: Test Plan Generation
-- **Phase 8**: Verification Execution
+- [x] **Phase 1: Orchestration & Infrastructure** - Functional
+- [x] **Phase 2: Native Interface Ingestion** - Functional
+- [x] **Phase 3: IR Normalization** - Functional
+- [x] **Phase 4: Contract Synthesis** - Functional
+- [x] **Phase 5: Contract Schema Versioning** - Functional
+- [x] **Phase 6: Language Adapter Generation** - Functional
+- [x] **Phase 7: Test Plan Generation** - Functional
+- [x] **Phase 8: Verification Execution** - Functional
+- [x] **Phase 9: Runtime Monitoring & Crash Detection** - Functional
 
 ### 🔄 In Progress
-- **Phase 9**: Runtime Monitoring
+- **Phase 10**: Diagnostics Mapping
 
 ### 📋 Planned
-- **Phase 7**: Test Plan Generation
-- **Phase 8**: Verification Engine Execution
-- **Phase 9**: Runtime Monitoring & Crash Handling
-- **Phase 10**: Diagnostics Mapping
 - **Phase 11**: Reporting (Human-Readable)
 - **Phase 12**: Machine-Readable Output & CI Integration
 - **Phase 13**: Cross-Cutting Concerns

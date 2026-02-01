@@ -26,6 +26,7 @@ from src.contract.compatibility_report_generator import CompatibilityReportGener
 from src.adapters.adapter_generator import AdapterGenerator
 from src.testing.test_plan_generator import TestPlanGenerator
 from src.verification.verification_executor import VerificationExecutor
+from src.monitoring.monitored_verification_executor import MonitoredVerificationExecutor
 
 
 class ErrorType(Enum):
@@ -196,8 +197,14 @@ class PipelineOrchestrator:
         return plan["test_suite_metadata"]
 
     def _handle_execute_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle verification execution (Phase 8)."""
-        executor = VerificationExecutor()
+        """Handle verification execution (Phase 8 & 9)."""
+        enable_monitoring = getattr(context.verification_config, "enable_crash_detection", True)
+        
+        if enable_monitoring:
+            executor = MonitoredVerificationExecutor()
+        else:
+            executor = VerificationExecutor()
+            
         log = executor.execute(context)
         return log["execution_summary"]
     
@@ -475,6 +482,18 @@ class CLIOrchestrator:
             default=300,
             help="Total timeout in seconds (default: 300)"
         )
+        native_args.add_argument(
+            "--subprocess-timeout",
+            type=int,
+            default=60,
+            help="Timeout for individual test subprocesses in seconds (default: 60)"
+        )
+        native_args.add_argument(
+            "--enable-crash-detection",
+            type=str,
+            default="true",
+            help="Enable crash detection for native library calls (true/false, default: true)"
+        )
         
         # Command: verify (full pipeline)
         verify_parser = subparsers.add_parser(
@@ -683,8 +702,9 @@ class CLIOrchestrator:
                 python_interpreter=getattr(args, 'python', None),
                 ffi_mechanism=getattr(args, 'ffi', 'ctypes'),
                 random_seed=getattr(args, 'seed', None),
-                per_test_timeout=getattr(args, 'per_test_timeout', 5),
+                per_test_timeout=getattr(args, 'subprocess_timeout', 5),
                 total_timeout=getattr(args, 'total_timeout', 300),
+                enable_crash_detection=str(getattr(args, 'enable_crash_detection', 'true')).lower() == 'true',
                 verbosity=verbosity,
                 working_directory=args.working_dir
             )
