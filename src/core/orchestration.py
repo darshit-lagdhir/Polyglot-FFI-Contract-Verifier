@@ -25,6 +25,7 @@ from src.contract.contract_comparator import ContractComparator
 from src.contract.compatibility_report_generator import CompatibilityReportGenerator
 from src.adapters.adapter_generator import AdapterGenerator
 from src.testing.test_plan_generator import TestPlanGenerator
+from src.verification.verification_executor import VerificationExecutor
 
 class ErrorType(Enum):
     """Classification of error types for proper handling."""
@@ -107,6 +108,7 @@ class PipelineOrchestrator:
         self.register_stage(PipelineStage.COMPARE_CONTRACTS, self._handle_compare_contracts_stage)
         self.register_stage(PipelineStage.GENERATE_ADAPTERS, self._handle_generate_adapters_stage)
         self.register_stage(PipelineStage.GENERATE_TESTS, self._handle_generate_tests_stage)
+        self.register_stage(PipelineStage.EXECUTE, self._handle_execute_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -184,6 +186,12 @@ class PipelineOrchestrator:
         generator = TestPlanGenerator()
         plan = generator.generate(context)
         return plan["test_suite_metadata"]
+
+    def _handle_execute_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle verification execution ()."""
+        executor = VerificationExecutor()
+        log = executor.execute(context)
+        return log["execution_summary"]
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
