@@ -184,6 +184,19 @@ See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTIO
 
 See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
 
+### 0: Diagnostics Mapping and Failure Classification
+- Automatic categorization of failures (buffer overflow, null pointer, etc.)
+- Severity assessment and exploitability analysis
+- Traceability from raw crashes to specific contract constraints
+- Aggregation of related violations to reduce reporting noise
+- Actionable remediation recommendations with code snippets
+
+**Artifacts Produced**:
+- `artifacts/diagnostics.json` - Machine-readable diagnostics
+- `artifacts/violation_summary.txt` - Human-readable summary
+
+See [`docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md`](docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Requirements
@@ -231,6 +244,7 @@ python validate_adapter_generation.py  #
 python validate_test_plan_generation.py # 
 python validate_verification_execution.py # 
 python validate_runtime_monitoring.py     # 
+python validate_diagnostics_mapping.py    # 0
 ```
 
 ## Architecture
@@ -355,12 +369,12 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **: Test Plan Generation** - Functional
 - [x] **: Verification Execution** - Functional
 - [x] **: Runtime Monitoring & Crash Detection** - Functional
+- [x] **0: Diagnostics Mapping** - Functional
 
 ### 🔄 In Progress
-- **0**: Diagnostics Mapping
 
 ### 📋 Planned
-- **1**: Reporting (Human-Readable)
+- [ ] **1: Report Generation** - Planned
 - **2**: Machine-Readable Output & CI Integration
 - **3**: Cross-Cutting Concerns
 - **4**: End-to-End Integration
@@ -402,4 +416,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**:  ✅ | **Next**:  - Runtime Monitoring
+**Status**: 0 Complete ✅ | **Next**: 1 - Report Generation
