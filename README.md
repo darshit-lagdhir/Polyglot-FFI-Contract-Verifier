@@ -197,6 +197,20 @@ See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEM
 
 See [`docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md`](docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 11: Comprehensive Report Generation
+- Professional, stakeholder-ready reports in HTML, Markdown, and CI Summary (JSON)
+- Visual hierarchy with color-coded severity badges and card-based layout
+- Prioritized violations with detailed RCA and remediation steps
+- Machine-readable CI integration with exit codes and status badge metadata
+- Self-contained HTML reports with inline CSS
+
+**Artifacts Produced**:
+- `reports/verification_report.html` - Primary visual report
+- `reports/verification_report.md` - Version-control friendly report
+- `reports/ci_summary.json` - CI/CD pipeline data
+
+See [`docs/REPORT_GENERATION_IMPLEMENTATION.md`](docs/REPORT_GENERATION_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Prerequisites
@@ -245,6 +259,7 @@ python validate_test_plan_generation.py # Phase 7
 python validate_verification_execution.py # Phase 8
 python validate_runtime_monitoring.py     # Phase 9
 python validate_diagnostics_mapping.py    # Phase 10
+python validate_report_generation.py      # Phase 11
 ```
 
 ## Architecture
@@ -370,11 +385,12 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **Phase 8: Verification Execution** - Functional
 - [x] **Phase 9: Runtime Monitoring & Crash Detection** - Functional
 - [x] **Phase 10: Diagnostics Mapping** - Functional
+- [x] **Phase 11: Report Generation** - Functional
+- [ ] **Phase 12: CI/CD Integration** - Planned
 
 ### 🔄 In Progress
 
 ### 📋 Planned
-- [ ] **Phase 11: Report Generation** - Planned
 - **Phase 12**: Machine-Readable Output & CI Integration
 - **Phase 13**: Cross-Cutting Concerns
 - **Phase 14**: End-to-End Integration
@@ -416,4 +432,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 10 Complete ✅ | **Next**: Phase 11 - Report Generation
+**Status**: Phase 11 Complete ✅ | **Next**: Phase 12 - CI/CD Integration

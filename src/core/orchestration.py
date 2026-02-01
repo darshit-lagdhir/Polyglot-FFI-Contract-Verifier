@@ -29,6 +29,7 @@ from src.testing.test_plan_generator import TestPlanGenerator
 from src.verification.verification_executor import VerificationExecutor
 from src.monitoring.monitored_verification_executor import MonitoredVerificationExecutor
 from src.diagnostics.diagnostic_mapper import DiagnosticMapper
+from src.reporting.report_generator import ReportGenerator
 
 
 class ErrorType(Enum):
@@ -121,6 +122,7 @@ class PipelineOrchestrator:
         self.register_stage(PipelineStage.GENERATE_TESTS, self._handle_generate_tests_stage)
         self.register_stage(PipelineStage.EXECUTE, self._handle_execute_stage)
         self.register_stage(PipelineStage.DIAGNOSE, self._handle_diagnose_stage)
+        self.register_stage(PipelineStage.REPORT, self._handle_report_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -216,6 +218,12 @@ class PipelineOrchestrator:
         mapper = DiagnosticMapper()
         diagnostics = mapper.map_diagnostics(context)
         return diagnostics["summary"]
+
+    def _handle_report_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Handle comprehensive report generation (Phase 11)."""
+        generator = ReportGenerator()
+        metadata = generator.generate_reports(context)
+        return metadata["metadata"]
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
