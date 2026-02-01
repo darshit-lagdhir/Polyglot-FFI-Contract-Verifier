@@ -211,6 +211,19 @@ See [`docs/DIAGNOSTICS_MAPPING_IMPLEMENTATION.md`](docs/DIAGNOSTICS_MAPPING_IMPL
 
 See [`docs/REPORT_GENERATION_IMPLEMENTATION.md`](docs/REPORT_GENERATION_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 12: CI/CD Integration
+- Turnkey workflow templates for GitHub Actions, GitLab CI, and Jenkins
+- Automated failure gating based on contract violation severity
+- Dynamic status badge generation (shields.io compatible)
+- Machine-readable configuration via YAML and environment variables
+- Automated artifact collection (reports, logs, diagnostics)
+
+**Key Integration Scripts**:
+- `scripts/check_ci_status.py` - Intelligent failure gating for pipelines
+- `scripts/generate_badge.py` - Visual status metadata generation
+
+See [`docs/CI_INTEGRATION.md`](docs/CI_INTEGRATION.md) for complete setup guides.
+
 ## Quick Start
 
 ### Prerequisites
@@ -260,6 +273,7 @@ python validate_verification_execution.py # Phase 8
 python validate_runtime_monitoring.py     # Phase 9
 python validate_diagnostics_mapping.py    # Phase 10
 python validate_report_generation.py      # Phase 11
+python validate_ci_integration.py         # Phase 12
 ```
 
 ## Architecture
@@ -349,6 +363,10 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── adapters/                   # Phase 6: Language adapter generation
 │   ├── testing/                    # Phase 7: Test plan generation
 │   ├── verification/               # Phase 8: Verification execution
+│   ├── monitoring/                 # Phase 9: Runtime monitoring
+│   ├── diagnostics/                # Phase 10: Diagnostics mapping
+│   ├── reporting/                  # Phase 11: Report generation
+│   ├── ci/                         # Phase 12: CI/CD integration
 │   └── ...                         # Additional phases
 ├── docs/
 │   ├── ORCHESTRATION_IMPLEMENTATION.md
@@ -358,7 +376,11 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── CONTRACT_VERSIONING_IMPLEMENTATION.md
 │   ├── ADAPTER_GENERATION_IMPLEMENTATION.md
 │   ├── TEST_PLAN_GENERATION_IMPLEMENTATION.md
-│   └── VERIFICATION_EXECUTION_IMPLEMENTATION.md
+│   ├── VERIFICATION_EXECUTION_IMPLEMENTATION.md
+│   ├── RUNTIME_MONITORING_IMPLEMENTATION.md
+│   ├── DIAGNOSTICS_MAPPING_IMPLEMENTATION.md
+│   ├── REPORT_GENERATION_IMPLEMENTATION.md
+│   └── CI_INTEGRATION.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       # Phase 1 validation
 ├── validate_ingestion.py           # Phase 2 validation
@@ -367,7 +389,11 @@ Polyglot-FFI-Contract-Verifier/
 ├── validate_contract_versioning.py # Phase 5 validation
 ├── validate_adapter_generation.py  # Phase 6 validation
 ├── validate_test_plan_generation.py # Phase 7 validation
-├── validate_verification_execution.py # Phase 8 validation
+├── validate_verification_execution.py # Phase 8
+├── validate_runtime_monitoring.py     # Phase 9
+├── validate_diagnostics_mapping.py    # Phase 10
+├── validate_report_generation.py      # Phase 11
+├── validate_ci_integration.py         # Phase 12
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -386,13 +412,12 @@ Polyglot-FFI-Contract-Verifier/
 - [x] **Phase 9: Runtime Monitoring & Crash Detection** - Functional
 - [x] **Phase 10: Diagnostics Mapping** - Functional
 - [x] **Phase 11: Report Generation** - Functional
-- [ ] **Phase 12: CI/CD Integration** - Planned
+- [x] **Phase 12: CI/CD Integration** - Functional
+- [ ] **Phase 13: Cross-Cutting Concerns** - Planned
 
 ### 🔄 In Progress
 
 ### 📋 Planned
-- **Phase 12**: Machine-Readable Output & CI Integration
-- **Phase 13**: Cross-Cutting Concerns
 - **Phase 14**: End-to-End Integration
 - **Phase 15**: Final Polish & Documentation
 
@@ -432,4 +457,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 11 Complete ✅ | **Next**: Phase 12 - CI/CD Integration
+**Status**: Phase 12 Complete ✅ | **Next**: Phase 13 - Cross-Cutting Concerns

@@ -1,0 +1,34 @@
+# FFI Contract Verifier Configuration
+
+# Paths (relative to project root)
+paths:
+  header: native/interface.h
+  library: build/library.dll
+  output_dir: ffi_verification
+
+# Execution options
+execution:
+  timeout_seconds: 600
+  enable_crash_detection: true
+  subprocess_timeout: 60
+
+# Failure policy
+failure_policy:
+  strict_mode: false  # Fail on any violation
+  block_on_critical: true
+  block_on_high: false
+  max_violations: 10  # Fail if more than N violations
+
+# Reporting
+reporting:
+  generate_html: true
+  generate_markdown: true
+  generate_ci_summary: true
+  upload_artifacts: true
+
+# CI integration
+ci:
+  platform: github  # github, gitlab, jenkins
+  status_badge: true
+  comment_on_pr: true
+  fail_fast: false  # Stop on first critical violation
