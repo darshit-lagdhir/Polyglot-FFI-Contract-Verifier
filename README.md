@@ -60,9 +60,11 @@ int process(struct Config* cfg);
 ## Current Status
 
 **** ✅ - Execution Context and Orchestration Layer  
-**** ✅ - Native Interface Ingestion
+**** ✅ - Native Interface Ingestion  
+**** ✅ - Intermediate Representation Normalization  
+**** ✅ - Contract Synthesis Engine
 
-The foundational orchestration layer and native interface ingestion are fully implemented and validated.
+The core verification engine and contract synthesis layer are fully implemented and validated.
 
 ### : Execution Context and Orchestration
 - Immutable execution context capturing all environmental details
@@ -90,7 +92,27 @@ See [`docs/ORCHESTRATION_IMPLEMENTATION.md`](docs/ORCHESTRATION_IMPLEMENTATION.m
 **Artifacts Produced**:
 - `artifacts/native_interface.json` - Complete ABI description
 
-See [`docs/INGESTION_IMPLEMENTATION.md`](docs/INGESTION_IMPLEMENTATION.md) for detailed documentation.
+### : IR Normalization
+- Transformation of native artifacts into canonical, platform-agnostic IR
+- Transitive typedef resolution to underlying primitive types
+- Deterministic type registry with stable, unique type IDs
+- Normalization of struct layouts and function signatures
+- Standardized representation of type qualifiers (const, volatile)
+
+See [`docs/IR_NORMALIZATION_IMPLEMENTATION.md`](docs/IR_NORMALIZATION_IMPLEMENTATION.md) for detailed documentation.
+
+### : Contract Synthesis Engine
+- Transformation of structural IR into semantic correctness constraints
+- Rule-based constraint derivation (nullability, ownership, lifetime)
+- Heuristic naming convention analysis (create_, optional_, etc.)
+- Conservative default policies for safety-first verification
+- Deterministic constraint ID generation for traceability
+- Support for buffer-length relationship detection
+
+**Artifacts Produced**:
+- `artifacts/contract.json` - Formal FFI contract
+
+See [`docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md`](docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md) for detailed documentation.
 
 ## Quick Start
 
@@ -130,8 +152,10 @@ python polyglot_ffi_verifier.py generate-tests
 python polyglot_ffi_verifier.py context
 
 # Validate implementations
-python validate_orchestration.py  # 
-python validate_ingestion.py      # 
+python validate_orchestration.py      # 
+python validate_ingestion.py          # 
+python validate_ir_normalization.py   # 
+python validate_contract_synthesis.py # 
 ```
 
 ## Architecture
@@ -209,15 +233,18 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── core/                       # : Orchestration & context
 │   ├── ingestion/                  # : Native interface ingestion
 │   ├── representation/             # : IR normalization
-│   ├── synthesis/                  # : Contract synthesis (planned)
+│   ├── synthesis/                  # : Contract synthesis
 │   └── ...                         # Additional phases
 ├── docs/
 │   ├── ORCHESTRATION_IMPLEMENTATION.md
-│   └── INGESTION_IMPLEMENTATION.md
+│   ├── INGESTION_IMPLEMENTATION.md
+│   ├── IR_NORMALIZATION_IMPLEMENTATION.md
+│   └── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       #  validation
 ├── validate_ingestion.py           #  validation
 ├── validate_ir_normalization.py    #  validation
+├── validate_contract_synthesis.py  #  validation
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -228,13 +255,13 @@ Polyglot-FFI-Contract-Verifier/
 - ****: Execution Context and Orchestration Layer
 - ****: Native Interface Ingestion
 - ****: Intermediate Representation Normalization
-
-### 🔄 In Progress
 - ****: Contract Synthesis Engine
 
-### 📋 Planned
+### 🔄 In Progress
 - ****: Contract Schema & Versioning
 - ****: Language Adapter Generation (Python)
+
+### 📋 Planned
 - ****: Test Plan Generation
 - ****: Verification Engine Execution
 - ****: Runtime Monitoring & Crash Handling
@@ -281,4 +308,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**:  ✅ | **Next**:  - Contract Synthesis
+**Status**:  ✅ | **Next**:  - Contract Schema & Language Adapters
