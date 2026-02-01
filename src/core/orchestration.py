@@ -20,6 +20,9 @@ from .execution_context import ExecutionContext, ExecutionContextBuilder
 from src.ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
 from src.representation.ir_normalizer import IRNormalizer
 from src.synthesis.contract_synthesizer import ContractSynthesizer
+from src.contract.schema_validator import ContractSchemaValidator
+from src.contract.contract_comparator import ContractComparator
+from src.contract.compatibility_report_generator import CompatibilityReportGenerator
 
 class ErrorType(Enum):
     """Classification of error types for proper handling."""
@@ -37,6 +40,8 @@ class PipelineStage(Enum):
     EXECUTE = "execute"
     DIAGNOSE = "diagnose"
     REPORT = "report"
+    VALIDATE_SCHEMA = "validate-schema"
+    COMPARE_CONTRACTS = "compare-contracts"
 
 class VerificationError(Exception):
     """Base exception for verification errors with type classification."""
@@ -96,6 +101,8 @@ class PipelineOrchestrator:
         """Register default stage handlers."""
         self.register_stage(PipelineStage.INGEST, self._handle_ingest_stage)
         self.register_stage(PipelineStage.SYNTHESIZE, self._handle_synthesize_stage)
+        self.register_stage(PipelineStage.VALIDATE_SCHEMA, self._handle_validate_schema_stage)
+        self.register_stage(PipelineStage.COMPARE_CONTRACTS, self._handle_compare_contracts_stage)
     
     def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Handle native interface ingestion stage."""
@@ -125,6 +132,41 @@ class PipelineOrchestrator:
         return {
             "ir_artifact_path": ir_path,
             "contract_artifact_path": context.artifacts.contract_path
+        }
+
+    def _handle_validate_schema_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Validate the contract schema."""
+        validator = ContractSchemaValidator()
+        result = validator.validate_contract(context.artifacts.contract_path)
+        if not result["valid"]:
+            raise StageError(f"Contract schema validation failed: {', '.join(result['errors'])}")
+        return {"status": "valid", "schema_version": result["contract"]["provenance"]["schema_version"]}
+
+    def _handle_compare_contracts_stage(self, context: ExecutionContext) -> Dict[str, Any]:
+        """Compare current contract with a baseline."""
+        baseline_path = getattr(context, "baseline_contract_path", None)
+        if not baseline_path:
+             raise PreconditionError("Baseline contract path not provided for comparison.")
+             
+        comparator = ContractComparator()
+        diff = comparator.compare_contracts(baseline_path, context.artifacts.contract_path, context.provenance.execution_id)
+        
+        # Save diff artifact
+        diff_path = os.path.join(os.path.dirname(context.artifacts.contract_path), "contract_diff.json")
+        with open(diff_path, "w") as f:
+            json.dump(diff, f, indent=2)
+            
+        # Generate human-readable report
+        report_gen = CompatibilityReportGenerator()
+        report = report_gen.generate_report(diff)
+        report_path = os.path.join(os.path.dirname(context.artifacts.contract_path), "compatibility_report.txt")
+        with open(report_path, "w") as f:
+            f.write(report)
+            
+        return {
+            "diff_path": diff_path,
+            "report_path": report_path,
+            "summary": diff["summary"]
         }
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
@@ -457,6 +499,26 @@ class CLIOrchestrator:
             help="Generate human-readable report"
         )
         
+        # Command: validate-schema
+        validate_schema_parser = subparsers.add_parser(
+            "validate-schema",
+            parents=[common_args],
+            help="Validate contract schema version and structure"
+        )
+        
+        # Command: compare-contracts
+        compare_parser = subparsers.add_parser(
+            "compare-contracts",
+            parents=[common_args],
+            help="Compare current contract against a baseline"
+        )
+        compare_parser.add_argument(
+            "--baseline",
+            type=str,
+            required=True,
+            help="Path to baseline contract.json"
+        )
+        
         # Command: context
         context_parser = subparsers.add_parser(
             "context",
@@ -647,8 +709,14 @@ class CLIOrchestrator:
             "generate-tests": PipelineStage.GENERATE_TESTS,
             "execute": PipelineStage.EXECUTE,
             "diagnose": PipelineStage.DIAGNOSE,
-            "report": PipelineStage.REPORT
+            "report": PipelineStage.REPORT,
+            "validate-schema": PipelineStage.VALIDATE_SCHEMA,
+            "compare-contracts": PipelineStage.COMPARE_CONTRACTS
         }
+        
+        if args.command == "compare-contracts":
+            # Inject baseline path into context for this stage execution
+            context.baseline_contract_path = args.baseline
         
         stage = stage_map[args.command]
         result = orchestrator.execute_stage(stage)
