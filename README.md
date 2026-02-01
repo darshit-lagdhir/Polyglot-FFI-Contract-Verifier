@@ -62,9 +62,10 @@ int process(struct Config* cfg);
 **Phase 1 Complete** ✅ - Execution Context and Orchestration Layer  
 **Phase 2 Complete** ✅ - Native Interface Ingestion  
 **Phase 3 Complete** ✅ - Intermediate Representation Normalization  
-**Phase 4 Complete** ✅ - Contract Synthesis Engine
+**Phase 4 Complete** ✅ - Contract Synthesis Engine  
+**Phase 5 Complete** ✅ - Contract Schema Versioning
 
-The core verification engine and contract synthesis layer are fully implemented and validated.
+The core verification engine and contract management layer are fully implemented and validated.
 
 ### Phase 1: Execution Context and Orchestration
 - Immutable execution context capturing all environmental details
@@ -114,6 +115,19 @@ See [`docs/IR_NORMALIZATION_IMPLEMENTATION.md`](docs/IR_NORMALIZATION_IMPLEMENTA
 
 See [`docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md`](docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md) for detailed documentation.
 
+### Phase 5: Contract Schema Versioning
+- Semantic versioning (MAJOR.MINOR.PATCH) for contract artifacts
+- Precise contract comparison and diffing (baseline vs. current)
+- Automated compatibility assessment (Breaking, Semantic, Compatible)
+- Human-readable compatibility reports with action recommendations
+- Traceability of ABI changes across native library versions
+
+**Artifacts Produced**:
+- `artifacts/contract_diff.json` - ABI change diff
+- `artifacts/compatibility_report.txt` - Human-readable assessment
+
+See [`docs/CONTRACT_VERSIONING_IMPLEMENTATION.md`](docs/CONTRACT_VERSIONING_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Prerequisites
@@ -152,10 +166,11 @@ python polyglot_ffi_verifier.py generate-tests
 python polyglot_ffi_verifier.py context
 
 # Validate implementations
-python validate_orchestration.py      # Phase 1
-python validate_ingestion.py          # Phase 2
-python validate_ir_normalization.py   # Phase 3
-python validate_contract_synthesis.py # Phase 4
+python validate_orchestration.py       # Phase 1
+python validate_ingestion.py           # Phase 2
+python validate_ir_normalization.py    # Phase 3
+python validate_contract_synthesis.py  # Phase 4
+python validate_contract_versioning.py # Phase 5
 ```
 
 ## Architecture
@@ -191,35 +206,42 @@ The system is organized as a deterministic, artifact-driven pipeline:
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 4: Language Adapter Generation                           │
+│  Stage 4: Contract Schema Versioning                           │
+│  Input:  FFI Contract, (Baseline Contract)                      │
+│  Output: Diff Artifact, Compatibility Report                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 5: Language Adapter Generation                           │
 │  Input:  FFI Contract                                           │
 │  Output: Runtime Verification Adapters                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 5: Test Plan Generation                                  │
+│  Stage 6: Test Plan Generation                                  │
 │  Input:  FFI Contract                                           │
 │  Output: Test Plan                                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 6: Verification Execution                                │
+│  Stage 7: Verification Execution                                │
 │  Input:  Adapters, Test Plan                                   │
 │  Output: Execution Log                                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 7: Diagnostics Mapping                                   │
+│  Stage 8: Diagnostics Mapping                                   │
 │  Input:  Execution Log, Contract                                │
 │  Output: Diagnostics Artifact                                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Stage 8: Report Generation                                     │
+│  Stage 9: Report Generation                                     │
 │  Input:  Diagnostics                                            │
 │  Output: Human-Readable Report                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -234,17 +256,20 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── ingestion/                  # Phase 2: Native interface ingestion
 │   ├── representation/             # Phase 3: IR normalization
 │   ├── synthesis/                  # Phase 4: Contract synthesis
+│   ├── contract/                   # Phase 5: Contract schema versioning
 │   └── ...                         # Additional phases
 ├── docs/
 │   ├── ORCHESTRATION_IMPLEMENTATION.md
 │   ├── INGESTION_IMPLEMENTATION.md
 │   ├── IR_NORMALIZATION_IMPLEMENTATION.md
-│   └── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
+│   ├── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
+│   └── CONTRACT_VERSIONING_IMPLEMENTATION.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       # Phase 1 validation
 ├── validate_ingestion.py           # Phase 2 validation
 ├── validate_ir_normalization.py    # Phase 3 validation
 ├── validate_contract_synthesis.py  # Phase 4 validation
+├── validate_contract_versioning.py # Phase 5 validation
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -256,9 +281,9 @@ Polyglot-FFI-Contract-Verifier/
 - **Phase 2**: Native Interface Ingestion
 - **Phase 3**: Intermediate Representation Normalization
 - **Phase 4**: Contract Synthesis Engine
+- **Phase 5**: Contract Schema Versioning
 
 ### 🔄 In Progress
-- **Phase 5**: Contract Schema & Versioning
 - **Phase 6**: Language Adapter Generation (Python)
 
 ### 📋 Planned
@@ -308,4 +333,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 4 Complete ✅ | **Next**: Phase 5/6 - Contract Schema & Language Adapters
+**Status**: Phase 5 Complete ✅ | **Next**: Phase 6 - Language Adapter Generation
