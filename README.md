@@ -60,9 +60,11 @@ int process(struct Config* cfg);
 ## Current Status
 
 **Phase 1 Complete** ✅ - Execution Context and Orchestration Layer  
-**Phase 2 Complete** ✅ - Native Interface Ingestion
+**Phase 2 Complete** ✅ - Native Interface Ingestion  
+**Phase 3 Complete** ✅ - Intermediate Representation Normalization  
+**Phase 4 Complete** ✅ - Contract Synthesis Engine
 
-The foundational orchestration layer and native interface ingestion are fully implemented and validated.
+The core verification engine and contract synthesis layer are fully implemented and validated.
 
 ### Phase 1: Execution Context and Orchestration
 - Immutable execution context capturing all environmental details
@@ -90,7 +92,27 @@ See [`docs/ORCHESTRATION_IMPLEMENTATION.md`](docs/ORCHESTRATION_IMPLEMENTATION.m
 **Artifacts Produced**:
 - `artifacts/native_interface.json` - Complete ABI description
 
-See [`docs/INGESTION_IMPLEMENTATION.md`](docs/INGESTION_IMPLEMENTATION.md) for detailed documentation.
+### Phase 3: IR Normalization
+- Transformation of native artifacts into canonical, platform-agnostic IR
+- Transitive typedef resolution to underlying primitive types
+- Deterministic type registry with stable, unique type IDs
+- Normalization of struct layouts and function signatures
+- Standardized representation of type qualifiers (const, volatile)
+
+See [`docs/IR_NORMALIZATION_IMPLEMENTATION.md`](docs/IR_NORMALIZATION_IMPLEMENTATION.md) for detailed documentation.
+
+### Phase 4: Contract Synthesis Engine
+- Transformation of structural IR into semantic correctness constraints
+- Rule-based constraint derivation (nullability, ownership, lifetime)
+- Heuristic naming convention analysis (create_, optional_, etc.)
+- Conservative default policies for safety-first verification
+- Deterministic constraint ID generation for traceability
+- Support for buffer-length relationship detection
+
+**Artifacts Produced**:
+- `artifacts/contract.json` - Formal FFI contract
+
+See [`docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md`](docs/CONTRACT_SYNTHESIS_IMPLEMENTATION.md) for detailed documentation.
 
 ## Quick Start
 
@@ -130,8 +152,10 @@ python polyglot_ffi_verifier.py generate-tests
 python polyglot_ffi_verifier.py context
 
 # Validate implementations
-python validate_orchestration.py  # Phase 1
-python validate_ingestion.py      # Phase 2
+python validate_orchestration.py      # Phase 1
+python validate_ingestion.py          # Phase 2
+python validate_ir_normalization.py   # Phase 3
+python validate_contract_synthesis.py # Phase 4
 ```
 
 ## Architecture
@@ -209,15 +233,18 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── core/                       # Phase 1: Orchestration & context
 │   ├── ingestion/                  # Phase 2: Native interface ingestion
 │   ├── representation/             # Phase 3: IR normalization
-│   ├── synthesis/                  # Phase 4: Contract synthesis (planned)
+│   ├── synthesis/                  # Phase 4: Contract synthesis
 │   └── ...                         # Additional phases
 ├── docs/
 │   ├── ORCHESTRATION_IMPLEMENTATION.md
-│   └── INGESTION_IMPLEMENTATION.md
+│   ├── INGESTION_IMPLEMENTATION.md
+│   ├── IR_NORMALIZATION_IMPLEMENTATION.md
+│   └── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
 ├── polyglot_ffi_verifier.py        # Main entry point
 ├── validate_orchestration.py       # Phase 1 validation
 ├── validate_ingestion.py           # Phase 2 validation
 ├── validate_ir_normalization.py    # Phase 3 validation
+├── validate_contract_synthesis.py  # Phase 4 validation
 ├── quick_test.py                   # Quick smoke test
 └── README.md                       # This file
 ```
@@ -228,13 +255,13 @@ Polyglot-FFI-Contract-Verifier/
 - **Phase 1**: Execution Context and Orchestration Layer
 - **Phase 2**: Native Interface Ingestion
 - **Phase 3**: Intermediate Representation Normalization
-
-### 🔄 In Progress
 - **Phase 4**: Contract Synthesis Engine
 
-### 📋 Planned
+### 🔄 In Progress
 - **Phase 5**: Contract Schema & Versioning
 - **Phase 6**: Language Adapter Generation (Python)
+
+### 📋 Planned
 - **Phase 7**: Test Plan Generation
 - **Phase 8**: Verification Engine Execution
 - **Phase 9**: Runtime Monitoring & Crash Handling
@@ -281,4 +308,4 @@ For questions or feedback, please open an issue on GitHub.
 
 ---
 
-**Status**: Phase 3 Complete ✅ | **Next**: Phase 4 - Contract Synthesis
+**Status**: Phase 4 Complete ✅ | **Next**: Phase 5/6 - Contract Schema & Language Adapters

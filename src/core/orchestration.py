@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Any, Callable
 from .execution_context import ExecutionContext, ExecutionContextBuilder
 from src.ingestion.native_interface_analyzer import NativeInterfaceAnalyzer
 from src.representation.ir_normalizer import IRNormalizer
+from src.synthesis.contract_synthesizer import ContractSynthesizer
 
 
 class ErrorType(Enum):
@@ -121,11 +122,18 @@ class PipelineOrchestrator:
         normalizer = IRNormalizer()
         ir_artifact = normalizer.normalize(context)
         
-        # Ensure path is available in context (it should be from ExecutionContextBuilder)
+        # Ensure path is available in context
         ir_path = context.artifacts.intermediate_representation_path
         normalizer.save_artifact(ir_artifact, ir_path)
         
-        return {"ir_artifact_path": ir_path}
+        # Phase 4: Contract Synthesis
+        synthesizer = ContractSynthesizer()
+        contract_artifact = synthesizer.synthesize(context)
+        
+        return {
+            "ir_artifact_path": ir_path,
+            "contract_artifact_path": context.artifacts.contract_path
+        }
     
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """
