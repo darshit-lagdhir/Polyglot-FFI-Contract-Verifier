@@ -171,6 +171,19 @@ See [`docs/TEST_PLAN_GENERATION_IMPLEMENTATION.md`](docs/TEST_PLAN_GENERATION_IM
 
 See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md) for detailed documentation.
 
+### : Runtime Monitoring and Crash Detection
+- Subprocess-based isolation (crashes don't terminate the verifier)
+- Platform-specific failure detection (Windows SEH, Linux Signals)
+- Heuristic classification of memory safety violations (Null deref, Buffer overflow)
+- Detailed crash context capture (address, registers, timing)
+- Automated crash report generation and execution log augmentation
+
+**Artifacts Produced**:
+- `artifacts/crashes/` - Directory of detailed crash reports
+- `artifacts/execution_log.json` - Augmented with crash diagnostics
+
+See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
+
 ## Quick Start
 
 ### Requirements
@@ -217,6 +230,7 @@ python validate_contract_versioning.py #
 python validate_adapter_generation.py  # 
 python validate_test_plan_generation.py # 
 python validate_verification_execution.py # 
+python validate_runtime_monitoring.py     # 
 ```
 
 ## Architecture
@@ -332,23 +346,20 @@ Polyglot-FFI-Contract-Verifier/
 ## Development Roadmap
 
 ### ✅ Completed
-- ****: Execution Context and Orchestration Layer
-- ****: Native Interface Ingestion
-- ****: Intermediate Representation Normalization
-- ****: Contract Synthesis Engine
-- ****: Contract Schema Versioning
-- ****: Language Adapter Generation (Python)
-- ****: Test Plan Generation
-- ****: Verification Execution
+- [x] **: Orchestration & Infrastructure** - Functional
+- [x] **: Native Interface Ingestion** - Functional
+- [x] **: IR Normalization** - Functional
+- [x] **: Contract Synthesis** - Functional
+- [x] **: Contract Schema Versioning** - Functional
+- [x] **: Language Adapter Generation** - Functional
+- [x] **: Test Plan Generation** - Functional
+- [x] **: Verification Execution** - Functional
+- [x] **: Runtime Monitoring & Crash Detection** - Functional
 
 ### 🔄 In Progress
-- ****: Runtime Monitoring
+- **0**: Diagnostics Mapping
 
 ### 📋 Planned
-- ****: Test Plan Generation
-- ****: Verification Engine Execution
-- ****: Runtime Monitoring & Crash Handling
-- **0**: Diagnostics Mapping
 - **1**: Reporting (Human-Readable)
 - **2**: Machine-Readable Output & CI Integration
 - **3**: Cross-Cutting Concerns
