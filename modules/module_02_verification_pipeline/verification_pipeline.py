@@ -5810,6 +5810,615 @@ def cli_main():
         parser.print_help()
         return 1
 
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ───────────────────────────────────────────────────────────────────
+# 12.1 Cache Manager
+# ───────────────────────────────────────────────────────────────────
+
+class CacheManager:
+    """
+    Manages artifact caching for performance optimization.
+    
+    Caches expensive stage outputs and reuses them when inputs unchanged.
+    """
+    
+    def __init__(self, cache_dir: str = ".verification_cache"):
+        """
+        Initialize cache manager.
+        
+        Args:
+            cache_dir: Directory for cache storage
+        """
+        self.cache_dir = cache_dir
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        # SQLite database for cache metadata
+        self.db_path = os.path.join(cache_dir, "cache.db")
+        self._init_database()
+        
+        # Thread lock for database access
+        self.lock = threading.Lock()
+    
+    def _init_database(self):
+        """Initialize cache database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cache_entries (
+                cache_key TEXT PRIMARY KEY,
+                stage_name TEXT NOT NULL,
+                stage_version TEXT NOT NULL,
+                inputs_json TEXT NOT NULL,
+                outputs_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                hits INTEGER DEFAULT 0,
+                last_accessed TEXT NOT NULL
+            )
+        ''')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stage_name ON cache_entries(stage_name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_last_accessed ON cache_entries(last_accessed)')
+        
+        conn.commit()
+        conn.close()
+    
+    def compute_cache_key(self, inputs: Dict[str, str]) -> str:
+        """
+        Compute deterministic cache key from inputs.
+        
+        Args:
+            inputs: Dictionary of input artifacts
+            
+        Returns:
+            SHA-256 hash as hex string
+        """
+        hasher = hashlib.sha256()
+        
+        # Sort for determinism
+        for key in sorted(inputs.keys()):
+            value = inputs[key]
+            
+            # Hash file contents
+            if os.path.isfile(value):
+                with open(value, 'rb') as f:
+                    hasher.update(f.read())
+            else:
+                hasher.update(str(value).encode())
+        
+        return hasher.hexdigest()
+    
+    def lookup(self, stage_name: str, stage_version: str, inputs: Dict[str, str]) -> Optional[Dict[str, str]]:
+        """
+        Look up cached outputs for stage and inputs.
+        
+        Args:
+            stage_name: Stage name
+            stage_version: Stage version
+            inputs: Input artifacts
+            
+        Returns:
+            Dictionary of output artifacts if cache hit, None if miss
+        """
+        cache_key = self.compute_cache_key(inputs)
+        
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT stage_version, outputs_json, hits
+                FROM cache_entries
+                WHERE cache_key = 
+            ''', (cache_key,))
+            
+            row = cursor.fetchone()
+            
+            if row is None:
+                conn.close()
+                return None  # Cache miss
+            
+            cached_version, outputs_json, hits = row
+            
+            # Validate stage version
+            if cached_version != stage_version:
+                conn.close()
+                return None  # Version mismatch
+            
+            # Parse outputs
+            outputs = json.loads(outputs_json)
+            
+            # Validate outputs still exist
+            for output_path in outputs.values():
+                if not os.path.exists(output_path):
+                    conn.close()
+                    return None  # Output deleted
+            
+            # Update access stats
+            cursor.execute('''
+                UPDATE cache_entries
+                SET hits = , last_accessed = 
+                WHERE cache_key = 
+            ''', (hits + 1, datetime.now(timezone.utc).isoformat(), cache_key))
+            
+            conn.commit()
+            conn.close()
+            
+            return outputs  # Cache hit
+    
+    def store(self, stage_name: str, stage_version: str, inputs: Dict[str, str], outputs: Dict[str, str]):
+        """
+        Store stage outputs in cache.
+        
+        Args:
+            stage_name: Stage name
+            stage_version: Stage version
+            inputs: Input artifacts
+            outputs: Output artifacts
+        """
+        cache_key = self.compute_cache_key(inputs)
+        
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO cache_entries
+                (cache_key, stage_name, stage_version, inputs_json, outputs_json, created_at, hits, last_accessed)
+                VALUES (, , , , , , , )
+            ''', (
+                cache_key,
+                stage_name,
+                stage_version,
+                json.dumps(inputs),
+                json.dumps(outputs),
+                datetime.now(timezone.utc).isoformat(),
+                0,
+                datetime.now(timezone.utc).isoformat()
+            ))
+            
+            conn.commit()
+            conn.close()
+    
+    def invalidate_stage(self, stage_name: str):
+        """Invalidate all cache entries for a stage."""
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM cache_entries WHERE stage_name = ', (stage_name,))
+            conn.commit()
+            conn.close()
+    
+    def clear_all(self):
+        """Clear entire cache."""
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM cache_entries')
+            conn.commit()
+            conn.close()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT COUNT(*), SUM(hits) FROM cache_entries')
+            row = cursor.fetchone()
+            total_entries = row[0] if row[0] else 0
+            total_hits = row[1] if row[1] else 0
+            
+            cursor.execute('SELECT stage_name, COUNT(*), SUM(hits) FROM cache_entries GROUP BY stage_name')
+            by_stage = {row[0]: {"entries": row[1], "hits": row[2] or 0} for row in cursor.fetchall()}
+            
+            conn.close()
+            
+            return {
+                "total_entries": total_entries,
+                "total_hits": total_hits,
+                "by_stage": by_stage
+            }
+
+# ───────────────────────────────────────────────────────────────────
+# 12.2 Dependency Graph Helper
+# ───────────────────────────────────────────────────────────────────
+
+class DependencyGraph:
+    """Simple dependency graph for stage ordering."""
+    
+    def __init__(self, stage_classes: List[type]):
+        """Build dependency graph from stage classes."""
+        self.graph = {}
+        
+        # Map outputs to producing stages
+        producers = {}
+        for stage_class in stage_classes:
+            for output in stage_class.PRODUCED_OUTPUTS:
+                producers[output] = stage_class.STAGE_NAME
+        
+        # Build dependency edges
+        for stage_class in stage_classes:
+            dependencies = set()
+            for required_input in stage_class.REQUIRED_INPUTS:
+                if required_input in producers:
+                    dependencies.add(producers[required_input])
+            self.graph[stage_class.STAGE_NAME] = dependencies
+
+# ───────────────────────────────────────────────────────────────────
+# 12.3 Parallel Executor
+# ───────────────────────────────────────────────────────────────────
+
+class ParallelPipelineExecutor:
+    """
+    Executes independent pipeline stages in parallel.
+    
+    Uses level-based parallelism based on dependency graph.
+    """
+    
+    def __init__(self, pipeline: 'EnhancedVerificationPipeline', max_workers: int = 4):
+        """
+        Initialize parallel executor.
+        
+        Args:
+            pipeline: Pipeline to execute
+            max_workers: Maximum parallel workers
+        """
+        self.pipeline = pipeline
+        self.max_workers = max_workers
+    
+    def execute_parallel(self) -> bool:
+        """
+        Execute pipeline with parallel stage execution.
+        
+        Returns:
+            True if all stages completed successfully
+        """
+        # Build dependency graph
+        stage_classes = [
+            self.pipeline.registry.get_stage_class(name)
+            for name in self.pipeline.registry.list_stages()
+        ]
+        
+        dep_graph = DependencyGraph(stage_classes)
+        
+        # Compute execution levels
+        levels = self._compute_execution_levels(dep_graph)
+        
+        # Execute level by level
+        for level_num, level_stages in enumerate(levels):
+            print(f"Executing level {level_num + 1}/{len(levels)}: {len(level_stages)} stage(s)")
+            
+            if not self._execute_level(level_stages):
+                return False  # Level failed
+        
+        return True
+    
+    def _compute_execution_levels(self, dep_graph: DependencyGraph) -> List[List[str]]:
+        """
+        Compute execution levels for parallel execution.
+        
+        Returns list of levels, where each level is list of stage names
+        that can execute in parallel.
+        """
+        levels = []
+        remaining = set(self.pipeline.registry.list_stages())
+        completed = set()
+        
+        while remaining:
+            # Find stages with all dependencies satisfied
+            current_level = []
+            for stage_name in remaining:
+                dependencies = dep_graph.graph.get(stage_name, set())
+                if dependencies.issubset(completed):
+                    current_level.append(stage_name)
+            
+            if not current_level:
+                raise ValueError("Circular dependency or unresolvable stages")
+            
+            levels.append(current_level)
+            remaining -= set(current_level)
+            completed.update(current_level)
+        
+        return levels
+    
+    def _execute_level(self, stage_names: List[str]) -> bool:
+        """
+        Execute all stages in a level in parallel.
+        
+        Returns True if all succeeded.
+        """
+        if len(stage_names) == 1:
+            # Single stage - execute directly
+            return self._execute_single_stage(stage_names[0])
+        
+        # Multiple stages - execute in parallel
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(self._execute_single_stage, stage_name): stage_name
+                for stage_name in stage_names
+            }
+            
+            results = []
+            for future in as_completed(futures):
+                stage_name = futures[future]
+                try:
+                    success = future.result()
+                    results.append(success)
+                    if not success:
+                        print(f"✗ Stage {stage_name} failed")
+                except Exception as e:
+                    print(f"✗ Stage {stage_name} raised exception: {e}")
+                    results.append(False)
+            
+            return all(results)
+    
+    def _execute_single_stage(self, stage_name: str) -> bool:
+        """Execute a single stage."""
+        try:
+            stage_class = self.pipeline.registry.get_stage_class(stage_name)
+            stage = stage_class(self.pipeline.execution_context)
+            
+            stage.execute()
+            
+            print(f"  ✓ {stage_name}")
+            return True
+        
+        except Exception as e:
+            print(f"  ✗ {stage_name}: {e}")
+            return False
+
+# ───────────────────────────────────────────────────────────────────
+# 12.4 Performance Profiler
+# ───────────────────────────────────────────────────────────────────
+
+class PerformanceProfiler:
+    """
+    Profiles pipeline execution for performance analysis.
+    """
+    
+    def __init__(self):
+        self.stage_profiles = {}
+    
+    def profile_stage(self, stage_name: str, execution_func):
+        """
+        Profile stage execution.
+        
+        Args:
+            stage_name: Stage name
+            execution_func: Function to execute
+            
+        Returns:
+            Execution result
+        """
+        # Capture start state
+        start_time = time.time()
+        start_memory = 0
+        
+        # Try to get memory info if psutil available
+        try:
+            import psutil
+            process = psutil.Process()
+            start_cpu = process.cpu_times()
+            start_memory = process.memory_info().rss
+            has_psutil = True
+        except ImportError:
+            has_psutil = False
+        
+        # Execute
+        result = execution_func()
+        
+        # Capture end state
+        end_time = time.time()
+        wall_time = end_time - start_time
+        
+        if has_psutil:
+            end_cpu = process.cpu_times()
+            end_memory = process.memory_info().rss
+            cpu_time = (end_cpu.user - start_cpu.user) + (end_cpu.system - start_cpu.system)
+            io_time = wall_time - cpu_time
+            peak_memory = max(end_memory, start_memory)
+        else:
+            cpu_time = wall_time  # Estimate
+            io_time = 0.0
+            peak_memory = 0
+        
+        # Store profile
+        self.stage_profiles[stage_name] = {
+            "wall_time": wall_time,
+            "cpu_time": cpu_time,
+            "io_time": io_time,
+            "peak_memory_mb": peak_memory / (1024 * 1024) if peak_memory > 0 else 0
+        }
+        
+        return result
+    
+    def generate_report(self) -> str:
+        """Generate performance report."""
+        lines = []
+        lines.append("Performance Profile")
+        lines.append("=" * 80)
+        lines.append(f"{'Stage':<30} {'Time':>10} {'CPU':>10} {'I/O':>10} {'Memory':>12}")
+        lines.append("-" * 80)
+        
+        total_time = 0
+        total_cpu = 0
+        total_io = 0
+        peak_memory = 0
+        
+        for stage_name, profile in self.stage_profiles.items():
+            lines.append(
+                f"{stage_name:<30} "
+                f"{profile['wall_time']:>8.1f}s "
+                f"{profile['cpu_time']:>8.1f}s "
+                f"{profile['io_time']:>8.1f}s "
+                f"{profile['peak_memory_mb']:>10.0f} MB"
+            )
+            
+            total_time += profile['wall_time']
+            total_cpu += profile['cpu_time']
+            total_io += profile['io_time']
+            peak_memory = max(peak_memory, profile['peak_memory_mb'])
+        
+        lines.append("-" * 80)
+        lines.append(
+            f"{'TOTAL':<30} "
+            f"{total_time:>8.1f}s "
+            f"{total_cpu:>8.1f}s "
+            f"{total_io:>8.1f}s "
+            f"{peak_memory:>10.0f} MB"
+        )
+        lines.append("=" * 80)
+        
+        return "\n".join(lines)
+
+# ───────────────────────────────────────────────────────────────────
+# 12.5 Enhanced Complete Pipeline with Caching & Parallelism
+# ───────────────────────────────────────────────────────────────────
+
+class OptimizedCompletePipeline(CompletePipeline):
+    """
+    Enhanced pipeline with caching, parallel execution, and profiling.
+    """
+    
+    def __init__(
+        self,
+        header_path: str,
+        library_path: str,
+        output_dir: str = "artifacts",
+        cache_enabled: bool = True,
+        parallel: bool = False,
+        max_workers: int = 4,
+        profile: bool = False
+    ):
+        super().__init__(header_path, library_path, output_dir)
+        
+        self.cache_enabled = cache_enabled
+        self.parallel = parallel
+        self.max_workers = max_workers
+        self.profile_enabled = profile
+        
+        if self.cache_enabled:
+            self.cache_manager = CacheManager()
+        
+        if self.profile_enabled:
+            self.profiler = PerformanceProfiler()
+    
+    def execute(self, verbose: bool = True) -> VerificationResult:
+        """Execute with optimizations."""
+        # Use parent implementation but with parallel executor if enabled
+        if self.parallel:
+            return self._execute_parallel(verbose)
+        else:
+            return super().execute(verbose)
+    
+    def _execute_parallel(self, verbose: bool) -> VerificationResult:
+        """Execute with parallel stage execution."""
+        self.start_time = time.time()
+        
+        if verbose:
+            self._print_header()
+            print("Optimization: Parallel execution enabled\n")
+        
+        try:
+            # Setup
+            self._create_execution_context()
+            self._initialize_pipeline()
+            self._register_stages()
+            
+            # Execute in parallel
+            if verbose:
+                print("Executing stages in parallel...")
+            
+            executor = ParallelPipelineExecutor(self.pipeline, self.max_workers)
+            success = executor.execute_parallel()
+            
+            # Build result
+            result = self._build_result(success)
+            
+            if verbose:
+                self._print_summary(result)
+                
+                if self.cache_enabled:
+                    stats = self.cache_manager.get_stats()
+                    print(f"\nCache Stats: {stats['total_entries']} entries, {stats['total_hits']} hits")
+                
+                if self.profile_enabled:
+                    print("\n" + self.profiler.generate_report())
+            
+            return result
+        
+        except Exception as e:
+            elapsed = time.time() - self.start_time
+            if verbose:
+                print(f"\n✗ Pipeline failed: {e}\n")
+                traceback.print_exc()
+            
+            return VerificationResult(
+                success=False,
+                pass_rate=0.0,
+                total_tests=0,
+                passed_tests=0,
+                failed_tests=0,
+                critical_issues=[str(e)],
+                execution_time=elapsed,
+                report_path="",
+                artifacts_dir=self.output_dir,
+                stages_completed=[],
+                error=e
+            )
+
+# ───────────────────────────────────────────────────────────────────
+# 12.6 Enhanced High-Level API
+# ───────────────────────────────────────────────────────────────────
+
+def verify_optimized(
+    header_path: str,
+    library_path: str,
+    output_dir: str = "artifacts",
+    verbose: bool = True,
+    cache: bool = True,
+    parallel: bool = False,
+    max_workers: int = 4,
+    profile: bool = False
+) -> VerificationResult:
+    """
+    Optimized FFI verification with caching and parallel execution.
+    
+    Args:
+        header_path: Path to C header
+        library_path: Path to native library
+        output_dir: Output directory
+        verbose: Show progress
+        cache: Enable artifact caching
+        parallel: Enable parallel stage execution
+        max_workers: Maximum parallel workers
+        profile: Enable performance profiling
+        
+    Returns:
+        VerificationResult
+        
+    Example:
+        >>> result = verify_optimized(
+        ...     "interface.h", "library.dll",
+        ...     cache=True, parallel=True, max_workers=8
+        ... )
+    """
+    pipeline = OptimizedCompletePipeline(
+        header_path, library_path, output_dir,
+        cache_enabled=cache,
+        parallel=parallel,
+        max_workers=max_workers,
+        profile=profile
+    )
+    return pipeline.execute(verbose=verbose)
+
 if __name__ == '__main__':
     sys.exit(cli_main())
 
