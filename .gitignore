@@ -40,9 +40,20 @@ artifacts/
 Thumbs.db
 .DS_Store
 
-# Cleanup artifacts
+# ============================================================================
+# Cleanup artifacts and archives
+# ============================================================================
 src_old_backup/
 src_old_backup.tar.gz
 polyglot_ffi_verifier_old.py
 cleanup_log.txt
 
+# Archive directory (original modular code - kept locally only)
+_archive_original/
+
+# Cleanup scripts (temporary)
+cleanup_after_consolidation.py
+cleanup_smart.py
+
+# Build directory
+_build/
