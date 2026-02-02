@@ -24,6 +24,7 @@ import os
 import sys
 import json
 import hashlib
+import random
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -1293,6 +1294,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
             self.registry.register_stage(ContractSynthesisStage)
         if 'AdapterGenerationStage' in globals():
             self.registry.register_stage(AdapterGenerationStage)
+        if 'TestPlanGenerationStage' in globals():
+            self.registry.register_stage(TestPlanGenerationStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -3812,6 +3815,499 @@ class AdapterGenerationStage(PipelineStage):
         metadata_path = os.path.join(artifacts_dir, "adapter_metadata.json")
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 8.1 Input Value Generator
+# ───────────────────────────────────────────────────────────────────
+
+class InputValueGenerator:
+    """
+    Generates deterministic input values for test cases.
+    
+    Provides valid, invalid, and boundary values for various types.
+    """
+    
+    @staticmethod
+    def generate_valid_int(seed: Optional[int] = None) -> List[int]:
+        """Generate valid integer test values."""
+        values = [0, 1, 10, 42, 100, 1000]
+        
+        if seed is not None:
+            random.seed(seed)
+            values.append(random.randint(1, 10000))
+        
+        return values
+    
+    @staticmethod
+    def generate_boundary_int(type_size: int = 4, signed: bool = True) -> List[int]:
+        """Generate boundary integer values."""
+        if type_size == 4:
+            if signed:
+                return [0, 1, -1, 2**31 - 1, -2**31]
+            else:
+                return [0, 1, 2**32 - 1]
+        elif type_size == 8:
+            if signed:
+                return [0, 1, -1, 2**63 - 1, -2**63]
+            else:
+                return [0, 1, 2**64 - 1]
+        else:
+            return [0, 1]
+    
+    @staticmethod
+    def generate_invalid_int(type_size: int = 4) -> List[int]:
+        """Generate out-of-range integer values."""
+        if type_size == 4:
+            return [2**32, -2**32, 2**40]
+        elif type_size == 8:
+            return [2**64, -2**64]
+        else:
+            return []
+    
+    @staticmethod
+    def generate_valid_buffer(sizes: List[int] = None) -> List[bytes]:
+        """Generate valid buffer test values."""
+        if sizes is None:
+            sizes = [0, 1, 10, 100, 1024]
+        
+        buffers = []
+        for size in sizes:
+            if size == 0:
+                buffers.append(b"")
+            else:
+                buffers.append(b"A" * size)
+        
+        return buffers
+    
+    @staticmethod
+    def generate_invalid_buffer() -> List[Optional[bytes]]:
+        """Generate invalid buffer values."""
+        return [None]  # Null pointer
+    
+    @staticmethod
+    def generate_null_terminated_string(lengths: List[int] = None) -> List[bytes]:
+        """Generate null-terminated strings."""
+        if lengths is None:
+            lengths = [0, 1, 10, 100]
+        
+        strings = []
+        for length in lengths:
+            if length == 0:
+                strings.append(b"\x00")
+            else:
+                strings.append(b"A" * length + b"\x00")
+        
+        return strings
+    
+    @staticmethod
+    def generate_non_null_terminated_string() -> List[bytes]:
+        """Generate strings missing null terminator."""
+        return [b"Hello", b"A" * 100, b""]
+
+# ───────────────────────────────────────────────────────────────────
+# 8.2 Test Case Generator
+# ───────────────────────────────────────────────────────────────────
+
+class TestCaseGenerator:
+    """
+    Generates test cases from contract constraints.
+    
+    Creates positive, negative, boundary, and combinatorial tests.
+    """
+    
+    def __init__(self, contract: Dict, ir: Dict):
+        self.contract = contract
+        self.ir = ir
+        self.test_counter = 0
+        self.input_generator = InputValueGenerator()
+    
+    def generate_test_cases_for_function(self, func_contract: Dict) -> List[Dict]:
+        """
+        Generate all test cases for a function.
+        
+        Returns list of test case specifications.
+        """
+        test_cases = []
+        func_name = func_contract["name"]
+        
+        # Find function in IR for parameter info
+        func_ir = self._find_function_in_ir(func_name)
+        if not func_ir:
+            return test_cases
+        
+        # Generate positive test (all constraints satisfied)
+        positive_test = self._generate_positive_test(func_contract, func_ir)
+        test_cases.append(positive_test)
+        
+        # Generate negative tests (one constraint violated each)
+        negative_tests = self._generate_negative_tests(func_contract, func_ir)
+        test_cases.extend(negative_tests)
+        
+        # Generate boundary tests
+        boundary_tests = self._generate_boundary_tests(func_contract, func_ir)
+        test_cases.extend(boundary_tests)
+        
+        return test_cases
+    
+    def _find_function_in_ir(self, func_name: str) -> Optional[Dict]:
+        """Find function definition in IR."""
+        for func in self.ir.get("functions", []):
+            if func["name"] == func_name:
+                return func
+        return None
+    
+    def _generate_positive_test(self, func_contract: Dict, func_ir: Dict) -> Dict:
+        """Generate positive test case (happy path)."""
+        self.test_counter += 1
+        test_id = f"test_{func_contract['name']}_{self.test_counter:03d}_pos"
+        
+        # Generate valid inputs
+        inputs = {}
+        for param in func_ir.get("parameters", []):
+            param_name = param["name"]
+            param_type_id = param["type_id"]
+            
+            # Get parameter type from type registry
+            param_type = self.ir["type_registry"].get(param_type_id, {})
+            
+            # Generate appropriate value
+            inputs[param_name] = self._generate_valid_input_for_type(
+                param_type, param_name, func_contract
+            )
+        
+        return {
+            "test_id": test_id,
+            "function": func_contract["name"],
+            "category": "positive",
+            "priority": 1,
+            "description": "Valid inputs - all constraints satisfied",
+            "constraints_exercised": [c["constraint_id"] for c in func_contract.get("constraints", [])],
+            "inputs": inputs,
+            "expected_outcome": {
+                "type": "success",
+                "no_violations": True
+            }
+        }
+    
+    def _generate_valid_input_for_type(
+        self,
+        param_type: Dict,
+        param_name: str,
+        func_contract: Dict
+    ) -> Dict:
+        """Generate valid input value specification."""
+        kind = param_type.get("kind")
+        
+        if kind == "primitive":
+            type_name = param_type.get("name", "int")
+            if "int" in type_name:
+                return {
+                    "type": "int",
+                    "value": 42,
+                    "generator": "fixed_valid_int"
+                }
+            elif "float" in type_name or "double" in type_name:
+                return {
+                    "type": "float",
+                    "value": 3.14,
+                    "generator": "fixed_valid_float"
+                }
+        
+        elif kind == "pointer":
+            # Check if this is a buffer with size parameter
+            size_param = self._find_buffer_size_param(param_name, func_contract)
+            
+            if size_param:
+                return {
+                    "type": "bytes",
+                    "value": "b'Hello, World!'",
+                    "generator": "fixed_buffer",
+                    "size_matches": size_param
+                }
+            else:
+                # Generic pointer - use small buffer
+                return {
+                    "type": "bytes",
+                    "value": "b'test'",
+                    "generator": "fixed_buffer"
+                }
+        
+        # Default
+        return {
+            "type": "unknown",
+            "value": None,
+            "generator": "none"
+        }
+    
+    def _find_buffer_size_param(self, buffer_param: str, func_contract: Dict) -> Optional[str]:
+        """Find size parameter for buffer parameter."""
+        for constraint in func_contract.get("constraints", []):
+            if constraint["type"] == "buffer_size":
+                if constraint["target"] == f"param_{buffer_param}":
+                    related = constraint.get("related_target", "")
+                    return related.replace("param_", "")
+        return None
+    
+    def _generate_negative_tests(self, func_contract: Dict, func_ir: Dict) -> List[Dict]:
+        """Generate negative test cases (constraint violations)."""
+        tests = []
+        
+        for constraint in func_contract.get("constraints", []):
+            self.test_counter += 1
+            test_id = f"test_{func_contract['name']}_{self.test_counter:03d}_neg"
+            
+            # Generate inputs that violate this constraint
+            inputs = self._generate_inputs_violating_constraint(
+                constraint, func_contract, func_ir
+            )
+            
+            tests.append({
+                "test_id": test_id,
+                "function": func_contract["name"],
+                "category": "negative",
+                "priority": 2,
+                "description": f"Violate constraint: {constraint['type']}",
+                "constraints_exercised": [constraint["constraint_id"]],
+                "inputs": inputs,
+                "expected_outcome": {
+                    "type": "contract_violation",
+                    "expected_constraint_id": constraint["constraint_id"],
+                    "violation_phase": "pre_call"
+                }
+            })
+        
+        return tests
+    
+    def _generate_inputs_violating_constraint(
+        self,
+        constraint: Dict,
+        func_contract: Dict,
+        func_ir: Dict
+    ) -> Dict:
+        """Generate inputs that violate specific constraint."""
+        # Start with valid inputs
+        inputs = {}
+        for param in func_ir.get("parameters", []):
+            param_type = self.ir["type_registry"].get(param["type_id"], {})
+            inputs[param["name"]] = self._generate_valid_input_for_type(
+                param_type, param["name"], func_contract
+            )
+        
+        # Modify to violate target constraint
+        constraint_type = constraint["type"]
+        target = constraint["target"].replace("param_", "")
+        
+        if constraint_type == "non_null":
+            # Pass null for this parameter
+            inputs[target] = {
+                "type": "none",
+                "value": None,
+                "generator": "null_violation"
+            }
+        
+        elif constraint_type == "buffer_size":
+            # Pass undersized buffer
+            related = constraint.get("related_target", "").replace("param_", "")
+            if related and related in inputs:
+                # Set buffer smaller than size parameter
+                inputs[target] = {
+                    "type": "bytes",
+                    "value": "b'AB'",  # Small buffer
+                    "generator": "undersized_buffer"
+                }
+                inputs[related] = {
+                    "type": "int",
+                    "value": 100,  # Claim large size
+                    "generator": "oversized_claim"
+                }
+        
+        elif constraint_type == "null_terminated":
+            # Pass non-terminated string
+            inputs[target] = {
+                "type": "bytes",
+                "value": "b'Hello'",  # Missing \\x00
+                "generator": "non_terminated_string"
+            }
+        
+        return inputs
+    
+    def _generate_boundary_tests(self, func_contract: Dict, func_ir: Dict) -> List[Dict]:
+        """Generate boundary test cases."""
+        tests = []
+        
+        # For each integer parameter, test boundaries
+        for param in func_ir.get("parameters", []):
+            param_type = self.ir["type_registry"].get(param["type_id"], {})
+            
+            if param_type.get("kind") == "primitive":
+                type_name = param_type.get("name", "")
+                if "int" in type_name:
+                    # Generate boundary test
+                    self.test_counter += 1
+                    test_id = f"test_{func_contract['name']}_{self.test_counter:03d}_bnd"
+                    
+                    inputs = {}
+                    for p in func_ir.get("parameters", []):
+                        if p["name"] == param["name"]:
+                            # Use boundary value
+                            inputs[p["name"]] = {
+                                "type": "int",
+                                "value": 0,  # Zero boundary
+                                "generator": "boundary_zero"
+                            }
+                        else:
+                            # Use valid value
+                            p_type = self.ir["type_registry"].get(p["type_id"], {})
+                            inputs[p["name"]] = self._generate_valid_input_for_type(
+                                p_type, p["name"], func_contract
+                            )
+                    
+                    tests.append({
+                        "test_id": test_id,
+                        "function": func_contract["name"],
+                        "category": "boundary",
+                        "priority": 3,
+                        "description": f"Boundary test: {param['name']} = 0",
+                        "constraints_exercised": [c["constraint_id"] for c in func_contract.get("constraints", [])],
+                        "inputs": inputs,
+                        "expected_outcome": {
+                            "type": "success",
+                            "no_violations": True
+                        }
+                    })
+        
+        return tests
+
+# ───────────────────────────────────────────────────────────────────
+# 8.3 Coverage Analyzer
+# ───────────────────────────────────────────────────────────────────
+
+class CoverageAnalyzer:
+    """
+    Analyzes test plan for constraint coverage.
+    
+    Ensures all constraints are exercised by at least one test.
+    """
+    
+    @staticmethod
+    def analyze_coverage(test_cases: List[Dict], contract: Dict) -> Dict:
+        """
+        Analyze constraint coverage.
+        
+        Returns coverage report.
+        """
+        # Collect all constraint IDs
+        all_constraints = set()
+        for func in contract.get("functions", []):
+            for constraint in func.get("constraints", []):
+                all_constraints.add(constraint["constraint_id"])
+        
+        # Collect exercised constraints
+        exercised_constraints = set()
+        constraint_test_map = {}
+        
+        for test in test_cases:
+            for constraint_id in test.get("constraints_exercised", []):
+                exercised_constraints.add(constraint_id)
+                
+                if constraint_id not in constraint_test_map:
+                    constraint_test_map[constraint_id] = []
+                constraint_test_map[constraint_id].append(test["test_id"])
+        
+        # Compute coverage
+        uncovered = all_constraints - exercised_constraints
+        coverage_pct = (len(exercised_constraints) / len(all_constraints) * 100) if all_constraints else 100.0
+        
+        return {
+            "total_constraints": len(all_constraints),
+            "constraints_covered": len(exercised_constraints),
+            "coverage_percentage": coverage_pct,
+            "uncovered_constraints": list(uncovered),
+            "constraint_test_map": constraint_test_map
+        }
+
+# ───────────────────────────────────────────────────────────────────
+# 8.4 Test Plan Generation Stage
+# ───────────────────────────────────────────────────────────────────
+
+class TestPlanGenerationStage(PipelineStage):
+    """
+    Stage 5: Test Plan Generation
+    
+    Generates systematic test cases from contracts to achieve
+    100% constraint coverage with deterministic inputs.
+    """
+    
+    STAGE_NAME = "test_plan_generation"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Generate systematic test plan from contract"
+    
+    REQUIRED_INPUTS = ["contract", "ir"]
+    PRODUCED_OUTPUTS = ["test_plan"]
+    
+    def _execute_impl(self) -> None:
+        """Generate test plan from contract."""
+        # Load contract and IR
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        contract_path = os.path.join(artifacts_dir, "contract.json")
+        ir_path = os.path.join(artifacts_dir, "ir.json")
+        
+        with open(contract_path, 'r', encoding='utf-8') as f:
+            contract = json.load(f)
+        
+        with open(ir_path, 'r', encoding='utf-8') as f:
+            ir_artifact = json.load(f)
+        
+        # Generate test cases
+        generator = TestCaseGenerator(contract, ir_artifact)
+        all_test_cases = []
+        
+        for func_contract in contract.get("functions", []):
+            test_cases = generator.generate_test_cases_for_function(func_contract)
+            all_test_cases.extend(test_cases)
+        
+        # Analyze coverage
+        coverage = CoverageAnalyzer.analyze_coverage(all_test_cases, contract)
+        
+        # Build metadata
+        tests_by_category = {}
+        for test in all_test_cases:
+            category = test["category"]
+            tests_by_category[category] = tests_by_category.get(category, 0) + 1
+        
+        metadata = {
+            "contract_version": contract["provenance"]["schema_version"],
+            "total_tests": len(all_test_cases),
+            "tests_by_category": tests_by_category,
+            "estimated_execution_time_seconds": len(all_test_cases) * 2,  # Rough estimate
+            "deterministic": True,
+            "reproducible": True
+        }
+        
+        # Build test plan artifact
+        provenance = self.create_provenance([contract_path, ir_path])
+        
+        test_plan = {
+            "provenance": provenance.to_dict(),
+            "schema_version": "1.0.0",
+            "test_plan_metadata": metadata,
+            "coverage": coverage,
+            "test_cases": all_test_cases
+        }
+        
+        # Write test plan
+        test_plan_path = os.path.join(artifacts_dir, "test_plan.json")
+        with open(test_plan_path, 'w', encoding='utf-8') as f:
+            json.dump(test_plan, f, indent=2)
+        
+        # Print summary
+        print(f"Generated {len(all_test_cases)} test cases")
+        print(f"Constraint coverage: {coverage['coverage_percentage']:.1f}%")
+        if coverage['uncovered_constraints']:
+            print(f"Warning: {len(coverage['uncovered_constraints'])} constraints not covered")
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification

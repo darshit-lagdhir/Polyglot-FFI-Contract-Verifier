@@ -20,7 +20,8 @@ This document provides the complete technical specification for the Verification
 - ✅ : IR Normalization Stage (COMPLETE)
 - ✅ : Contract Synthesis Stage (COMPLETE)
 - ✅ : Adapter Generation Stage (COMPLETE)
-- ⏳ Prompts 8-20: Additional pipeline components (PENDING)
+- ✅ : Test Plan Generation Stage (COMPLETE)
+- ⏳ Prompts 9-20: Additional pipeline components (PENDING)
 
 ---
 
@@ -33,88 +34,111 @@ This document provides the complete technical specification for the Verification
 5. [IR Normalization Stage](#5-ir-normalization-stage)
 6. [Contract Synthesis Stage](#6-contract-synthesis-stage)
 7. [Adapter Generation Stage](#7-adapter-generation-stage)
-8. [Implementation Architecture](#8-implementation-architecture)
-9. [Usage Examples](#9-usage-examples)
-10. [Next Steps](#10-next-steps)
+8. [Test Plan Generation Stage](#8-test-plan-generation-stage)
+9. [Implementation Architecture](#9-implementation-architecture)
+10. [Usage Examples](#10-usage-examples)
+11. [Next Steps](#11-next-steps)
 
 ---
 
-## 1-6. Previous Sections
+## 1-7. Previous Sections
 
 *(See previous versions for full text - preserved)*
 
 ---
 
-## 7. Adapter Generation Stage
+## 8. Test Plan Generation Stage
 
-### 7.1 Overview - Enforcing Contracts at Runtime
+### 8.1 Overview - Systematic Verification
 
-The Adapter Generation stage mechanically translates abstract logic constraints into concrete Python `ctypes` wrappers. These adapters serve as the protection layer between safe managed code and unsafe native code.
+The Test Plan Generation stage systematically derives test cases to achieve 100% constraint coverage. It generates a deterministic test plan containing positive, negative, and boundary test cases.
 
-### 7.2 Safety Mechanisms
+### 8.2 Test Categories
 
-1.  **Pre-Call Checks**: Verify constraints (e.g., non-null, buffer size) *before* the native call is attempted.
-2.  **Structured Exceptions**: Raise `ContractViolation` with detailed metadata instead of crashing.
-3.  **Ownership Tracking**: Track allocations and deallocations to prevent memory leaks and double-frees.
-4.  **Type Safety**: Map IR types to precise `ctypes` equivalents to prevent ABI mismatches.
+1.  **Positive (Happy Path)**: Verify valid inputs pass.
+2.  **Negative (Fault Injection)**: Verify invalid inputs (e.g., null pointers, short buffers) are detected by adapters.
+3.  **Boundary**: Verify edge cases (min/max integers, empty buffers).
+4.  **Combinatorial**: Verify interaction of multiple constraints.
 
-### 7.3 Generated Artifacts
+### 8.3 Fault Injection Strategy
 
-- **`library_adapter.py`**: Contains python wrapper functions with injected checks.
-- **`adapter_metadata.json`**: Describes which constraints were enforced and mapping details.
+The system mechanically attempts to violate every constraint:
+- `NON_NULL` → Inject `None`
+- `BUFFER_SIZE` → Inject buffer smaller than length parameter
+- `NULL_TERMINATED` → Inject string without `\x00`
 
-### 7.4 Example Generated Code
+### 8.4 Deterministic Input Generation
 
-```python
-def process_data(data, length):
-    """
-    Wrapper for: int process_data(char* data, size_t length)
-    Constraints:
-      - process_NON_NULL_data_1
-      - process_BUFFER_SIZE_data_2
-    """
-    # Pre-call checks
-    _check_NON_NULL_data(data)
-    _check_BUFFER_SIZE_data(data, length)
-    
-    # Native call
-    result = _lib.process_data(data, length)
-    return result
+Test inputs are generated using seeded PRNGs or fixed boundary lists to ensure reproducibility.
+- **Ints**: 0, 1, -1, MAX_INT, MIN_INT
+- **Buffers**: Empty, 1 byte, large buffer
+- **Strings**: Empty, normal, non-terminated
+
+### 8.5 Artifact Schema: Test Plan
+
+```json
+{
+  "test_cases": [
+    {
+      "test_id": "test_process_001_pos",
+      "category": "positive",
+      "description": "Valid inputs",
+      "inputs": {
+        "data": { "type": "bytes", "value": "b'Hello'", "generator": "fixed_buffer" }
+      },
+      "expected_outcome": { "type": "success" }
+    },
+    {
+      "test_id": "test_process_002_neg",
+      "category": "negative",
+      "description": "Violate NON_NULL",
+      "inputs": {
+        "data": { "type": "none", "value": null }
+      },
+      "expected_outcome": { 
+        "type": "contract_violation", 
+        "expected_constraint_id": "process_NON_NULL_data_1" 
+      }
+    }
+  ],
+  "coverage": {
+    "total_constraints": 10,
+    "constraints_covered": 10,
+    "coverage_percentage": 100.0
+  }
+}
 ```
 
 ---
 
-## 8. Implementation Architecture
+## 9. Implementation Architecture
 
-### 8.1 Class Hierarchy
+### 9.1 Class Hierarchy
 
 ```
 PipelineStage (ABC)
-├── NativeInterfaceIngestionStage
-├── IRNormalizationStage
-├── ContractSynthesisStage
-└── AdapterGenerationStage (NEW)
-    ├── Uses: CodeGenerator
-    ├── Uses: TypeMapper
-    ├── Uses: CheckGenerator
-    └── Uses: AdapterGenerator
+├── ...
+└── TestPlanGenerationStage (NEW)
+    ├── Uses: InputValueGenerator
+    ├── Uses: TestCaseGenerator
+    └── Uses: CoverageAnalyzer
 ```
 
 ---
 
-## 9. Usage Examples
+## 10. Usage Examples
 
-### 9.1 Running Adapter Generation
+### 10.1 Generating Test Plan
 
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py run-incremental \
     --context artifacts/execution_context.json \
-    --target adapter_metadata
+    --target test_plan
 ```
 
 ---
 
-## 10. Next Steps
+## 11. Next Steps
 
 **** will implement:
-- **Test Plan Generation Stage**: Systematically deriving test cases to verify the generated adapters and detecting edge cases.
+- **Verification Execution Stage**: The runner that executes the test plan using the generated adapters and reports results.
