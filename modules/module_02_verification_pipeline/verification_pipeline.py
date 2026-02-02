@@ -26,6 +26,9 @@ import json
 import hashlib
 import random
 import uuid
+import time
+import traceback
+import importlib.util
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -1296,6 +1299,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
             self.registry.register_stage(AdapterGenerationStage)
         if 'TestPlanGenerationStage' in globals():
             self.registry.register_stage(TestPlanGenerationStage)
+        if 'VerificationExecutionStage' in globals():
+            self.registry.register_stage(VerificationExecutionStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -4308,6 +4313,520 @@ class TestPlanGenerationStage(PipelineStage):
         print(f"Constraint coverage: {coverage['coverage_percentage']:.1f}%")
         if coverage['uncovered_constraints']:
             print(f"Warning: {len(coverage['uncovered_constraints'])} constraints not covered")
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 9.1 Input Instantiator
+# ───────────────────────────────────────────────────────────────────
+
+class InputInstantiator:
+    """
+    Converts abstract input specifications to concrete Python values.
+    
+    Handles type conversions, null values, and special cases.
+    """
+    
+    @staticmethod
+    def instantiate(input_spec: Dict[str, Any]) -> Any:
+        """
+        Convert input specification to actual value.
+        
+        Args:
+            input_spec: Input specification from test plan
+            
+        Returns:
+            Concrete Python value
+        """
+        input_type = input_spec.get("type")
+        value = input_spec.get("value")
+        
+        if input_type == "none" or value is None:
+            return None
+        
+        elif input_type == "int":
+            return int(value)
+        
+        elif input_type == "float":
+            return float(value)
+        
+        elif input_type == "bytes":
+            # Value is string representation like "b'Hello'"
+            if isinstance(value, str):
+                try:
+                    return eval(value)  # Convert "b'Hello'" to b'Hello'
+                except:
+                    return value.encode() if isinstance(value, str) else value
+            return value
+        
+        elif input_type == "string":
+            return str(value)
+        
+        else:
+            # Unknown type - return as-is
+            return value
+    
+    @staticmethod
+    def instantiate_all(inputs: Dict[str, Dict]) -> Dict[str, Any]:
+        """
+        Instantiate all inputs for a test case.
+        
+        Args:
+            inputs: Dictionary of parameter_name -> input_spec
+            
+        Returns:
+            Dictionary of parameter_name -> actual_value
+        """
+        instantiated = {}
+        
+        for param_name, input_spec in inputs.items():
+            instantiated[param_name] = InputInstantiator.instantiate(input_spec)
+        
+        # Handle size matching (buffer size matches another parameter)
+        for param_name, input_spec in inputs.items():
+            size_matches = input_spec.get("size_matches")
+            if size_matches and size_matches in instantiated:
+                # Update size parameter to match buffer
+                buffer_value = instantiated[param_name]
+                if buffer_value is not None:
+                    instantiated[size_matches] = len(buffer_value)
+        
+        return instantiated
+
+# ───────────────────────────────────────────────────────────────────
+# 9.2 Outcome Validator
+# ───────────────────────────────────────────────────────────────────
+
+class OutcomeValidator:
+    """
+    Validates actual outcomes against expected outcomes.
+    
+    Determines if test passes or fails.
+    """
+    
+    @staticmethod
+    def validate(
+        expected: Dict[str, Any],
+        actual: Dict[str, Any]
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Compare expected and actual outcomes.
+        
+        Args:
+            expected: Expected outcome from test plan
+            actual: Actual outcome from execution
+            
+        Returns:
+            Tuple of (validation_result, failure_reason)
+            validation_result is "PASS" or "FAIL"
+            failure_reason is None if PASS, string if FAIL
+        """
+        expected_type = expected.get("type")
+        actual_type = actual.get("type")
+        
+        # Case 1: Expected success
+        if expected_type == "success":
+            if actual_type == "success" and actual.get("no_violations"):
+                return ("PASS", None)
+            else:
+                reason = f"Expected success, got {actual_type}"
+                if actual_type == "contract_violation":
+                    reason += f" (constraint: {actual.get('constraint_id')})"
+                elif actual_type == "unexpected_exception":
+                    reason += f" ({actual.get('exception_type')}: {actual.get('message')})"
+                return ("FAIL", reason)
+        
+        # Case 2: Expected contract violation
+        elif expected_type == "contract_violation":
+            expected_constraint = expected.get("expected_constraint_id")
+            
+            if actual_type == "contract_violation":
+                actual_constraint = actual.get("constraint_id")
+                if actual_constraint == expected_constraint:
+                    return ("PASS", None)
+                else:
+                    reason = f"Expected violation of {expected_constraint}, got {actual_constraint}"
+                    return ("FAIL", reason)
+            elif actual_type == "success":
+                reason = f"Expected violation of {expected_constraint}, but test passed (uncaught violation)"
+                return ("FAIL", reason)
+            else:
+                reason = f"Expected violation, got {actual_type}"
+                return ("FAIL", reason)
+        
+        # Case 3: Expected undefined behavior (rare)
+        elif expected_type == "undefined_behavior":
+            # Any outcome acceptable (crash, violation, success)
+            return ("PASS", None)
+        
+        # Default: unexpected expected type
+        else:
+            return ("FAIL", f"Unknown expected outcome type: {expected_type}")
+
+# ───────────────────────────────────────────────────────────────────
+# 9.3 Test Executor
+# ───────────────────────────────────────────────────────────────────
+
+class TestExecutor:
+    """
+    Executes individual test cases using generated adapters.
+    
+    Handles input instantiation, adapter invocation, outcome capture,
+    and validation.
+    """
+    
+    def __init__(self, adapter_module_path: str):
+        """
+        Initialize executor with adapter module.
+        
+        Args:
+            adapter_module_path: Path to generated adapter .py file
+        """
+        self.adapter_module_path = adapter_module_path
+        self.adapter_module = None
+        self._load_adapter()
+    
+    def _load_adapter(self):
+        """Dynamically load adapter module."""
+        try:
+            spec = importlib.util.spec_from_file_location("adapter", self.adapter_module_path)
+            if spec and spec.loader:
+                self.adapter_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(self.adapter_module)
+        except Exception as e:
+            raise StageError(
+                f"Failed to load adapter module: {e}",
+                stage_name="verification_execution",
+                details=f"Adapter path: {self.adapter_module_path}"
+            )
+    
+    def execute_test(self, test_case: Dict) -> Dict:
+        """
+        Execute a single test case.
+        
+        Args:
+            test_case: Test case specification from test plan
+            
+        Returns:
+            Test result dictionary
+        """
+        test_id = test_case["test_id"]
+        function_name = test_case["function"]
+        
+        # Instantiate inputs
+        try:
+            inputs = InputInstantiator.instantiate_all(test_case.get("inputs", {}))
+        except Exception as e:
+            return {
+                "test_id": test_id,
+                "validation_result": "ERROR",
+                "error": "Input instantiation failed",
+                "error_details": str(e)
+            }
+        
+        # Get function from adapter
+        if not hasattr(self.adapter_module, function_name):
+            return {
+                "test_id": test_id,
+                "validation_result": "ERROR",
+                "error": f"Function '{function_name}' not found in adapter"
+            }
+        
+        adapter_function = getattr(self.adapter_module, function_name)
+        
+        # Execute with timing
+        start_time = time.time()
+        actual_outcome = self._invoke_adapter(adapter_function, inputs)
+        end_time = time.time()
+        
+        execution_time_ms = (end_time - start_time) * 1000
+        
+        # Validate outcome
+        expected_outcome = test_case.get("expected_outcome", {})
+        validation_result, failure_reason = OutcomeValidator.validate(
+            expected_outcome, actual_outcome
+        )
+        
+        # Build result
+        result = {
+            "test_id": test_id,
+            "function": function_name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "execution_time_ms": execution_time_ms,
+            "inputs": self._serialize_inputs(inputs),
+            "expected_outcome": expected_outcome,
+            "actual_outcome": actual_outcome,
+            "validation_result": validation_result,
+            "constraints_exercised": test_case.get("constraints_exercised", [])
+        }
+        
+        if failure_reason:
+            result["failure_reason"] = failure_reason
+            result["diagnostic"] = self._generate_diagnostic(
+                test_case, expected_outcome, actual_outcome
+            )
+        
+        return result
+    
+    def _invoke_adapter(self, function, inputs: Dict) -> Dict:
+        """
+        Invoke adapter function and capture outcome.
+        
+        Returns outcome dictionary.
+        """
+        try:
+            # Call function with inputs
+            result = function(**inputs)
+            
+            # Success outcome
+            return {
+                "type": "success",
+                "return_value": result,
+                "no_violations": True
+            }
+        
+        except Exception as e:
+            # Check if this is a ContractViolation
+            if type(e).__name__ == "ContractViolation":
+                return {
+                    "type": "contract_violation",
+                    "constraint_id": getattr(e, "constraint_id", "unknown"),
+                    "violation_phase": "pre_call",  # Assume pre-call for now
+                    "message": str(e)
+                }
+            
+            # Otherwise, unexpected exception
+            return {
+                "type": "unexpected_exception",
+                "exception_type": type(e).__name__,
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+    
+    def _serialize_inputs(self, inputs: Dict) -> Dict:
+        """Convert inputs to JSON-serializable format."""
+        serialized = {}
+        for key, value in inputs.items():
+            if isinstance(value, bytes):
+                serialized[key] = repr(value)  # b'Hello' as string
+            else:
+                serialized[key] = value
+        return serialized
+    
+    def _generate_diagnostic(
+        self,
+        test_case: Dict,
+        expected: Dict,
+        actual: Dict
+    ) -> str:
+        """Generate diagnostic message for failed test."""
+        category = test_case.get("category", "unknown")
+        
+        if category == "negative" and actual["type"] == "success":
+            return (
+                "Adapter failed to detect contract violation. "
+                "Check that constraint enforcement is correctly generated."
+            )
+        
+        elif category == "positive" and actual["type"] == "contract_violation":
+            return (
+                "Valid input rejected by adapter. "
+                "Constraint may be too strict or check logic incorrect."
+            )
+        
+        elif actual["type"] == "unexpected_exception":
+            return (
+                f"Unexpected exception: {actual.get('exception_type')}. "
+                "This indicates a bug in adapter or native code."
+            )
+        
+        else:
+            return "Test outcome did not match expectations."
+
+# ───────────────────────────────────────────────────────────────────
+# 9.4 Execution Summarizer
+# ───────────────────────────────────────────────────────────────────
+
+class ExecutionSummarizer:
+    """
+    Generates summary statistics from test results.
+    """
+    
+    @staticmethod
+    def summarize(test_results: List[Dict]) -> Dict:
+        """
+        Generate summary statistics.
+        
+        Args:
+            test_results: List of test result dictionaries
+            
+        Returns:
+            Summary dictionary
+        """
+        total = len(test_results)
+        passed = sum(1 for r in test_results if r["validation_result"] == "PASS")
+        failed = sum(1 for r in test_results if r["validation_result"] == "FAIL")
+        errors = sum(1 for r in test_results if r["validation_result"] == "ERROR")
+        
+        pass_rate = (passed / total * 100) if total > 0 else 0.0
+        
+        # Total execution time
+        total_time = sum(r.get("execution_time_ms", 0) for r in test_results) / 1000.0
+        
+        # Group by category
+        by_category = {}
+        for result in test_results:
+            # Find original test case category (need to look up from test plan)
+            # For now, extract from test_id suffix
+            test_id = result["test_id"]
+            if "_pos" in test_id:
+                category = "positive"
+            elif "_neg" in test_id:
+                category = "negative"
+            elif "_bnd" in test_id:
+                category = "boundary"
+            else:
+                category = "unknown"
+            
+            if category not in by_category:
+                by_category[category] = {"total": 0, "passed": 0, "failed": 0}
+            
+            by_category[category]["total"] += 1
+            if result["validation_result"] == "PASS":
+                by_category[category]["passed"] += 1
+            elif result["validation_result"] == "FAIL":
+                by_category[category]["failed"] += 1
+        
+        # Collect exercised constraints
+        all_constraints = set()
+        for result in test_results:
+            all_constraints.update(result.get("constraints_exercised", []))
+        
+        return {
+            "total_tests": total,
+            "tests_passed": passed,
+            "tests_failed": failed,
+            "tests_errored": errors,
+            "pass_rate": pass_rate,
+            "execution_time_total_seconds": total_time,
+            "tests_by_category": by_category,
+            "constraints_exercised": len(all_constraints)
+        }
+
+# ───────────────────────────────────────────────────────────────────
+# 9.5 Verification Execution Stage
+# ───────────────────────────────────────────────────────────────────
+
+class VerificationExecutionStage(PipelineStage):
+    """
+    Stage 6: Verification Execution
+    
+    Executes test plan using generated adapters, validates outcomes,
+    and produces comprehensive execution log.
+    """
+    
+    STAGE_NAME = "verification_execution"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Execute test plan with adapters"
+    
+    REQUIRED_INPUTS = ["test_plan", "adapter_metadata"]
+    PRODUCED_OUTPUTS = ["execution_log"]
+    
+    def _execute_impl(self) -> None:
+        """Execute verification test plan."""
+        # Load test plan and adapter metadata
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        test_plan_path = os.path.join(artifacts_dir, "test_plan.json")
+        adapter_metadata_path = os.path.join(artifacts_dir, "adapter_metadata.json")
+        
+        with open(test_plan_path, 'r', encoding='utf-8') as f:
+            test_plan = json.load(f)
+        
+        with open(adapter_metadata_path, 'r', encoding='utf-8') as f:
+            adapter_metadata = json.load(f)
+        
+        # Get adapter module path
+        adapter_file = adapter_metadata.get("adapter_file")
+        if not adapter_file or not os.path.exists(adapter_file):
+            raise StageError(
+                "Adapter file not found",
+                stage_name=self.STAGE_NAME,
+                details=f"Expected: {adapter_file}"
+            )
+        
+        # Initialize executor
+        executor = TestExecutor(adapter_file)
+        
+        # Execute all test cases
+        test_cases = test_plan.get("test_cases", [])
+        test_results = []
+        
+        print(f"Executing {len(test_cases)} test cases...")
+        
+        for i, test_case in enumerate(test_cases, 1):
+            try:
+                result = executor.execute_test(test_case)
+                test_results.append(result)
+                
+                # Print progress
+                status = "✓" if result["validation_result"] == "PASS" else "✗"
+                print(f"  [{i}/{len(test_cases)}] {status} {test_case['test_id']}")
+                
+            except Exception as e:
+                # Catch unexpected errors
+                print(f"  [{i}/{len(test_cases)}] ✗ {test_case['test_id']} (ERROR)")
+                test_results.append({
+                    "test_id": test_case["test_id"],
+                    "validation_result": "ERROR",
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                })
+        
+        # Generate summary
+        summary = ExecutionSummarizer.summarize(test_results)
+        
+        # Collect failures for detailed reporting
+        failures = [r for r in test_results if r["validation_result"] == "FAIL"]
+        
+        # Build execution log
+        provenance = self.create_provenance([test_plan_path, adapter_metadata_path])
+        
+        execution_log = {
+            "provenance": provenance.to_dict(),
+            "schema_version": "1.0.0",
+            "execution_metadata": {
+                "start_time": test_results[0]["timestamp"] if test_results else None,
+                "end_time": test_results[-1]["timestamp"] if test_results else None,
+                "total_duration_seconds": summary["execution_time_total_seconds"],
+                "execution_mode": "full",
+                "adapter_module": adapter_metadata.get("adapter_module")
+            },
+            "summary": summary,
+            "test_results": test_results,
+            "failures": failures
+        }
+        
+        # Write execution log
+        execution_log_path = os.path.join(artifacts_dir, "execution_log.json")
+        with open(execution_log_path, 'w', encoding='utf-8') as f:
+            json.dump(execution_log, f, indent=2)
+        
+        # Print summary
+        print("\n" + "=" * 60)
+        print("VERIFICATION EXECUTION SUMMARY")
+        print("=" * 60)
+        print(f"Total tests: {summary['total_tests']}")
+        print(f"Passed: {summary['tests_passed']} ({summary['pass_rate']:.1f}%)")
+        print(f"Failed: {summary['tests_failed']}")
+        print(f"Errors: {summary['tests_errored']}")
+        print(f"Execution time: {summary['execution_time_total_seconds']:.2f}s")
+        print("=" * 60)
+        
+        if failures:
+            print(f"\n{len(failures)} test(s) failed:")
+            for failure in failures[:10]:  # Show first 10
+                print(f"  - {failure['test_id']}: {failure.get('failure_reason', 'Unknown')}")
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification
