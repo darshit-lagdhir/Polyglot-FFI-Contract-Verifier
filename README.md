@@ -57,7 +57,7 @@ This project is organized into **28 technical modules**, each addressing a speci
 | Module | Name | Status | Progress |
 |--------|------|--------|----------|
 | 01 | FFI Contract Verifier | ✅ COMPLETE | 100% |
-| 02 | Verification Pipeline | 🔄 IN PROGRESS | 90% (18/20 prompts) |
+| 02 | Verification Pipeline | 🔄 IN PROGRESS | 95% (19/20 prompts) |
 | 03-28 | Various Technical Modules | 📋 PLANNED | 0% |
 
 **Overall Progress:** 2/28 modules started (7%)
@@ -82,36 +82,21 @@ See [`modules/README.md`](modules/README.md) for complete module list and detail
 git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
 cd Polyglot-FFI-Contract-Verifier
 
-# Install package
+# Install dependencies and package
+pip install -r requirements.txt
 pip install -e .
-
-# Verify installation
-polyglot-ffi-verifier --version
 ```
 
 ### Basic Usage
 
-#### Option 1: Use Module 01 (Consolidated)
+```python
+from modules.module_02_verification_pipeline.verification_pipeline import verify
 
-```bash
-# Run complete verification
-python modules/module_01_ffi_verifier/system_architecture.py verify interface.h library.dll
-
-# Show execution context
-python modules/module_01_ffi_verifier/system_architecture.py context
+result = verify("interface.h", "library.dll")
+print(f"Pass rate: {result.pass_rate}%")
 ```
 
-#### Option 2: Use Installed Package (Modular)
-
-```bash
-# Full verification pipeline
-python -m polyglot_ffi_verifier verify interface.h library.dll
-
-# Individual stages
-python -m polyglot_ffi_verifier ingest interface.h library.dll
-python -m polyglot_ffi_verifier synthesize
-python -m polyglot_ffi_verifier generate-tests
-```
+Full documentation is available in the `docs/` directory.
 
 ---
 
@@ -214,7 +199,8 @@ python tests/test_quick_smoke.py
 - Final Integration & Validation ✅
 - Module Completion & Summary ✅
 - Packaging & Distribution ✅
-- Remaining 2 prompts in progress
+- Advanced Documentation ✅
+- Remaining 1 prompt in progress
 
 ### Modules 03-28: 📋 Planned
 

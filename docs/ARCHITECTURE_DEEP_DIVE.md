@@ -1,0 +1,81 @@
+# Architecture Deep Dive
+
+This document provides a technical overview of the Verification Pipeline (Module 02) internal architecture.
+
+## Design Philosophy
+
+The pipeline is built on three core pillars:
+1. **Determinism**: Identical inputs must yield identical artifacts.
+2. **Explicitness**: Every assumption is encoded in a machine-readable JSON artifact.
+3. **Isolation**: Stages communicate only through validated files, never shared memory.
+
+## Core Components
+
+### 1. `PipelineStage` (Abstract Base Class)
+Every stage implements this interface:
+- `validate_inputs()`: Checks pre-conditions.
+- `execute()`: Performs the actual logic.
+- `validate_outputs()`: Checks post-conditions (schema validation).
+
+### 2. `CompletePipeline` (Orchestrator)
+Orchestrates the 7 stages:
+- Manages artifact flow between stages.
+- Handles error propagation.
+- Tracks execution metadata.
+
+### 3. `CacheManager` (SQLite Backend)
+Provides intelligent artifact caching:
+- Hashes input artifacts to detect changes.
+- Stores metadata in `cache.db`.
+- Prevents redundant execution of expensive stages like header parsing.
+
+### 4. `ParallelPipelineExecutor`
+Implements level-based parallelism:
+- Analyzes stage dependencies.
+- Groups independent stages (e.g., Adapter Gen and Test Plan Gen).
+- Executes groups concurrently using `ThreadPoolExecutor`.
+
+## Stage Breakdown
+
+### Stage 1: Native Interface Ingestion
+- **Tool**: `libclang`
+- **Output**: `native_interface.json`
+- **Logic**: Parses C header AST, extracts functions, structs, and enums.
+
+### Stage 2: IR Normalization
+- **Output**: `ir.json`
+- **Logic**: Resolves typedefs, canonicalizes type names, and flattens nested structures.
+
+### Stage 3: Contract Synthesis
+- **Output**: `contract.json`
+- **Logic**: Applies heuristics (e.g., `_len` suffix matching) to infer safety constraints like buffer sizes.
+
+### Stage 4: Adapter Generation
+- **Output**: Python bridge (`ctypes` wrappers)
+- **Logic**: Generates safety-hardened Python code that enforces `contract.json` at runtime.
+
+### Stage 5: Test Plan Generation
+- **Output**: `test_plan.json`
+- **Logic**: Generates combinatorial test cases for valid and invalid inputs.
+
+### Stage 6: Verification Execution
+- **Output**: `execution_log.json`
+- **Logic**: Runs generated tests against the library and captures results/violations.
+
+### Stage 7: Diagnostics & Reporting
+- **Output**: `report.html` & `diagnostics.json`
+- **Logic**: Classifies failures as "Crashes", "Violations", or "False Positives".
+
+## Extension Points
+
+### Hooks
+Registration of custom functions at lifecycle points:
+- `PRE_STAGE`, `POST_STAGE`
+- `PRE_PIPELINE`, `POST_PIPELINE`
+
+### Plugins
+Self-contained modules that register new rules or handlers.
+
+---
+
+**Next Steps**: See [Module 03 Integration Spec](MODULE_03_INTEGRATION_SPEC.md)
