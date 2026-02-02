@@ -5367,48 +5367,392 @@ class DiagnosticsReportingStage(PipelineStage):
         print(f"  - Diagnostics: {diagnostics_path}")
         print("=" * 60)
 
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
 # ───────────────────────────────────────────────────────────────────
-# 3.5 CLI Extensions for Incremental Verification
+# 11.1 Verification Result
 # ───────────────────────────────────────────────────────────────────
 
-def main_with_incremental():
-    """CLI with incremental verification support."""
+@dataclass
+class VerificationResult:
+    """
+    Result of complete verification pipeline execution.
+    
+    Contains summary statistics, paths to artifacts, and any errors.
+    """
+    success: bool
+    pass_rate: float
+    total_tests: int
+    passed_tests: int
+    failed_tests: int
+    critical_issues: List[str]
+    execution_time: float
+    report_path: str
+    artifacts_dir: str
+    stages_completed: List[str]
+    error: Optional[Exception] = None
+    
+    def __str__(self) -> str:
+        """Human-readable summary."""
+        status = "✓ PASSED" if self.success else "✗ FAILED"
+        return f"""
+Verification Result: {status}
+  Pass Rate: {self.pass_rate:.1f}% ({self.passed_tests}/{self.total_tests})
+  Critical Issues: {len(self.critical_issues)}
+  Execution Time: {self.execution_time:.1f}s
+  Report: {self.report_path}
+  Artifacts: {self.artifacts_dir}
+"""
+
+# ───────────────────────────────────────────────────────────────────
+# 11.2 Complete Pipeline
+# ───────────────────────────────────────────────────────────────────
+
+class CompletePipeline:
+    """
+    Complete integrated verification pipeline.
+    
+    Orchestrates all 7 stages from header/library to final report.
+    """
+    
+    def __init__(self, header_path: str, library_path: str, output_dir: str = "artifacts"):
+        """
+        Initialize complete pipeline.
+        
+        Args:
+            header_path: Path to C header file
+            library_path: Path to native library
+            output_dir: Output directory for artifacts
+        """
+        self.header_path = os.path.abspath(header_path)
+        self.library_path = os.path.abspath(library_path)
+        self.output_dir = os.path.abspath(output_dir)
+        
+        # Validate inputs
+        if not os.path.exists(self.header_path):
+            raise ValueError(f"Header file not found: {self.header_path}")
+        
+        if not os.path.exists(self.library_path):
+            raise ValueError(f"Library file not found: {self.library_path}")
+        
+        # Create output directory
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        self.execution_context = None
+        self.pipeline = None
+        self.start_time = None
+    
+    def execute(self, verbose: bool = True) -> VerificationResult:
+        """
+        Execute complete verification pipeline.
+        
+        Args:
+            verbose: Show progress messages
+            
+        Returns:
+            VerificationResult with summary and paths
+        """
+        self.start_time = time.time()
+        
+        if verbose:
+            self._print_header()
+        
+        try:
+            # : Create execution context
+            if verbose:
+                print("[1/8] Creating execution context...")
+            self._create_execution_context()
+            
+            # : Initialize pipeline
+            if verbose:
+                print("[2/8] Initializing pipeline...")
+            self._initialize_pipeline()
+            
+            # : Register stages
+            if verbose:
+                print("[3/8] Registering stages...")
+            self._register_stages()
+            
+            # : Execute pipeline
+            if verbose:
+                print("[4/8] Executing verification stages...")
+            success = self._execute_pipeline(verbose)
+            
+            # : Build result
+            result = self._build_result(success)
+            
+            if verbose:
+                self._print_summary(result)
+            
+            return result
+        
+        except Exception as e:
+            # Pipeline failed - build error result
+            elapsed = time.time() - self.start_time
+            
+            if verbose:
+                print(f"\n✗ Pipeline failed: {e}\n")
+                import traceback
+                traceback.print_exc()
+            
+            return VerificationResult(
+                success=False,
+                pass_rate=0.0,
+                total_tests=0,
+                passed_tests=0,
+                failed_tests=0,
+                critical_issues=[str(e)],
+                execution_time=elapsed,
+                report_path="",
+                artifacts_dir=self.output_dir,
+                stages_completed=[],
+                error=e
+            )
+    
+    def _create_execution_context(self):
+        """Create execution context artifact."""
+        # Build minimal execution context
+        context_data = {
+            "provenance": {
+                "execution_id": str(uuid.uuid4()),
+                "stage_name": "execution_context_creation",
+                "stage_version": "1.0.0",
+                "creation_timestamp": datetime.now(timezone.utc).isoformat(),
+                "schema_version": "1.0.0",
+                "input_artifact_hashes": {}
+            },
+            "platform": {
+                "os_name": "Windows" if os.name == "nt" else "Linux",
+                "architecture": "x64",
+                "pointer_width": 64,
+                "endianness": "little"
+            },
+            "compiler": {
+                "name": "msvc" if os.name == "nt" else "gcc",
+                "version": "unknown",
+                "include_paths": [],
+                "preprocessor_macros": {}
+            },
+            "native_library": {
+                "interface_header_path": self.header_path,
+                "library_path": self.library_path
+            },
+            "artifacts": {
+                "working_directory": self.output_dir,
+                "execution_context_path": os.path.join(self.output_dir, "execution_context.json")
+            }
+        }
+        
+        # Write execution context
+        context_path = os.path.join(self.output_dir, "execution_context.json")
+        with open(context_path, 'w', encoding='utf-8') as f:
+            json.dump(context_data, f, indent=2)
+        
+        self.execution_context = context_data
+    
+    def _initialize_pipeline(self):
+        """Initialize pipeline orchestrator."""
+        context_path = os.path.join(self.output_dir, "execution_context.json")
+        self.pipeline = EnhancedVerificationPipeline(context_path)
+    
+    def _register_stages(self):
+        """Register all pipeline stages."""
+        # Register all 7 stages in order
+        self.pipeline.register_stage(NativeInterfaceIngestionStage)
+        self.pipeline.register_stage(IRNormalizationStage)
+        self.pipeline.register_stage(ContractSynthesisStage)
+        self.pipeline.register_stage(AdapterGenerationStage)
+        self.pipeline.register_stage(TestPlanGenerationStage)
+        self.pipeline.register_stage(VerificationExecutionStage)
+        self.pipeline.register_stage(DiagnosticsReportingStage)
+    
+    def _execute_pipeline(self, verbose: bool) -> bool:
+        """Execute all stages."""
+        # Use dependency-resolved execution
+        return self.pipeline.execute_full_pipeline_with_dependency_resolution()
+    
+    def _build_result(self, success: bool) -> VerificationResult:
+        """Build VerificationResult from pipeline execution."""
+        elapsed = time.time() - self.start_time
+        
+        # Load execution log if available
+        execution_log_path = os.path.join(self.output_dir, "execution_log.json")
+        if os.path.exists(execution_log_path):
+            with open(execution_log_path, 'r') as f:
+                execution_log = json.load(f)
+            
+            summary = execution_log.get("summary", {})
+            
+            # Load diagnostics for critical issues
+            diagnostics_path = os.path.join(self.output_dir, "diagnostics.json")
+            critical_issues = []
+            if os.path.exists(diagnostics_path):
+                with open(diagnostics_path, 'r') as f:
+                    diagnostics = json.load(f)
+                
+                for failure in diagnostics.get("failure_analysis", []):
+                    if failure.get("severity") == "CRITICAL":
+                        critical_issues.append(
+                            f"{failure['test_id']}: {failure['root_cause']}"
+                        )
+            
+            return VerificationResult(
+                success=success and summary.get("tests_failed", 0) == 0,
+                pass_rate=summary.get("pass_rate", 0.0),
+                total_tests=summary.get("total_tests", 0),
+                passed_tests=summary.get("tests_passed", 0),
+                failed_tests=summary.get("tests_failed", 0),
+                critical_issues=critical_issues,
+                execution_time=elapsed,
+                report_path=os.path.join(self.output_dir, "report.html"),
+                artifacts_dir=self.output_dir,
+                stages_completed=self.pipeline.registry.list_stages()
+            )
+        else:
+            # Pipeline didn't reach execution stage
+            return VerificationResult(
+                success=False,
+                pass_rate=0.0,
+                total_tests=0,
+                passed_tests=0,
+                failed_tests=0,
+                critical_issues=["Pipeline execution incomplete"],
+                execution_time=elapsed,
+                report_path="",
+                artifacts_dir=self.output_dir,
+                stages_completed=[]
+            )
+    
+    def _print_header(self):
+        """Print pipeline header."""
+        print("\n" + "=" * 60)
+        print("POLYGLOT FFI VERIFICATION PIPELINE")
+        print("=" * 60)
+        print(f"Header:  {self.header_path}")
+        print(f"Library: {self.library_path}")
+        print(f"Output:  {self.output_dir}")
+        print("=" * 60 + "\n")
+    
+    def _print_summary(self, result: VerificationResult):
+        """Print execution summary."""
+        print("\n" + "=" * 60)
+        print("VERIFICATION COMPLETE")
+        print("=" * 60)
+        print(result)
+        print("=" * 60 + "\n")
+
+# ───────────────────────────────────────────────────────────────────
+# 11.3 High-Level API
+# ───────────────────────────────────────────────────────────────────
+
+def verify(
+    header_path: str,
+    library_path: str,
+    output_dir: str = "artifacts",
+    verbose: bool = True
+) -> VerificationResult:
+    """
+    Complete FFI verification pipeline.
+    
+    This is the main entry point for verification. It executes all stages
+    from native interface ingestion through diagnostics and reporting.
+    
+    Args:
+        header_path: Path to C header file
+        library_path: Path to native library (.dll, .so, .dylib)
+        output_dir: Directory for artifacts and reports
+        verbose: Show progress messages
+        
+    Returns:
+        VerificationResult with summary and artifact paths
+        
+    Example:
+        >>> result = verify("interface.h", "library.dll")
+        >>> if result.success:
+        ...     print(f"Verification passed: {result.pass_rate}%")
+        ... else:
+        ...     print(f"Verification failed: {len(result.critical_issues)} critical issues")
+    """
+    pipeline = CompletePipeline(header_path, library_path, output_dir)
+    return pipeline.execute(verbose=verbose)
+
+# ───────────────────────────────────────────────────────────────────
+# 11.4 CLI Entry Point
+# ───────────────────────────────────────────────────────────────────
+
+def cli_main():
+    """Command-line interface for verification pipeline."""
     parser = argparse.ArgumentParser(
         prog="verification_pipeline",
-        description="Polyglot FFI Verification Pipeline with Incremental Support"
+        description="Polyglot FFI Verification Pipeline - Verify C FFI correctness"
     )
     
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
     
-    # Existing commands
+    # Verify command
+    verify_cmd = subparsers.add_parser("verify", help="Run complete verification")
+    verify_cmd.add_argument("header", help="Path to C header file")
+    verify_cmd.add_argument("library", help="Path to native library")
+    verify_cmd.add_argument("--output", default="artifacts", help="Output directory")
+    verify_cmd.add_argument("--quiet", action="store_true", help="Suppress progress messages")
+    
+    # List stages command
+    list_cmd = subparsers.add_parser("list-stages", help="List available pipeline stages")
+    
+    # Info command
     info_cmd = subparsers.add_parser("info", help="Show pipeline information")
     
-    # New command: run-incremental
-    incremental_cmd = subparsers.add_parser(
-        "run-incremental",
-        help="Run pipeline incrementally (reuse fresh artifacts)"
-    )
+    # Incremental commands (Existing)
+    incremental_cmd = subparsers.add_parser("run-incremental", help="Run pipeline incrementally")
     incremental_cmd.add_argument("--context", required=True, help="Execution context path")
     incremental_cmd.add_argument("--target", help="Target artifact to produce")
-    
-    # New command: check-staleness
-    staleness_cmd = subparsers.add_parser(
-        "check-staleness",
-        help="Check artifact staleness status"
-    )
+
+    staleness_cmd = subparsers.add_parser("check-staleness", help="Check artifact staleness")
     staleness_cmd.add_argument("artifact", help="Artifact path to check")
     staleness_cmd.add_argument("--context", required=True)
-    
+
     args = parser.parse_args()
     
-    if args.command == "info":
-        print("Polyglot FFI Verification Pipeline")
+    if args.command == "verify":
+        try:
+            result = verify(
+                header_path=args.header,
+                library_path=args.library,
+                output_dir=args.output,
+                verbose=not args.quiet
+            )
+            # Exit with appropriate code
+            sys.exit(0 if result.success else 1)
+        except Exception as e:
+            print(f"Fatal error: {e}")
+            sys.exit(1)
+    
+    elif args.command == "list-stages":
+        print("Available Pipeline Stages:")
         print("=" * 60)
-        print("Version: 1.0.0 (with Incremental Support)")
-        print("Module: 02 - Verification Pipeline")
-        print("Prompt: 3/20 - Artifact Schemas & Incremental Verification")
+        stages = [
+            "1. native_interface_ingestion - Extract ABI from header",
+            "2. ir_normalization - Normalize to canonical IR",
+            "3. contract_synthesis - Synthesize FFI contract",
+            "4. adapter_generation - Generate runtime adapters",
+            "5. test_plan_generation - Generate test plan",
+            "6. verification_execution - Execute tests",
+            "7. diagnostics_reporting - Analyze and report"
+        ]
+        for stage in stages:
+            print(f"  {stage}")
         return 0
     
+    elif args.command == "info":
+        print("Polyglot FFI Verification Pipeline")
+        print("=" * 60)
+        print("Version: 1.0.0")
+        print("Module: 02 - Verification Pipeline")
+        print("Stages: 7 (complete)")
+        print("Status: Integrated and operational")
+        return 0
+        
     elif args.command == "run-incremental":
         try:
             pipeline = EnhancedVerificationPipeline(args.context)
@@ -5424,7 +5768,7 @@ def main_with_incremental():
         except Exception as e:
             print(f"ERROR: {e}")
             return 1
-    
+
     elif args.command == "check-staleness":
         try:
             pipeline = EnhancedVerificationPipeline(args.context)
@@ -5467,4 +5811,5 @@ def main_with_incremental():
         return 1
 
 if __name__ == '__main__':
-    sys.exit(main_with_incremental())
+    sys.exit(cli_main())
+
