@@ -1287,6 +1287,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
         # Register stages
         if 'NativeInterfaceIngestionStage' in globals():
             self.registry.register_stage(NativeInterfaceIngestionStage)
+        if 'IRNormalizationStage' in globals():
+            self.registry.register_stage(IRNormalizationStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -2354,6 +2356,489 @@ class NativeInterfaceIngestionStage(PipelineStage):
                 "line": cursor.location.line,
                 "column": cursor.location.column
             }
+        }
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 5.1 Type ID Generator
+# ───────────────────────────────────────────────────────────────────
+
+class TypeIDGenerator:
+    """
+    Generates stable, unique type IDs from type structures.
+    
+    Type IDs are deterministic and human-readable for debugging.
+    """
+    
+    @staticmethod
+    def generate(type_info: Dict[str, Any]) -> str:
+        """
+        Generate type ID from type structure.
+        
+        Args:
+            type_info: Type information dictionary
+            
+        Returns:
+            Unique type ID string
+        """
+        kind = type_info.get("kind")
+        
+        if kind == "primitive":
+            # Handle signed/unsigned variants
+            name = type_info["name"].replace(" ", "_")
+            return f"primitive_{name}"
+        
+        elif kind == "pointer":
+            pointee = type_info.get("pointee", {})
+            pointee_id = TypeIDGenerator.generate(pointee)
+            
+            # Include qualifiers in ID
+            qualifiers = []
+            if type_info.get("is_const"):
+                qualifiers.append("const")
+            if type_info.get("is_volatile"):
+                qualifiers.append("volatile")
+            
+            qual_str = "_".join(qualifiers) + "_" if qualifiers else ""
+            return f"{qual_str}pointer_to_{pointee_id}"
+        
+        elif kind == "array":
+            element = type_info.get("element_type", {})
+            element_id = TypeIDGenerator.generate(element)
+            size = type_info.get("size", 0)
+            return f"array_{size}_of_{element_id}"
+        
+        elif kind == "struct":
+            name = type_info.get("name", "anonymous")
+            return f"struct_{name}"
+        
+        elif kind == "union":
+            name = type_info.get("name", "anonymous")
+            return f"union_{name}"
+        
+        elif kind == "enum":
+            name = type_info.get("name", "anonymous")
+            return f"enum_{name}"
+        
+        elif kind == "typedef":
+            name = type_info.get("name", "anonymous")
+            return f"typedef_{name}"
+        
+        elif kind == "padding":
+            size = type_info.get("size_bytes", 0)
+            return f"padding_{size}"
+        
+        else:
+            # Unknown type - generate hash-based ID
+            import hashlib
+            type_str = json.dumps(type_info, sort_keys=True)
+            hash_val = hashlib.sha256(type_str.encode()).hexdigest()[:16]
+            return f"unknown_{hash_val}"
+
+# ───────────────────────────────────────────────────────────────────
+# 5.2 Type Registry
+# ───────────────────────────────────────────────────────────────────
+
+class TypeRegistry:
+    """
+    Registry of all types with bidirectional lookup.
+    
+    Maintains:
+    - type_id → type_info (forward lookup)
+    - type_structure → type_id (reverse lookup for deduplication)
+    """
+    
+    def __init__(self):
+        self._types: Dict[str, Dict[str, Any]] = {}  # type_id → type_info
+        self._structure_to_id: Dict[str, str] = {}   # JSON(type_info) → type_id
+    
+    def register_type(self, type_info: Dict[str, Any]) -> str:
+        """
+        Register a type and return its ID.
+        
+        If type already registered, returns existing ID.
+        
+        Args:
+            type_info: Type information dictionary
+            
+        Returns:
+            Type ID
+        """
+        # Generate canonical structure key (for deduplication)
+        structure_key = self._make_structure_key(type_info)
+        
+        # Check if already registered
+        if structure_key in self._structure_to_id:
+            return self._structure_to_id[structure_key]
+        
+        # Generate new type ID
+        type_id = TypeIDGenerator.generate(type_info)
+        
+        # Handle ID collisions (rare but possible)
+        original_id = type_id
+        counter = 1
+        while type_id in self._types:
+            type_id = f"{original_id}_{counter}"
+            counter += 1
+        
+        # Register type
+        self._types[type_id] = type_info
+        self._structure_to_id[structure_key] = type_id
+        
+        return type_id
+    
+    def get_type(self, type_id: str) -> Dict[str, Any]:
+        """Get type information by ID."""
+        if type_id not in self._types:
+            raise KeyError(f"Unknown type ID: {type_id}")
+        return self._types[type_id]
+    
+    def has_type(self, type_id: str) -> bool:
+        """Check if type ID is registered."""
+        return type_id in self._types
+    
+    def get_all_types(self) -> Dict[str, Dict[str, Any]]:
+        """Get all registered types."""
+        return dict(self._types)
+    
+    def _make_structure_key(self, type_info: Dict[str, Any]) -> str:
+        """Create canonical key from type structure for deduplication."""
+        # Remove metadata fields that don't affect type identity
+        canonical = {k: v for k, v in type_info.items() 
+                    if k not in ["source_location", "is_implicit"]}
+        
+        return json.dumps(canonical, sort_keys=True)
+
+# ───────────────────────────────────────────────────────────────────
+# 5.3 Typedef Resolver
+# ───────────────────────────────────────────────────────────────────
+
+class TypedefResolver:
+    """
+    Resolves typedef chains to underlying canonical types.
+    
+    Handles:
+    - Transitive typedef resolution
+    - Circular typedef detection
+    - Preservation of typedef info for diagnostics
+    """
+    
+    def __init__(self):
+        self._typedef_map: Dict[str, Dict] = {}  # typedef_name → full typedef info
+    
+    def register_typedef(self, typedef_info: Dict[str, Any]) -> None:
+        """Register a typedef for later resolution."""
+        name = typedef_info["name"]
+        self._typedef_map[name] = typedef_info
+    
+    def resolve(self, type_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Resolve typedef to underlying canonical type.
+        
+        Args:
+            type_info: Type that may be a typedef
+            
+        Returns:
+            Resolved canonical type (not a typedef)
+            
+        Raises:
+            StageError: If circular typedef detected
+        """
+        if type_info.get("kind") != "typedef":
+            return type_info
+        
+        visited = set()
+        current = type_info
+        
+        while current.get("kind") == "typedef":
+            typedef_name = current.get("name")
+            
+            if typedef_name in visited:
+                cycle = " → ".join(visited) + f" → {typedef_name}"
+                raise StageError(
+                    f"Circular typedef detected: {cycle}",
+                    stage_name="ir_normalization"
+                )
+            
+            visited.add(typedef_name)
+            
+            # Get underlying type
+            underlying = current.get("underlying_type")
+            if not underlying:
+                raise StageError(
+                    f"Typedef '{typedef_name}' missing underlying type",
+                    stage_name="ir_normalization"
+                )
+            
+            current = underlying
+        
+        return current
+
+# ───────────────────────────────────────────────────────────────────
+# 5.4 Type Normalizer
+# ───────────────────────────────────────────────────────────────────
+
+class TypeNormalizer:
+    """
+    Normalizes types from native interface to canonical IR form.
+    
+    Handles:
+    - Typedef resolution
+    - Type registration
+    - Qualifier normalization
+    - Recursive type processing
+    """
+    
+    def __init__(self, type_registry: TypeRegistry, typedef_resolver: TypedefResolver):
+        self.type_registry = type_registry
+        self.typedef_resolver = typedef_resolver
+    
+    def normalize_type(self, native_type: Dict[str, Any], resolve_typedefs: bool = True) -> str:
+        """
+        Normalize type and return its type ID.
+        
+        Args:
+            native_type: Type from native interface
+            resolve_typedefs: Whether to resolve typedefs to underlying types
+            
+        Returns:
+            Type ID in registry
+        """
+        # Resolve typedefs if requested
+        if resolve_typedefs and native_type.get("kind") == "typedef":
+            resolved = self.typedef_resolver.resolve(native_type)
+            # Register both typedef and underlying type
+            typedef_id = self.type_registry.register_type(native_type)
+            underlying_id = self.normalize_type(resolved, resolve_typedefs=False)
+            
+            # Link typedef to underlying
+            typedef_info = self.type_registry.get_type(typedef_id)
+            typedef_info["resolved_type_id"] = underlying_id
+            
+            return typedef_id
+        
+        # Normalize based on kind
+        kind = native_type.get("kind")
+        
+        if kind in ["primitive", "enum"]:
+            # Primitives and enums are already normalized
+            return self.type_registry.register_type(native_type)
+        
+        elif kind == "pointer":
+            # Normalize pointee recursively
+            pointee = native_type.get("pointee", {})
+            pointee_id = self.normalize_type(pointee, resolve_typedefs)
+            
+            normalized = {
+                "kind": "pointer",
+                "pointee_id": pointee_id,
+                "size_bytes": native_type.get("size_bytes", 8),
+                "alignment_bytes": native_type.get("alignment_bytes", 8),
+                "is_const": native_type.get("is_const", False),
+                "is_volatile": native_type.get("is_volatile", False),
+                "is_restrict": native_type.get("is_restrict", False)
+            }
+            
+            return self.type_registry.register_type(normalized)
+        
+        elif kind == "array":
+            # Normalize element type recursively
+            element = native_type.get("element_type", {})
+            element_id = self.normalize_type(element, resolve_typedefs)
+            
+            normalized = {
+                "kind": "array",
+                "element_type_id": element_id,
+                "size": native_type.get("size", 0),
+                "size_bytes": native_type.get("size_bytes", 0)
+            }
+            
+            return self.type_registry.register_type(normalized)
+        
+        elif kind in ["struct", "union"]:
+            # Struct/union types are registered by name reference
+            # Full definition handled separately
+            normalized = {
+                "kind": kind,
+                "name": native_type.get("name", "anonymous"),
+                "size_bytes": native_type.get("size_bytes", 0),
+                "alignment_bytes": native_type.get("alignment_bytes", 0)
+            }
+            
+            return self.type_registry.register_type(normalized)
+        
+        elif kind == "padding":
+            # Padding is a synthetic type
+            return self.type_registry.register_type(native_type)
+        
+        else:
+            # Unknown type - register as-is
+            return self.type_registry.register_type(native_type)
+
+# ───────────────────────────────────────────────────────────────────
+# 5.5 IR Normalization Stage
+# ───────────────────────────────────────────────────────────────────
+
+class IRNormalizationStage(PipelineStage):
+    """
+    Stage 2: IR Normalization
+    
+    Transforms raw native interface into canonical intermediate representation
+    with typedef resolution, type registry, and normalized structures.
+    """
+    
+    STAGE_NAME = "ir_normalization"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Normalize native interface to canonical IR"
+    
+    REQUIRED_INPUTS = ["native_interface"]
+    PRODUCED_OUTPUTS = ["ir"]
+    
+    def _execute_impl(self) -> None:
+        """Normalize native interface to IR."""
+        # Load native interface artifact
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        native_interface_path = os.path.join(artifacts_dir, "native_interface.json")
+        
+        with open(native_interface_path, 'r', encoding='utf-8') as f:
+            native_interface = json.load(f)
+        
+        # Initialize components
+        type_registry = TypeRegistry()
+        typedef_resolver = TypedefResolver()
+        type_normalizer = TypeNormalizer(type_registry, typedef_resolver)
+        
+        # : Register all typedefs
+        for typedef in native_interface.get("typedefs", []):
+            typedef_resolver.register_typedef(typedef)
+        
+        # : Normalize functions
+        normalized_functions = []
+        for func in native_interface.get("functions", []):
+            normalized_func = self._normalize_function(func, type_normalizer)
+            normalized_functions.append(normalized_func)
+        
+        # : Normalize structures
+        normalized_structures = []
+        for struct in native_interface.get("structures", []):
+            normalized_struct = self._normalize_structure(struct, type_normalizer)
+            normalized_structures.append(normalized_struct)
+        
+        # : Normalize enumerations
+        normalized_enums = []
+        for enum in native_interface.get("enumerations", []):
+            normalized_enum = self._normalize_enum(enum, type_normalizer)
+            normalized_enums.append(normalized_enum)
+        
+        # : Extract platform info
+        platform_info = {
+            "pointer_size": self.execution_context["platform"]["pointer_width"] // 8,
+            "endianness": self.execution_context["platform"]["endianness"],
+            "alignment_rules": "msvc" if self.execution_context["platform"]["os_name"] == "Windows" else "gcc"
+        }
+        
+        # Build IR artifact
+        provenance = self.create_provenance([native_interface_path])
+        
+        ir_artifact = {
+            "provenance": provenance.to_dict(),
+            "platform": platform_info,
+            "type_registry": type_registry.get_all_types(),
+            "functions": normalized_functions,
+            "structures": normalized_structures,
+            "enumerations": normalized_enums
+        }
+        
+        # Write IR artifact
+        ir_path = os.path.join(artifacts_dir, "ir.json")
+        with open(ir_path, 'w', encoding='utf-8') as f:
+            json.dump(ir_artifact, f, indent=2)
+    
+    def _normalize_function(self, func: Dict, normalizer: TypeNormalizer) -> Dict:
+        """Normalize function signature."""
+        # Normalize return type
+        return_type_id = normalizer.normalize_type(func["return_type"])
+        
+        # Normalize parameters
+        normalized_params = []
+        for i, param in enumerate(func.get("parameters", [])):
+            param_type_id = normalizer.normalize_type(param["type"])
+            
+            # Generate name if missing
+            param_name = param.get("name") or f"param_{i}"
+            
+            normalized_params.append({
+                "name": param_name,
+                "type_id": param_type_id,
+                "position": param.get("position", i)
+            })
+        
+        return {
+            "name": func["name"],
+            "return_type_id": return_type_id,
+            "parameters": normalized_params,
+            "calling_convention": func.get("calling_convention", "cdecl"),
+            "source_location": func.get("source_location", {})
+        }
+    
+    def _normalize_structure(self, struct: Dict, normalizer: TypeNormalizer) -> Dict:
+        """Normalize struct layout."""
+        # Generate struct type ID
+        struct_type_id = TypeIDGenerator.generate({
+            "kind": "struct" if not struct.get("is_union") else "union",
+            "name": struct["name"]
+        })
+        
+        # Normalize field types
+        normalized_fields = []
+        for field in struct.get("fields", []):
+            field_type_id = normalizer.normalize_type(field["type"])
+            
+            normalized_field = {
+                "name": field["name"],
+                "type_id": field_type_id,
+                "offset_bytes": field["offset_bytes"],
+                "size_bytes": field["size_bytes"],
+                "is_implicit": field.get("is_implicit", False)
+            }
+            
+            # Preserve bitfield info if present
+            if "is_bitfield" in field:
+                normalized_field["is_bitfield"] = field["is_bitfield"]
+                normalized_field["bitfield_width"] = field["bitfield_width"]
+                normalized_field["bitfield_offset"] = field.get("bitfield_offset", 0)
+            
+            normalized_fields.append(normalized_field)
+        
+        return {
+            "name": struct["name"],
+            "type_id": struct_type_id,
+            "size_bytes": struct["size_bytes"],
+            "alignment_bytes": struct["alignment_bytes"],
+            "is_union": struct.get("is_union", False),
+            "fields": normalized_fields,
+            "source_location": struct.get("source_location", {})
+        }
+    
+    def _normalize_enum(self, enum: Dict, normalizer: TypeNormalizer) -> Dict:
+        """Normalize enumeration."""
+        # Normalize underlying type
+        underlying_type_id = normalizer.normalize_type(enum["underlying_type"])
+        
+        # Generate enum type ID
+        enum_type_id = TypeIDGenerator.generate({
+            "kind": "enum",
+            "name": enum["name"]
+        })
+        
+        return {
+            "name": enum["name"],
+            "type_id": enum_type_id,
+            "underlying_type_id": underlying_type_id,
+            "constants": enum["constants"],
+            "source_location": enum.get("source_location", {})
         }
 
 # ───────────────────────────────────────────────────────────────────

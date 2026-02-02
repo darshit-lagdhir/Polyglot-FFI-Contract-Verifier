@@ -17,7 +17,8 @@ This document provides the complete technical specification for the Verification
 - ✅ : Stage State Machines & Artifact Validation (COMPLETE)
 - ✅ : Artifact Schemas & Incremental Verification (COMPLETE)
 - ✅ : Native Interface Ingestion Stage (COMPLETE)
-- ⏳ Prompts 5-20: Additional pipeline components (PENDING)
+- ✅ : IR Normalization Stage (COMPLETE)
+- ⏳ Prompts 6-20: Additional pipeline components (PENDING)
 
 ---
 
@@ -27,9 +28,10 @@ This document provides the complete technical specification for the Verification
 2. [Stage State Machines & Artifact Validation](#2-stage-state-machines--artifact-validation)
 3. [Artifact Schemas & Incremental Verification](#3-artifact-schemas--incremental-verification)
 4. [Native Interface Ingestion Stage](#4-native-interface-ingestion-stage)
-5. [Implementation Architecture](#5-implementation-architecture)
-6. [Usage Examples](#6-usage-examples)
-7. [Next Steps](#7-next-steps)
+5. [IR Normalization Stage](#5-ir-normalization-stage)
+6. [Implementation Architecture](#6-implementation-architecture)
+7. [Usage Examples](#7-usage-examples)
+8. [Next Steps](#8-next-steps)
 
 ---
 
@@ -41,12 +43,12 @@ This document provides the complete technical specification for the Verification
 The verification pipeline is a **formally constrained transformation system** that converts uncertainty into evidence.
 
 ### 1.2 Foundational Principles
-1. **No Implicit Correctness Judgments**: Every claim backed by artifacts.
-2. **Temporal Separation**: Derivation → Synthesis → Enforcement → Interpretation.
-3. **Monotonicity**: Information is never lost, only refined.
-4. **Closed System**: All inputs declared upfront.
-5. **Determinism**: Identical inputs → Identical outputs.
-6. **Conservatism**: Assume worst case (e.g. non-null pointers).
+1. **No Implicit Correctness Judgments**
+2. **Temporal Separation**
+3. **Monotonicity**
+4. **Closed System**
+5. **Determinism**
+6. **Conservatism**
 
 ---
 
@@ -56,101 +58,96 @@ The verification pipeline is a **formally constrained transformation system** th
 `PENDING` → `READY` → `EXECUTING` → `COMPLETED` / `FAILED`.
 
 ### 2.2 Advanced Artifact Validation
-- **Schema Compatibility**: Semantic versioning.
-- **Hash Verification**: Integrity checks.
+- Schema Compatibility
+- Hash Verification
 
 ---
 
 ## 3. Artifact Schemas & Incremental Verification
 
 ### 3.1 Artifact Types
-ExecutionContext, NativeInterface, Contract, TestPlan, ExecutionLog, etc.
+ExecutionContext, NativeInterface, IR, Contract, etc.
 
 ### 3.2 Provenance & Incremental
-- **Provenance**: Chain of custody for data.
-- **Deep Hash Validation**: Ensuring inputs haven't changed.
-- **Staleness Detection**: Reusing fresh artifacts.
+- Provenance tracking
+- Staleness detection
 
 ---
 
 ## 4. Native Interface Ingestion Stage
 
 ### 4.1 Overview
-
-The Native Interface Ingestion stage is the entry point of the verification pipeline. It is responsible for extracting the ABI (Application Binary Interface) surface from C header files exactly as the compiler sees it. This stage must be **lossless** - no ABI-relevant details can be discarded or simplified.
-
-**Critical Principle: Compiler Reality, Not Developer Intention**
-We use `libclang` to parse headers with the exact compilation flags used for the library. This ensures we capture:
-- True struct sizes (including padding).
-- Actual calling conventions.
-- Explicit and implicit alignment rules.
+Extracts ABI surface from C headers using `libclang` with lossless fidelity (padding, alignment, etc.).
 
 ### 4.2 Extracted Information
+Functions, Structures (with padding), Enums, Typedefs.
 
-**1. Functions:**
-- Complete signature (return type, parameters with positions).
-- Calling convention (`cdecl`, `stdcall`, `fastcall`).
-- Linkage and visibility.
-- Source location.
+---
 
-**2. Structures:**
-- Total size and alignment.
-- Fields with precise offsets.
-- **Implicit Padding**: Computed gaps between fields.
-- **Trailing Padding**: Padding at end of struct for array alignment.
+## 5. IR Normalization Stage
 
-**3. Types:**
-- Recursive type definitions (pointers to arrays of structs...).
-- Qualifiers (`const`, `volatile`).
-- Exact size and alignment for every type.
+### 5.1 Overview - Semantic-Preserving Transformation
 
-### 4.3 Struct Layout Computation Algorithm
+The IR Normalization stage transforms the verbose, compiler-specific native interface artifact into a clean, canonical intermediate representation (IR).
 
-1. **Extract Declared Fields**: Get offset/size from libclang.
-2. **Sort by Offset**: Ensure processing order.
-3. **Detect Implicit Padding**:
-   If `offset[i+1] > offset[i] + size[i]`, insert `__padding_N` field.
-4. **Detect Trailing Padding**:
-   If `struct_size > last_field_end`, insert `__padding_N` at end.
-5. **Handle Unions**: All fields at offset 0, size is max(fields).
+**Principles:**
+- **Canonical Form**: One unique representation per semantic concept.
+- **Platform Abstraction**: Remove toolchain quirks.
+- **Information Preservation**: No ABI details discarded.
+- **Structural Identity**: Types are identified by structure, not name.
 
-### 4.4 Calling Convention Detection
+### 5.2 Transitive Typedef Resolution
 
-Crucial for Windows FFI. We map libclang conventions:
-- `CallingConv.C` → `cdecl`
-- `CallingConv.X86_STDCALL` → `stdcall`
-- `CallingConv.X86_FASTCALL` → `fastcall`
-- `CallingConv.WIN64` → `win64`
+Typedefs (e.g., `LPSTR` → `char*`) are resolved to their underlying canonical types. The pipeline handles:
+- **Chained Typedefs**: `A` → `B` → `C` resolved to `C`.
+- **Circular Detection**: `A` → `B` → `A` raises error.
+- **Aliasing**: Typedefs preserved as aliases for diagnostics.
 
-### 4.5 Error Handling
+### 5.3 Type Registry & Stable IDs
 
-- **Compilation Errors**: Fail stage with compiler diagnostics.
-- **Missing libclang**: Fail with ConfigError.
-- **Platform Mismatch**: Fail if header target differs from host.
+All types are registered in a central `TypeRegistry`.
+- **Type ID**: Deterministic, stable string (e.g., `pointer_to_primitive_int`).
+- **Deduplication**: Identical structures share the same Type ID.
+- **Bi-directional**: ID ↔ Type Info.
 
-### 4.6 Artifact Schema: NativeInterface
+### 5.4 Normalization Rules
+
+1.  **Structs**:
+    - Inline types replaced with Type IDs.
+    - Padding fields normalized (`__padding_N`, `is_implicit: true`).
+    - Bitfields preserved with offset/width.
+
+2.  **Functions**:
+    - Parameter types resolved to IDs.
+    - Calling conventions mapped to canonical set (`stdcall`, `cdecl`, `win64`, `sysv`).
+    - Unnamed parameters given synthetic names (`param_0`).
+
+3.  **Enums**:
+    - Underlying type resolved.
+    - All constants given explicit values.
+
+4.  **Qualifiers**:
+    - `const`, `volatile`, `restrict` normalized and preserved.
+
+### 5.5 Artifact Schema: IR
 
 ```json
 {
-  "provenance": { ... },
-  "header_path": "/abs/path.h",
-  "compilation_flags": ["-I...", "-DWIN32"],
+  "provenance": {...},
+  "platform": {
+    "pointer_size": 8,
+    "endianness": "little",
+    "alignment_rules": "msvc"
+  },
+  "type_registry": {
+    "primitive_int": {"kind": "primitive", "name": "int", "size_bytes": 4},
+    "pointer_to_primitive_int": {"kind": "pointer", "pointee_id": "primitive_int"}
+  },
   "functions": [
     {
-      "name": "func",
-      "calling_convention": "cdecl",
-      "parameters": [...]
-    }
-  ],
-  "structures": [
-    {
-      "name": "MyStruct",
-      "size_bytes": 16,
-      "fields": [
-        {"name": "a", "offset_bytes": 0, "size_bytes": 4},
-        {"name": "__padding_1", "offset_bytes": 4, "size_bytes": 4, "is_implicit": true},
-        {"name": "b", "offset_bytes": 8, "size_bytes": 8}
-      ]
+      "name": "process",
+      "return_type_id": "primitive_int",
+      "parameters": [{"name": "ptr", "type_id": "pointer_to_primitive_int"}]
     }
   ]
 }
@@ -158,52 +155,38 @@ Crucial for Windows FFI. We map libclang conventions:
 
 ---
 
-## 5. Implementation Architecture
+## 6. Implementation Architecture
 
-### 5.1 Class Hierarchy
+### 6.1 Class Hierarchy
 
 ```
 PipelineStage (ABC)
-├── NativeInterfaceIngestionStage (NEW)
-│   ├── Uses: libclang
-│   ├── Uses: TypeExtractor
-│   └── Uses: StructLayoutExtractor
+├── NativeInterfaceIngestionStage
+├── IRNormalizationStage (NEW)
+│   ├── Uses: TypeIDGenerator
+│   ├── Uses: TypeRegistry
+│   ├── Uses: TypedefResolver
+│   └── Uses: TypeNormalizer
 ...
-
-VerificationPipeline
-├── EnhancedVerificationPipeline
-    ├── SchemaRegistry
-    └── IncrementalPipelineExecutor
 ```
-
-### 5.2 External Dependencies
-- **libclang**: LLVM's C interface for parsing C/C++.
-- **clang.cindex**: Python bindings for libclang.
 
 ---
 
-## 6. Usage Examples
+## 7. Usage Examples
 
-### 6.1 Running Ingestion (via Incremental)
+### 7.1 Running IR Normalization
 
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py run-incremental \
     --context artifacts/execution_context.json \
-    --target native_interface
-```
-
-### 6.2 Checking Staleness
-
-```bash
-python modules/module_02_verification_pipeline/verification_pipeline.py check-staleness \
-    artifacts/native_interface.json --context artifacts/execution_context.json
+    --target ir
 ```
 
 ---
 
-## 7. Next Steps
+## 8. Next Steps
 
 **** will implement:
-- **IR Normalization Stage**: Converting raw NativeInterface into a platform-agnostic Intermediate Representation (IR).
-- Canonicalization of types.
-- Resolution of typedefs.
+- **Contract Synthesis Stage**: Generating formal logic constraints from the Normalized IR.
+- Precondition extraction (non-null pointers).
+- Buffer size inference.
