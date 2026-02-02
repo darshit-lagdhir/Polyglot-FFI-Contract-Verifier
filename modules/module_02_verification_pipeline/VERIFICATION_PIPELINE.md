@@ -18,7 +18,8 @@ This document provides the complete technical specification for the Verification
 - ✅ : Artifact Schemas & Incremental Verification (COMPLETE)
 - ✅ : Native Interface Ingestion Stage (COMPLETE)
 - ✅ : IR Normalization Stage (COMPLETE)
-- ⏳ Prompts 6-20: Additional pipeline components (PENDING)
+- ✅ : Contract Synthesis Stage (COMPLETE)
+- ⏳ Prompts 7-20: Additional pipeline components (PENDING)
 
 ---
 
@@ -29,9 +30,10 @@ This document provides the complete technical specification for the Verification
 3. [Artifact Schemas & Incremental Verification](#3-artifact-schemas--incremental-verification)
 4. [Native Interface Ingestion Stage](#4-native-interface-ingestion-stage)
 5. [IR Normalization Stage](#5-ir-normalization-stage)
-6. [Implementation Architecture](#6-implementation-architecture)
-7. [Usage Examples](#7-usage-examples)
-8. [Next Steps](#8-next-steps)
+6. [Contract Synthesis Stage](#6-contract-synthesis-stage)
+7. [Implementation Architecture](#7-implementation-architecture)
+8. [Usage Examples](#8-usage-examples)
+9. [Next Steps](#9-next-steps)
 
 ---
 
@@ -39,115 +41,86 @@ This document provides the complete technical specification for the Verification
 
 *(See previous versions for full text - preserved)*
 
-### 1.1 Overview
-The verification pipeline is a **formally constrained transformation system** that converts uncertainty into evidence.
-
-### 1.2 Foundational Principles
-1. **No Implicit Correctness Judgments**
-2. **Temporal Separation**
-3. **Monotonicity**
-4. **Closed System**
-5. **Determinism**
-6. **Conservatism**
-
 ---
 
 ## 2. Stage State Machines & Artifact Validation
 
-### 2.1 State Machine Enforcement
-`PENDING` → `READY` → `EXECUTING` → `COMPLETED` / `FAILED`.
-
-### 2.2 Advanced Artifact Validation
-- Schema Compatibility
-- Hash Verification
+*(See previous versions for full text - preserved)*
 
 ---
 
 ## 3. Artifact Schemas & Incremental Verification
 
-### 3.1 Artifact Types
-ExecutionContext, NativeInterface, IR, Contract, etc.
-
-### 3.2 Provenance & Incremental
-- Provenance tracking
-- Staleness detection
+*(See previous versions for full text - preserved)*
 
 ---
 
 ## 4. Native Interface Ingestion Stage
 
-### 4.1 Overview
-Extracts ABI surface from C headers using `libclang` with lossless fidelity (padding, alignment, etc.).
-
-### 4.2 Extracted Information
-Functions, Structures (with padding), Enums, Typedefs.
+*(See previous versions for full text - preserved)*
 
 ---
 
 ## 5. IR Normalization Stage
 
-### 5.1 Overview - Semantic-Preserving Transformation
+*(See previous versions for full text - preserved)*
 
-The IR Normalization stage transforms the verbose, compiler-specific native interface artifact into a clean, canonical intermediate representation (IR).
+---
 
-**Principles:**
-- **Canonical Form**: One unique representation per semantic concept.
-- **Platform Abstraction**: Remove toolchain quirks.
-- **Information Preservation**: No ABI details discarded.
-- **Structural Identity**: Types are identified by structure, not name.
+## 6. Contract Synthesis Stage
 
-### 5.2 Transitive Typedef Resolution
+### 6.1 Overview - From Structure to Semantics
 
-Typedefs (e.g., `LPSTR` → `char*`) are resolved to their underlying canonical types. The pipeline handles:
-- **Chained Typedefs**: `A` → `B` → `C` resolved to `C`.
-- **Circular Detection**: `A` → `B` → `A` raises error.
-- **Aliasing**: Typedefs preserved as aliases for diagnostics.
+Contract synthesis transforms the structural facts of the IR (types, offsets) into semantic correctness constraints. It operates on the principle of **conservative inference**—assuming the strictest safety rules unless evidence suggests otherwise.
 
-### 5.3 Type Registry & Stable IDs
+### 6.2 Inference Heuristics
 
-All types are registered in a central `TypeRegistry`.
-- **Type ID**: Deterministic, stable string (e.g., `pointer_to_primitive_int`).
-- **Deduplication**: Identical structures share the same Type ID.
-- **Bi-directional**: ID ↔ Type Info.
+The stage analyzes naming patterns, type signatures, and parameter relationships to infer:
+- **Nullability**: `optional_ptr` vs `ptr`.
+- **Buffer Sizes**: `(char* buf, size_t len)` correlation.
+- **Ownership**: `create_` vs `destroy_`.
+- **Lifetimes**: Stack vs Heap assumptions.
 
-### 5.4 Normalization Rules
+### 6.3 Constraint Categories
 
-1.  **Structs**:
-    - Inline types replaced with Type IDs.
-    - Padding fields normalized (`__padding_N`, `is_implicit: true`).
-    - Bitfields preserved with offset/width.
+1.  **NULLABILITY**: `NON_NULL` (default), `NULLABLE`, `CONDITIONALLY_NULL`.
+2.  **BUFFER_SIZE**: `buf.size == len`, `null_terminated`.
+3.  **OWNERSHIP**: `BORROWED`, `TRANSFERRED_IN`, `TRANSFERRED_OUT`.
+4.  **ALIGNMENT**: Power-of-two alignment requirements.
+5.  **CALLING_CONVENTION**: ABI compliance checks.
 
-2.  **Functions**:
-    - Parameter types resolved to IDs.
-    - Calling conventions mapped to canonical set (`stdcall`, `cdecl`, `win64`, `sysv`).
-    - Unnamed parameters given synthetic names (`param_0`).
+### 6.4 Confidence Scoring
 
-3.  **Enums**:
-    - Underlying type resolved.
-    - All constants given explicit values.
+Every constraint is assigned a confidence score (0.0 - 1.0):
+- **HIGH (>0.9)**: Explicit type traits (e.g., array size).
+- **MEDIUM (0.6-0.9)**: Strong naming conventions (`create_...`).
+- **LOW (<0.6)**: Default assumptions (warnings generated).
 
-4.  **Qualifiers**:
-    - `const`, `volatile`, `restrict` normalized and preserved.
-
-### 5.5 Artifact Schema: IR
+### 6.5 Artifact Schema: Contract
 
 ```json
 {
-  "provenance": {...},
-  "platform": {
-    "pointer_size": 8,
-    "endianness": "little",
-    "alignment_rules": "msvc"
-  },
-  "type_registry": {
-    "primitive_int": {"kind": "primitive", "name": "int", "size_bytes": 4},
-    "pointer_to_primitive_int": {"kind": "pointer", "pointee_id": "primitive_int"}
-  },
   "functions": [
     {
-      "name": "process",
-      "return_type_id": "primitive_int",
-      "parameters": [{"name": "ptr", "type_id": "pointer_to_primitive_int"}]
+      "name": "process_data",
+      "constraints": [
+        {
+          "constraint_id": "process_data_NON_NULL_data_1",
+          "type": "non_null",
+          "target": "param_data",
+          "confidence": 0.4,
+          "rationale": "Default assumption",
+          "warning": "Low confidence - recommend annotation"
+        },
+        {
+          "constraint_id": "process_data_BUFFER_SIZE_data_2",
+          "type": "buffer_size",
+          "target": "param_data",
+          "related_target": "param_len",
+          "confidence": 0.85,
+          "rationale": "Adjacent length parameter"
+        }
+      ]
     }
   ]
 }
@@ -155,38 +128,36 @@ All types are registered in a central `TypeRegistry`.
 
 ---
 
-## 6. Implementation Architecture
+## 7. Implementation Architecture
 
-### 6.1 Class Hierarchy
+### 7.1 Class Hierarchy
 
 ```
 PipelineStage (ABC)
 ├── NativeInterfaceIngestionStage
-├── IRNormalizationStage (NEW)
-│   ├── Uses: TypeIDGenerator
-│   ├── Uses: TypeRegistry
-│   ├── Uses: TypedefResolver
-│   └── Uses: TypeNormalizer
-...
+├── IRNormalizationStage
+└── ContractSynthesisStage (NEW)
+    ├── Uses: NamingPatternAnalyzer
+    ├── Uses: ConstraintSynthesizer
+    ├── Uses: ConstraintType
+    └── Uses: Constraint (Data Class)
 ```
 
 ---
 
-## 7. Usage Examples
+## 8. Usage Examples
 
-### 7.1 Running IR Normalization
+### 8.1 Running Contract Synthesis
 
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py run-incremental \
     --context artifacts/execution_context.json \
-    --target ir
+    --target contract
 ```
 
 ---
 
-## 8. Next Steps
+## 9. Next Steps
 
 **** will implement:
-- **Contract Synthesis Stage**: Generating formal logic constraints from the Normalized IR.
-- Precondition extraction (non-null pointers).
-- Buffer size inference.
+- **Adapter Generation Stage**: Creating safe Rust/C++ adapter code that enforces the synthesized contract at runtime.

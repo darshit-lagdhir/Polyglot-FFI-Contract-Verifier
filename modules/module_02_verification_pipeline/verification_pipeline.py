@@ -1289,6 +1289,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
             self.registry.register_stage(NativeInterfaceIngestionStage)
         if 'IRNormalizationStage' in globals():
             self.registry.register_stage(IRNormalizationStage)
+        if 'ContractSynthesisStage' in globals():
+            self.registry.register_stage(ContractSynthesisStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -2840,6 +2842,543 @@ class IRNormalizationStage(PipelineStage):
             "constants": enum["constants"],
             "source_location": enum.get("source_location", {})
         }
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 6.1 Constraint Types
+# ───────────────────────────────────────────────────────────────────
+
+class ConstraintType(Enum):
+    """Types of constraints that can be synthesized."""
+    NON_NULL = "non_null"
+    NULLABLE = "nullable"
+    CONDITIONALLY_NULL = "conditionally_null"
+    BUFFER_SIZE = "buffer_size"
+    NULL_TERMINATED = "null_terminated"
+    OWNERSHIP_BORROWED = "ownership_borrowed"
+    OWNERSHIP_TRANSFERRED_IN = "ownership_transferred_in"
+    OWNERSHIP_TRANSFERRED_OUT = "ownership_transferred_out"
+    ALIGNMENT = "alignment"
+    CALLING_CONVENTION = "calling_convention"
+    OUTPUT_PARAMETER = "output_parameter"
+
+@dataclass
+class Constraint:
+    """
+    A single constraint on an FFI interface element.
+    
+    Represents an assumption that must hold for correct behavior.
+    """
+    constraint_id: str
+    constraint_type: ConstraintType
+    target: str  # What this constrains (e.g., "param_data", "return_value")
+    confidence: float  # 0.0 to 1.0
+    rationale: str  # Human-readable explanation
+    derivation_rule: str  # Which rule produced this
+    evidence: List[str]  # Evidence supporting this constraint
+    related_target: Optional[str] = None  # For relational constraints
+    conditions: Optional[List[Dict[str, str]]] = None  # For conditional constraints
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary."""
+        result = {
+            "constraint_id": self.constraint_id,
+            "type": self.constraint_type.value,
+            "target": self.target,
+            "confidence": self.confidence,
+            "rationale": self.rationale,
+            "derivation_rule": self.derivation_rule,
+            "evidence": self.evidence
+        }
+        
+        if self.related_target:
+            result["related_target"] = self.related_target
+        
+        if self.conditions:
+            result["conditions"] = self.conditions
+        
+        # Add warning for low confidence
+        if self.confidence < 0.6:
+            result["warning"] = "Low confidence - recommend explicit annotation"
+        
+        return result
+
+# ───────────────────────────────────────────────────────────────────
+# 6.2 Naming Pattern Analyzer
+# ───────────────────────────────────────────────────────────────────
+
+class NamingPatternAnalyzer:
+    """
+    Analyzes naming patterns to infer semantic properties.
+    
+    Uses heuristics based on common C naming conventions.
+    """
+    
+    # Patterns for nullability
+    NULLABLE_PATTERNS = ["optional", "maybe", "nullable", "or_null"]
+    
+    # Patterns for ownership transfer (output)
+    CREATE_PATTERNS = ["create", "alloc", "new", "open", "make", "build"]
+    
+    # Patterns for ownership transfer (input)
+    DESTROY_PATTERNS = ["destroy", "free", "delete", "close", "release"]
+    
+    # Patterns for size/length parameters
+    SIZE_PATTERNS = ["size", "length", "len", "count", "num", "n"]
+    
+    # Patterns for buffer parameters
+    BUFFER_PATTERNS = ["buffer", "buf", "data", "array", "ptr"]
+    
+    @staticmethod
+    def suggests_nullable(name: str) -> bool:
+        """Check if name suggests pointer may be null."""
+        name_lower = name.lower()
+        return any(pattern in name_lower for pattern in NamingPatternAnalyzer.NULLABLE_PATTERNS)
+    
+    @staticmethod
+    def suggests_ownership_transfer_out(name: str) -> bool:
+        """Check if name suggests function creates/allocates resource."""
+        name_lower = name.lower()
+        return any(name_lower.startswith(pattern) for pattern in NamingPatternAnalyzer.CREATE_PATTERNS)
+    
+    @staticmethod
+    def suggests_ownership_transfer_in(name: str) -> bool:
+        """Check if name suggests function destroys/frees resource."""
+        name_lower = name.lower()
+        return any(name_lower.startswith(pattern) for pattern in NamingPatternAnalyzer.DESTROY_PATTERNS)
+    
+    @staticmethod
+    def suggests_size_parameter(name: str) -> bool:
+        """Check if name suggests parameter is a size/length."""
+        name_lower = name.lower()
+        return any(pattern in name_lower for pattern in NamingPatternAnalyzer.SIZE_PATTERNS)
+    
+    @staticmethod
+    def suggests_buffer_parameter(name: str) -> bool:
+        """Check if name suggests parameter is a buffer."""
+        name_lower = name.lower()
+        return any(pattern in name_lower for pattern in NamingPatternAnalyzer.BUFFER_PATTERNS)
+
+# ───────────────────────────────────────────────────────────────────
+# 6.3 Constraint Synthesizer
+# ───────────────────────────────────────────────────────────────────
+
+class ConstraintSynthesizer:
+    """
+    Synthesizes constraints from IR using derivation rules.
+    
+    Applies heuristics and naming analysis to infer semantic properties.
+    """
+    
+    def __init__(self, ir_artifact: Dict[str, Any], type_registry: Dict[str, Any]):
+        self.ir = ir_artifact
+        self.type_registry = type_registry
+        self.constraint_counter = 0
+    
+    def synthesize_function_constraints(self, function: Dict[str, Any]) -> List[Constraint]:
+        """
+        Synthesize constraints for a single function.
+        
+        Args:
+            function: Normalized function from IR
+            
+        Returns:
+            List of constraints
+        """
+        constraints = []
+        func_name = function["name"]
+        
+        # Synthesize parameter constraints
+        for param in function.get("parameters", []):
+            param_constraints = self._synthesize_parameter_constraints(
+                func_name, param, function["parameters"]
+            )
+            constraints.extend(param_constraints)
+        
+        # Synthesize return value constraints
+        return_constraints = self._synthesize_return_constraints(func_name, function)
+        constraints.extend(return_constraints)
+        
+        # Synthesize calling convention constraint
+        conv_constraint = self._synthesize_calling_convention_constraint(func_name, function)
+        if conv_constraint:
+            constraints.append(conv_constraint)
+        
+        return constraints
+    
+    def _synthesize_parameter_constraints(
+        self,
+        func_name: str,
+        param: Dict[str, Any],
+        all_params: List[Dict[str, Any]]
+    ) -> List[Constraint]:
+        """Synthesize constraints for a parameter."""
+        constraints = []
+        param_name = param["name"]
+        param_type = self.type_registry.get(param["type_id"], {})
+        
+        # Check if pointer type
+        if param_type.get("kind") == "pointer":
+            # Nullability constraint
+            null_constraint = self._infer_nullability(func_name, param_name, param, param_type)
+            constraints.append(null_constraint)
+            
+            # Check for buffer-length relationship
+            buffer_constraint = self._infer_buffer_size(func_name, param, all_params)
+            if buffer_constraint:
+                constraints.append(buffer_constraint)
+            
+            # Check for output parameter pattern
+            if self._is_output_parameter(param_type):
+                output_constraint = self._create_output_parameter_constraint(func_name, param_name)
+                constraints.append(output_constraint)
+        
+        # Check for ownership transfer (destroy/free functions)
+        if NamingPatternAnalyzer.suggests_ownership_transfer_in(func_name):
+            if param_type.get("kind") == "pointer":
+                ownership_constraint = self._create_ownership_transferred_in_constraint(
+                    func_name, param_name
+                )
+                constraints.append(ownership_constraint)
+        
+        return constraints
+    
+    def _infer_nullability(
+        self,
+        func_name: str,
+        param_name: str,
+        param: Dict,
+        param_type: Dict
+    ) -> Constraint:
+        """Infer nullability constraint for pointer parameter."""
+        # Check naming patterns
+        if NamingPatternAnalyzer.suggests_nullable(param_name):
+            confidence = 0.8
+            constraint_type = ConstraintType.NULLABLE
+            rationale = f"Parameter name '{param_name}' suggests optional/nullable"
+            evidence = [f"Name contains nullability hint: {param_name}"]
+        else:
+            # Default: assume non-null (conservative)
+            confidence = 0.4
+            constraint_type = ConstraintType.NON_NULL
+            rationale = "Default assumption (no explicit nullability evidence)"
+            evidence = ["No naming hints for nullability", "Conservative default: non-null"]
+        
+        self.constraint_counter += 1
+        constraint_id = f"{func_name}_{constraint_type.value}_{param_name}_{self.constraint_counter}"
+        
+        return Constraint(
+            constraint_id=constraint_id,
+            constraint_type=constraint_type,
+            target=f"param_{param_name}",
+            confidence=confidence,
+            rationale=rationale,
+            derivation_rule="Rule 1: Pointer Nullability",
+            evidence=evidence
+        )
+    
+    def _infer_buffer_size(
+        self,
+        func_name: str,
+        param: Dict,
+        all_params: List[Dict]
+    ) -> Optional[Constraint]:
+        """Infer buffer-length relationship."""
+        param_name = param["name"]
+        param_pos = param["position"]
+        
+        # Look for adjacent size parameter
+        for other_param in all_params:
+            if other_param["name"] == param_name:
+                continue
+            
+            other_type = self.type_registry.get(other_param["type_id"], {})
+            
+            # Check if other param is integer type (size)
+            if other_type.get("kind") == "primitive":
+                if "int" in other_type.get("name", "").lower():
+                    # Check naming
+                    if NamingPatternAnalyzer.suggests_size_parameter(other_param["name"]):
+                        confidence = 0.85
+                        evidence = [
+                            f"Parameter '{param_name}' is pointer",
+                            f"Parameter '{other_param['name']}' is integer with size-like name",
+                            "Adjacent parameters suggest buffer-length relationship"
+                        ]
+                    elif abs(other_param["position"] - param_pos) == 1:
+                        confidence = 0.6
+                        evidence = [
+                            f"Parameter '{param_name}' is pointer",
+                            f"Parameter '{other_param['name']}' is integer",
+                            "Adjacent parameters (weak inference)"
+                        ]
+                    else:
+                        continue  # No strong evidence
+                    
+                    self.constraint_counter += 1
+                    constraint_id = f"{func_name}_BUFFER_SIZE_{param_name}_{self.constraint_counter}"
+                    
+                    return Constraint(
+                        constraint_id=constraint_id,
+                        constraint_type=ConstraintType.BUFFER_SIZE,
+                        target=f"param_{param_name}",
+                        related_target=f"param_{other_param['name']}",
+                        confidence=confidence,
+                        rationale=f"Buffer '{param_name}' size specified by '{other_param['name']}'",
+                        derivation_rule="Rule 2: Buffer-Length Relationship",
+                        evidence=evidence
+                    )
+        
+        # Check if const char* without size → likely null-terminated
+        param_type = self.type_registry.get(param["type_id"], {})
+        if param_type.get("kind") == "pointer":
+            pointee_id = param_type.get("pointee_id")
+            if pointee_id:
+                pointee = self.type_registry.get(pointee_id, {})
+                if pointee.get("name") == "char" and param_type.get("is_const"):
+                    self.constraint_counter += 1
+                    constraint_id = f"{func_name}_NULL_TERMINATED_{param_name}_{self.constraint_counter}"
+                    
+                    return Constraint(
+                        constraint_id=constraint_id,
+                        constraint_type=ConstraintType.NULL_TERMINATED,
+                        target=f"param_{param_name}",
+                        confidence=0.7,
+                        rationale=f"const char* parameter without size likely null-terminated string",
+                        derivation_rule="Rule 3: Null-Terminated String",
+                        evidence=[
+                            "Type is const char*",
+                            "No adjacent size parameter found",
+                            "Common pattern for string parameters"
+                        ]
+                    )
+        
+        return None
+    
+    def _is_output_parameter(self, param_type: Dict) -> bool:
+        """Check if parameter is output parameter (pointer to pointer)."""
+        if param_type.get("kind") != "pointer":
+            return False
+        
+        pointee_id = param_type.get("pointee_id")
+        if not pointee_id:
+            return False
+        
+        pointee = self.type_registry.get(pointee_id, {})
+        return pointee.get("kind") == "pointer" and not param_type.get("is_const")
+    
+    def _create_output_parameter_constraint(self, func_name: str, param_name: str) -> Constraint:
+        """Create constraint for output parameter."""
+        self.constraint_counter += 1
+        constraint_id = f"{func_name}_OUTPUT_PARAMETER_{param_name}_{self.constraint_counter}"
+        
+        return Constraint(
+            constraint_id=constraint_id,
+            constraint_type=ConstraintType.OUTPUT_PARAMETER,
+            target=f"param_{param_name}",
+            confidence=0.9,
+            rationale=f"Parameter '{param_name}' is pointer-to-pointer (output parameter pattern)",
+            derivation_rule="Rule 6: Output Parameter",
+            evidence=[
+                "Type is pointer-to-pointer",
+                "Non-const (writable)",
+                "Common pattern for output parameters"
+            ]
+        )
+    
+    def _create_ownership_transferred_in_constraint(
+        self,
+        func_name: str,
+        param_name: str
+    ) -> Constraint:
+        """Create ownership transfer in constraint."""
+        self.constraint_counter += 1
+        constraint_id = f"{func_name}_OWNERSHIP_IN_{param_name}_{self.constraint_counter}"
+        
+        return Constraint(
+            constraint_id=constraint_id,
+            constraint_type=ConstraintType.OWNERSHIP_TRANSFERRED_IN,
+            target=f"param_{param_name}",
+            confidence=0.85,
+            rationale=f"Function '{func_name}' suggests resource destruction/deallocation",
+            derivation_rule="Rule 5: Ownership Transfer (Input)",
+            evidence=[
+                f"Function name starts with destroy/free pattern: {func_name}",
+                "Parameter is pointer",
+                "Common pattern for resource cleanup"
+            ]
+        )
+    
+    def _synthesize_return_constraints(
+        self,
+        func_name: str,
+        function: Dict
+    ) -> List[Constraint]:
+        """Synthesize constraints for return value."""
+        constraints = []
+        return_type = self.type_registry.get(function["return_type_id"], {})
+        
+        if return_type.get("kind") == "pointer":
+            # Check for ownership transfer out
+            if NamingPatternAnalyzer.suggests_ownership_transfer_out(func_name):
+                self.constraint_counter += 1
+                constraint_id = f"{func_name}_OWNERSHIP_OUT_return_{self.constraint_counter}"
+                
+                constraints.append(Constraint(
+                    constraint_id=constraint_id,
+                    constraint_type=ConstraintType.OWNERSHIP_TRANSFERRED_OUT,
+                    target="return_value",
+                    confidence=0.85,
+                    rationale=f"Function '{func_name}' suggests resource creation/allocation",
+                    derivation_rule="Rule 4: Ownership Transfer (Output)",
+                    evidence=[
+                        f"Function name starts with create/alloc pattern: {func_name}",
+                        "Return type is pointer",
+                        "Common pattern for resource creation"
+                    ]
+                ))
+        
+        return constraints
+    
+    def _synthesize_calling_convention_constraint(
+        self,
+        func_name: str,
+        function: Dict
+    ) -> Optional[Constraint]:
+        """Synthesize calling convention constraint."""
+        calling_conv = function.get("calling_convention", "cdecl")
+        platform = self.ir.get("platform", {})
+        
+        # Determine expected convention
+        if platform.get("pointer_size") == 8:  # x64
+            expected = "win64" if platform.get("alignment_rules") == "msvc" else "sysv"
+        else:  # x86
+            expected = "cdecl"
+        
+        if calling_conv != expected:
+            self.constraint_counter += 1
+            constraint_id = f"{func_name}_CALLING_CONV_{self.constraint_counter}"
+            
+            return Constraint(
+                constraint_id=constraint_id,
+                constraint_type=ConstraintType.CALLING_CONVENTION,
+                target=func_name,
+                confidence=1.0,
+                rationale=f"Function uses {calling_conv} convention (expected: {expected})",
+                derivation_rule="Platform ABI Rules",
+                evidence=[
+                    f"Declared convention: {calling_conv}",
+                    f"Platform default: {expected}",
+                    "Explicit convention must be honored"
+                ]
+            )
+        
+        return None
+
+# ───────────────────────────────────────────────────────────────────
+# 6.4 Contract Synthesis Stage
+# ───────────────────────────────────────────────────────────────────
+
+class ContractSynthesisStage(PipelineStage):
+    """
+    Stage 3: Contract Synthesis
+    
+    Transforms structural IR into semantic correctness constraints.
+    Infers nullability, buffer sizes, ownership, and other properties.
+    """
+    
+    STAGE_NAME = "contract_synthesis"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Synthesize semantic constraints from IR"
+    
+    REQUIRED_INPUTS = ["ir"]
+    PRODUCED_OUTPUTS = ["contract"]
+    
+    def _execute_impl(self) -> None:
+        """Synthesize contract from IR."""
+        # Load IR artifact
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        ir_path = os.path.join(artifacts_dir, "ir.json")
+        
+        with open(ir_path, 'r', encoding='utf-8') as f:
+            ir_artifact = json.load(f)
+        
+        # Initialize synthesizer
+        type_registry = ir_artifact["type_registry"]
+        synthesizer = ConstraintSynthesizer(ir_artifact, type_registry)
+        
+        # Synthesize constraints for each function
+        function_contracts = []
+        for function in ir_artifact.get("functions", []):
+            constraints = synthesizer.synthesize_function_constraints(function)
+            
+            function_contract = {
+                "name": function["name"],
+                "signature": self._build_signature(function, type_registry),
+                "constraints": [c.to_dict() for c in constraints]
+            }
+            
+            function_contracts.append(function_contract)
+        
+        # Build contract artifact
+        provenance = self.create_provenance([ir_path])
+        
+        contract_artifact = {
+            "provenance": provenance.to_dict(),
+            "schema_version": "1.0.0",
+            "functions": function_contracts,
+            "global_constraints": [],
+            "warnings": self._collect_warnings(function_contracts)
+        }
+        
+        # Write contract artifact
+        contract_path = os.path.join(artifacts_dir, "contract.json")
+        with open(contract_path, 'w', encoding='utf-8') as f:
+            json.dump(contract_artifact, f, indent=2)
+    
+    def _build_signature(self, function: Dict, type_registry: Dict) -> str:
+        """Build human-readable function signature."""
+        return_type = type_registry.get(function["return_type_id"], {})
+        return_type_str = return_type.get("name", "unknown")
+        
+        params_str = ", ".join([
+            f"{self._type_to_string(p['type_id'], type_registry)} {p['name']}"
+            for p in function.get("parameters", [])
+        ])
+        
+        return f"{return_type_str} {function['name']}({params_str})"
+    
+    def _type_to_string(self, type_id: str, type_registry: Dict) -> str:
+        """Convert type ID to string representation."""
+        type_info = type_registry.get(type_id, {})
+        kind = type_info.get("kind")
+        
+        if kind == "primitive":
+            return type_info.get("name", "unknown")
+        elif kind == "pointer":
+            pointee_id = type_info.get("pointee_id", "")
+            pointee_str = self._type_to_string(pointee_id, type_registry)
+            return f"{pointee_str}*"
+        elif kind in ["struct", "union"]:
+            return f"{kind} {type_info.get('name', 'anonymous')}"
+        else:
+            return type_id
+    
+    def _collect_warnings(self, function_contracts: List[Dict]) -> List[str]:
+        """Collect warnings from low-confidence constraints."""
+        warnings = []
+        
+        for func in function_contracts:
+            for constraint in func["constraints"]:
+                if constraint.get("confidence", 1.0) < 0.6:
+                    warnings.append(
+                        f"Low confidence constraint in {func['name']}: "
+                        f"{constraint['constraint_id']} (confidence: {constraint['confidence']})"
+                    )
+        
+        return warnings
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification
