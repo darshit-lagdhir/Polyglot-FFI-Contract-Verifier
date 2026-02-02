@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set, Tuple
+from typing import Dict, Any, List, Optional, Set, Tuple, Callable
 import argparse
 
 # ═══════════════════════════════════════════════════════════════════
@@ -6418,6 +6418,499 @@ def verify_optimized(
         profile=profile
     )
     return pipeline.execute(verbose=verbose)
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 13.1 Custom Constraint Base
+# ───────────────────────────────────────────────────────────────────
+
+class CustomConstraint(ABC):
+    """
+    Base class for custom user-defined constraints.
+    
+    Users extend this to create domain-specific constraint types.
+    """
+    
+    CONSTRAINT_TYPE: str  # Unique constraint type identifier
+    
+    def __init__(self, constraint_type: str, target: str, **metadata):
+        """
+        Initialize constraint.
+        
+        Args:
+            constraint_type: Type of constraint
+            target: What this constrains (parameter name, etc.)
+            **metadata: Additional metadata
+        """
+        self.constraint_type = constraint_type
+        self.target = target
+        self.metadata = metadata
+        self.constraint_id = f"custom_{constraint_type}_{target}"
+    
+    @abstractmethod
+    def validate(self, value: Any) -> bool:
+        """
+        Validate value against constraint.
+        
+        Args:
+            value: Value to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    def generate_check_code(self) -> str:
+        """
+        Generate Python code for runtime check.
+        
+        Returns:
+            Python code as string
+        """
+        raise NotImplementedError
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "constraint_id": self.constraint_id,
+            "type": self.constraint_type,
+            "target": self.target,
+            **self.metadata
+        }
+
+# ───────────────────────────────────────────────────────────────────
+# 13.2 Plugin Interface
+# ───────────────────────────────────────────────────────────────────
+
+class PipelinePlugin(ABC):
+    """
+    Base class for pipeline plugins.
+    
+    Plugins extend pipeline with custom stages, rules, and hooks.
+    """
+    
+    PLUGIN_NAME: str
+    PLUGIN_VERSION: str
+    PLUGIN_AUTHOR: str = "Unknown"
+    
+    @abstractmethod
+    def initialize(self, pipeline: 'EnhancedVerificationPipeline'):
+        """
+        Initialize plugin with pipeline.
+        
+        Args:
+            pipeline: Pipeline instance
+        """
+        raise NotImplementedError
+    
+    def register_stages(self, registry: 'StageRegistry'):
+        """
+        Register custom stages.
+        
+        Args:
+            registry: Stage registry
+        """
+        pass
+    
+    def register_rules(self, registry: 'RuleRegistry'):
+        """
+        Register custom constraint rules.
+        
+        Args:
+            registry: Rule registry
+        """
+        pass
+    
+    def get_hooks(self) -> Dict[str, Callable]:
+        """
+        Get hook functions.
+        
+        Returns:
+            Dictionary of hook_point → function
+        """
+        return {}
+
+# ───────────────────────────────────────────────────────────────────
+# 13.3 Rule Registry
+# ───────────────────────────────────────────────────────────────────
+
+class RuleRegistry:
+    """
+    Registry of custom constraint rules.
+    
+    Manages user-defined rules and their synthesis heuristics.
+    """
+    
+    def __init__(self):
+        self.rules: Dict[str, Dict] = {}  # rule_id → rule_info
+    
+    def register(
+        self,
+        rule_id: str,
+        constraint_class: type,
+        synthesis_heuristic: Optional[Callable] = None,
+        priority: int = 0
+    ):
+        """
+        Register custom rule.
+        
+        Args:
+            rule_id: Unique rule identifier
+            constraint_class: CustomConstraint subclass
+            synthesis_heuristic: Function to determine if rule applies
+            priority: Rule priority (higher = applied first)
+        """
+        if rule_id in self.rules:
+            raise ValueError(f"Rule already registered: {rule_id}")
+        
+        self.rules[rule_id] = {
+            "constraint_class": constraint_class,
+            "synthesis_heuristic": synthesis_heuristic,
+            "priority": priority
+        }
+    
+    def get_applicable_rules(self, context: Dict) -> List[Dict]:
+        """
+        Get rules applicable to given context.
+        
+        Args:
+            context: Context (parameter, function, etc.)
+            
+        Returns:
+            List of applicable rule infos, sorted by priority
+        """
+        applicable = []
+        
+        for rule_id, rule_info in self.rules.items():
+            heuristic = rule_info["synthesis_heuristic"]
+            
+            if heuristic is None or heuristic(context):
+                applicable.append({
+                    "rule_id": rule_id,
+                    **rule_info
+                })
+        
+        # Sort by priority (descending)
+        applicable.sort(key=lambda r: r["priority"], reverse=True)
+        
+        return applicable
+    
+    def list_rules(self) -> List[str]:
+        """List all registered rule IDs."""
+        return list(self.rules.keys())
+
+# ───────────────────────────────────────────────────────────────────
+# 13.4 Hook System
+# ───────────────────────────────────────────────────────────────────
+
+class HookPoints:
+    """Enumeration of available hook points."""
+    
+    # Pipeline-level
+    PRE_PIPELINE = "pre_pipeline"
+    POST_PIPELINE = "post_pipeline"
+    PIPELINE_ERROR = "pipeline_error"
+    
+    # Stage-level
+    PRE_STAGE = "pre_stage"
+    POST_STAGE = "post_stage"
+    STAGE_ERROR = "stage_error"
+    
+    # Contract synthesis
+    POST_CONTRACT_SYNTHESIS = "post_contract_synthesis"
+
+@dataclass
+class HookContext:
+    """Context passed to hook functions."""
+    execution_id: str
+    pipeline: Any  # EnhancedVerificationPipeline
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+class HookManager:
+    """
+    Manages hook registration and execution.
+    """
+    
+    def __init__(self):
+        self.hooks: Dict[str, List[Callable]] = {}  # hook_point → list of functions
+    
+    def register(self, hook_point: str, func: Callable):
+        """
+        Register hook function.
+        
+        Args:
+            hook_point: Hook point identifier (from HookPoints)
+            func: Hook function
+        """
+        if hook_point not in self.hooks:
+            self.hooks[hook_point] = []
+        
+        self.hooks[hook_point].append(func)
+    
+    def execute(self, hook_point: str, context: HookContext, **kwargs):
+        """
+        Execute all hooks for a hook point.
+        
+        Args:
+            hook_point: Hook point identifier
+            context: Hook execution context
+            **kwargs: Hook-specific arguments
+        """
+        if hook_point not in self.hooks:
+            return
+        
+        for func in self.hooks[hook_point]:
+            try:
+                func(context, **kwargs)
+            except Exception as e:
+                # Log but don't fail - hooks shouldn't break pipeline
+                print(f"Warning: Hook {func.__name__} failed: {e}")
+    
+    def list_hooks(self, hook_point: Optional[str] = None) -> Dict[str, int]:
+        """
+        List registered hooks.
+        
+        Args:
+            hook_point: Specific hook point or None for all
+            
+        Returns:
+            Dictionary of hook_point → count
+        """
+        if hook_point:
+            return {hook_point: len(self.hooks.get(hook_point, []))}
+        else:
+            return {hp: len(funcs) for hp, funcs in self.hooks.items()}
+
+# ───────────────────────────────────────────────────────────────────
+# 13.5 Plugin Manager
+# ───────────────────────────────────────────────────────────────────
+
+class PluginManager:
+    """
+    Manages plugin registration and lifecycle.
+    """
+    
+    def __init__(self, pipeline: 'EnhancedVerificationPipeline'):
+        self.pipeline = pipeline
+        self.plugins: List[PipelinePlugin] = []
+    
+    def register_plugin(self, plugin: PipelinePlugin):
+        """
+        Register plugin.
+        
+        Args:
+            plugin: Plugin instance
+        """
+        # Validate plugin
+        errors = self._validate_plugin(plugin)
+        if errors:
+            raise ValueError(f"Plugin validation failed: {errors}")
+        
+        # Initialize plugin
+        plugin.initialize(self.pipeline)
+        
+        # Register plugin's stages
+        if hasattr(self.pipeline, 'registry'):
+            plugin.register_stages(self.pipeline.registry)
+        
+        # Register plugin's rules
+        rule_registry = getattr(self.pipeline, 'rule_registry', None)
+        if rule_registry:
+            plugin.register_rules(rule_registry)
+        
+        # Register plugin's hooks
+        hook_manager = getattr(self.pipeline, 'hook_manager', None)
+        if hook_manager:
+            for hook_point, func in plugin.get_hooks().items():
+                hook_manager.register(hook_point, func)
+        
+        self.plugins.append(plugin)
+    
+    def _validate_plugin(self, plugin: PipelinePlugin) -> List[str]:
+        """Validate plugin before registration."""
+        errors = []
+        
+        # Check required attributes
+        if not hasattr(plugin, 'PLUGIN_NAME'):
+            errors.append("Missing PLUGIN_NAME")
+        
+        if not hasattr(plugin, 'PLUGIN_VERSION'):
+            errors.append("Missing PLUGIN_VERSION")
+        
+        # Check required methods
+        if not hasattr(plugin, 'initialize'):
+            errors.append("Missing initialize() method")
+        
+        return errors
+    
+    def list_plugins(self) -> List[Dict[str, str]]:
+        """List registered plugins."""
+        return [
+            {
+                "name": p.PLUGIN_NAME,
+                "version": p.PLUGIN_VERSION,
+                "author": getattr(p, 'PLUGIN_AUTHOR', 'Unknown')
+            }
+            for p in self.plugins
+        ]
+
+# ───────────────────────────────────────────────────────────────────
+# 13.6 Rule Templates
+# ───────────────────────────────────────────────────────────────────
+
+class RuleTemplates:
+    """
+    Collection of reusable constraint templates.
+    
+    Provides common constraint patterns that users can apply.
+    """
+    
+    @staticmethod
+    def pointer_not_null(param_name: str) -> Dict:
+        """Template: Pointer must not be null."""
+        return {
+            "type": "NON_NULL",
+            "target": f"param_{param_name}",
+            "rationale": "Applied from pointer_not_null template"
+        }
+    
+    @staticmethod
+    def buffer_with_length(buffer_param: str, length_param: str) -> Dict:
+        """Template: Buffer with explicit length parameter."""
+        return {
+            "type": "BUFFER_SIZE",
+            "target": f"param_{buffer_param}",
+            "related_target": f"param_{length_param}",
+            "rationale": "Applied from buffer_with_length template"
+        }
+    
+    @staticmethod
+    def output_parameter(param_name: str) -> Dict:
+        """Template: Output parameter (pointer-to-pointer)."""
+        return {
+            "type": "OUTPUT_PARAMETER",
+            "target": f"param_{param_name}",
+            "rationale": "Applied from output_parameter template"
+        }
+
+# ───────────────────────────────────────────────────────────────────
+# 13.7 Extended Pipeline with Plugin Support
+# ───────────────────────────────────────────────────────────────────
+
+class ExtensiblePipeline(OptimizedCompletePipeline):
+    """
+    Pipeline with plugin and hook support.
+    """
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.rule_registry = RuleRegistry()
+        self.hook_manager = HookManager()
+        self.plugin_manager = PluginManager(self)
+    
+    def register_plugin(self, plugin: PipelinePlugin):
+        """Register plugin."""
+        self.plugin_manager.register_plugin(plugin)
+    
+    def register_hook(self, hook_point: str, func: Callable):
+        """Register hook function."""
+        self.hook_manager.register(hook_point, func)
+    
+    def register_custom_rule(
+        self,
+        rule_id: str,
+        constraint_class: type,
+        synthesis_heuristic: Optional[Callable] = None
+    ):
+        """Register custom rule."""
+        self.rule_registry.register(rule_id, constraint_class, synthesis_heuristic)
+    
+    def execute(self, verbose: bool = True) -> VerificationResult:
+        """Execute with hooks."""
+        # Execute pre-pipeline hooks
+        context = HookContext(
+            execution_id=str(uuid.uuid4()),
+            pipeline=self,
+            metadata={}
+        )
+        self.hook_manager.execute(HookPoints.PRE_PIPELINE, context)
+        
+        try:
+            # Execute pipeline
+            result = super().execute(verbose)
+            
+            # Execute post-pipeline hooks
+            self.hook_manager.execute(HookPoints.POST_PIPELINE, context, result=result)
+            
+            return result
+        
+        except Exception as e:
+            # Execute error hooks
+            self.hook_manager.execute(HookPoints.PIPELINE_ERROR, context, error=e)
+            raise
+
+# ───────────────────────────────────────────────────────────────────
+# 13.8 Enhanced High-Level API
+# ───────────────────────────────────────────────────────────────────
+
+def verify_extensible(
+    header_path: str,
+    library_path: str,
+    output_dir: str = "artifacts",
+    plugins: Optional[List[PipelinePlugin]] = None,
+    hooks: Optional[Dict[str, Callable]] = None,
+    custom_rules: Optional[Dict] = None,
+    **kwargs
+) -> VerificationResult:
+    """
+    Extensible FFI verification with plugins and hooks.
+    
+    Args:
+        header_path: Path to C header
+        library_path: Path to native library
+        output_dir: Output directory
+        plugins: List of plugins to register
+        hooks: Dictionary of hook_point → function
+        custom_rules: Dictionary of custom rules to register
+        **kwargs: Additional options
+        
+    Returns:
+        VerificationResult
+        
+    Example:
+        >>> plugin = MyCustomPlugin()
+        >>> result = verify_extensible(
+        ...     "interface.h", "library.dll",
+        ...     plugins=[plugin],
+        ...     hooks={"post_contract_synthesis": my_hook}
+        ... )
+    """
+    pipeline = ExtensiblePipeline(header_path, library_path, output_dir, **kwargs)
+    
+    # Register plugins
+    if plugins:
+        for plugin in plugins:
+            pipeline.register_plugin(plugin)
+    
+    # Register hooks
+    if hooks:
+        for hook_point, func in hooks.items():
+            pipeline.register_hook(hook_point, func)
+    
+    # Register custom rules
+    if custom_rules:
+        for rule_id, rule_info in custom_rules.items():
+            pipeline.register_custom_rule(
+                rule_id,
+                rule_info["constraint_class"],
+                rule_info.get("synthesis_heuristic")
+            )
+    
+    return pipeline.execute(**kwargs)
 
 if __name__ == '__main__':
     sys.exit(cli_main())
