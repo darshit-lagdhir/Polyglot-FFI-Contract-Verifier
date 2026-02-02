@@ -1349,75 +1349,627 @@ class EnhancedVerificationPipeline(VerificationPipeline):
         
         return success
 
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
 # ───────────────────────────────────────────────────────────────────
-# 2.7 CLI Extensions
+# 3.1 Artifact Schema Definitions
 # ───────────────────────────────────────────────────────────────────
 
-def main_enhanced():
-    """Enhanced CLI with new features."""
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Union
+
+class ArtifactType(Enum):
+    """Enumeration of all artifact types in the pipeline."""
+    EXECUTION_CONTEXT = "execution_context"
+    NATIVE_INTERFACE = "native_interface"
+    INTERMEDIATE_REPRESENTATION = "ir"
+    CONTRACT = "contract"
+    TEST_PLAN = "test_plan"
+    EXECUTION_LOG = "execution_log"
+    DIAGNOSTICS = "diagnostics"
+    REPORT = "report"
+    PIPELINE_LOG = "pipeline_execution_log"
+
+@dataclass(frozen=True)
+class FieldSchema:
+    """Schema definition for a single field in an artifact."""
+    name: str
+    field_type: str  # "string", "int", "float", "bool", "array", "object"
+    required: bool
+    description: str
+    default: Optional[Any] = None
+    constraints: Optional[Dict[str, Any]] = None  # e.g., {"min": 0, "max": 100}
+    nested_schema: Optional['ArtifactSchema'] = None  # For objects
+
+@dataclass(frozen=True)
+class ArtifactSchema:
+    """
+    Complete schema definition for an artifact type.
+    
+    Defines structure, validation rules, and versioning for artifacts.
+    """
+    artifact_type: ArtifactType
+    schema_version: str  # Semantic version
+    description: str
+    fields: List[FieldSchema]
+    
+    def validate(self, artifact_data: Dict[str, Any]) -> List[str]:
+        """
+        Validate artifact data against schema.
+        
+        Args:
+            artifact_data: Parsed artifact to validate
+            
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+        
+        # Check required fields present
+        for field in self.fields:
+            if field.required and field.name not in artifact_data:
+                errors.append(f"Missing required field: {field.name}")
+        
+        # Validate field types and constraints
+        for field in self.fields:
+            if field.name not in artifact_data:
+                continue
+            
+            value = artifact_data[field.name]
+            
+            # Type checking
+            if not self._check_type(value, field.field_type):
+                errors.append(
+                    f"Field {field.name} has wrong type: "
+                    f"expected {field.field_type}, got {type(value).__name__}"
+                )
+            
+            # Constraint checking
+            if field.constraints:
+                constraint_errors = self._check_constraints(field.name, value, field.constraints)
+                errors.extend(constraint_errors)
+            
+            # Nested schema validation
+            if field.nested_schema and isinstance(value, dict):
+                nested_errors = field.nested_schema.validate(value)
+                errors.extend([f"{field.name}.{e}" for e in nested_errors])
+        
+        return errors
+    
+    def _check_type(self, value: Any, expected_type: str) -> bool:
+        """Check if value matches expected type."""
+        type_checks = {
+            "string": lambda v: isinstance(v, str),
+            "int": lambda v: isinstance(v, int) and not isinstance(v, bool),
+            "float": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+            "bool": lambda v: isinstance(v, bool),
+            "array": lambda v: isinstance(v, list),
+            "object": lambda v: isinstance(v, dict)
+        }
+        
+        return type_checks.get(expected_type, lambda v: True)(value)
+    
+    def _check_constraints(self, field_name: str, value: Any, constraints: Dict) -> List[str]:
+        """Check if value satisfies constraints."""
+        errors = []
+        
+        if "min" in constraints and value < constraints["min"]:
+            errors.append(f"Field {field_name} below minimum: {value} < {constraints['min']}")
+        
+        if "max" in constraints and value > constraints["max"]:
+            errors.append(f"Field {field_name} above maximum: {value} > {constraints['max']}")
+        
+        if "enum" in constraints and value not in constraints["enum"]:
+            errors.append(f"Field {field_name} not in allowed values: {constraints['enum']}")
+        
+        if "pattern" in constraints and isinstance(value, str):
+            import re
+            if not re.match(constraints["pattern"], value):
+                errors.append(f"Field {field_name} doesn't match pattern: {constraints['pattern']}")
+        
+        return errors
+
+class SchemaRegistry:
+    """
+    Registry of all artifact schemas.
+    
+    Provides schema lookup, validation, and versioning support.
+    """
+    
+    def __init__(self):
+        self._schemas: Dict[ArtifactType, Dict[str, ArtifactSchema]] = {}
+        self._register_builtin_schemas()
+    
+    def register_schema(self, schema: ArtifactSchema) -> None:
+        """Register an artifact schema."""
+        if schema.artifact_type not in self._schemas:
+            self._schemas[schema.artifact_type] = {}
+        
+        self._schemas[schema.artifact_type][schema.schema_version] = schema
+    
+    def get_schema(self, artifact_type: ArtifactType, version: str) -> ArtifactSchema:
+        """Get schema for specific artifact type and version."""
+        if artifact_type not in self._schemas:
+            raise ValueError(f"Unknown artifact type: {artifact_type}")
+        
+        if version not in self._schemas[artifact_type]:
+            available = list(self._schemas[artifact_type].keys())
+            raise ValueError(
+                f"Unknown schema version {version} for {artifact_type}. "
+                f"Available: {available}"
+            )
+        
+        return self._schemas[artifact_type][version]
+    
+    def get_latest_schema(self, artifact_type: ArtifactType) -> ArtifactSchema:
+        """Get latest schema version for artifact type."""
+        if artifact_type not in self._schemas:
+            raise ValueError(f"Unknown artifact type: {artifact_type}")
+        
+        versions = list(self._schemas[artifact_type].keys())
+        if not versions:
+            raise ValueError(f"No schemas registered for {artifact_type}")
+        
+        # Sort versions and return latest
+        latest_version = sorted(versions, key=lambda v: SemanticVersion.parse(v))[-1]
+        return self._schemas[artifact_type][latest_version]
+    
+    def _register_builtin_schemas(self) -> None:
+        """Register built-in artifact schemas."""
+        # ExecutionContext schema
+        execution_context_schema = ArtifactSchema(
+            artifact_type=ArtifactType.EXECUTION_CONTEXT,
+            schema_version="1.0.0",
+            description="Immutable execution environment snapshot",
+            fields=[
+                FieldSchema("platform", "object", True, "Platform identification"),
+                FieldSchema("compiler", "object", True, "Compiler information"),
+                FieldSchema("native_library", "object", True, "Native library info"),
+                FieldSchema("target_runtime", "object", True, "Target language runtime"),
+                FieldSchema("verification_config", "object", True, "Verification configuration"),
+                FieldSchema("provenance", "object", True, "Provenance metadata"),
+                FieldSchema("artifacts", "object", True, "Artifact paths")
+            ]
+        )
+        self.register_schema(execution_context_schema)
+        
+        # PipelineExecutionLog schema
+        pipeline_log_schema = ArtifactSchema(
+            artifact_type=ArtifactType.PIPELINE_LOG,
+            schema_version="1.0.0",
+            description="Pipeline orchestration execution log",
+            fields=[
+                FieldSchema("execution_id", "string", True, "Execution ID (UUID)"),
+                FieldSchema("start_time", "string", True, "Pipeline start timestamp (ISO 8601)"),
+                FieldSchema("end_time", "string", False, "Pipeline end timestamp"),
+                FieldSchema("entries", "array", True, "Log entries")
+            ]
+        )
+        self.register_schema(pipeline_log_schema)
+
+# ───────────────────────────────────────────────────────────────────
+# 3.2 Provenance Chain Validator
+# ───────────────────────────────────────────────────────────────────
+
+class ProvenanceChainValidator:
+    """
+    Validates provenance chains across multiple artifacts.
+    
+    Ensures artifacts form valid lineage with consistent execution context
+    and unbroken hash chains.
+    """
+    
+    def __init__(self, artifact_validator: EnhancedArtifactValidator):
+        self.artifact_validator = artifact_validator
+    
+    def validate_chain(self, artifact_paths: List[str]) -> List[str]:
+        """
+        Validate provenance chain across multiple artifacts.
+        
+        Args:
+            artifact_paths: List of artifact paths to validate
+            
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+        
+        # Load all artifacts
+        artifacts = []
+        for path in artifact_paths:
+            try:
+                artifact = self.artifact_validator.validate_artifact(path, verify_hashes=False)
+                artifacts.append((path, artifact))
+            except Exception as e:
+                errors.append(f"Failed to load {path}: {e}")
+                return errors
+        
+        # Check execution ID consistency
+        execution_ids = set(a["provenance"]["execution_id"] for _, a in artifacts)
+        if len(execution_ids) > 1:
+            errors.append(
+                f"Inconsistent execution IDs across artifacts: {execution_ids}. "
+                f"All artifacts in a chain must share the same execution_id."
+            )
+        
+        # Check timestamp ordering
+        artifacts_with_time = [
+            (path, a["provenance"]["creation_timestamp"], a)
+            for path, a in artifacts
+        ]
+        artifacts_with_time.sort(key=lambda x: x[1])
+        
+        # Build dependency graph
+        dep_graph = {}
+        for path, artifact in artifacts:
+            provenance = artifact["provenance"]
+            dep_graph[path] = set(provenance["input_artifact_hashes"].keys())
+        
+        # Check for cycles (artifacts shouldn't transitively depend on themselves)
+        if self._has_cycle(dep_graph):
+            errors.append("Provenance chain contains cycle (artifact depends on itself)")
+        
+        # Verify hash chains
+        for path, artifact in artifacts:
+            provenance = artifact["provenance"]
+            for input_path, declared_hash in provenance["input_artifact_hashes"].items():
+                if not os.path.exists(input_path):
+                    errors.append(f"{path} references missing input: {input_path}")
+                    continue
+                
+                actual_hash = ArtifactValidator.compute_artifact_hash(input_path)
+                if actual_hash != declared_hash:
+                    errors.append(
+                        f"{path} has hash mismatch for input {input_path}:\n"
+                        f"  Declared: {declared_hash}\n"
+                        f"  Actual: {actual_hash}"
+                    )
+        
+        return errors
+    
+    def _has_cycle(self, graph: Dict[str, Set[str]]) -> bool:
+        """Detect cycles in dependency graph using DFS."""
+        visited = set()
+        rec_stack = set()
+        
+        def dfs(node: str) -> bool:
+            visited.add(node)
+            rec_stack.add(node)
+            
+            for neighbor in graph.get(node, set()):
+                if neighbor not in visited:
+                    if dfs(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+            
+            rec_stack.remove(node)
+            return False
+        
+        for node in graph:
+            if node not in visited:
+                if dfs(node):
+                    return True
+        
+        return False
+
+# ───────────────────────────────────────────────────────────────────
+# 3.3 Staleness Detector
+# ───────────────────────────────────────────────────────────────────
+
+class StalenessStatus(Enum):
+    """Artifact freshness status."""
+    FRESH = "fresh"                    # All inputs unchanged, can reuse
+    STALE = "stale"                    # Inputs changed, must regenerate
+    POTENTIALLY_STALE = "potentially_stale"  # Stage updated, may need regeneration
+    MISSING = "missing"                # Artifact doesn't exist
+
+class StalenessDetector:
+    """
+    Detects stale artifacts for incremental verification.
+    
+    An artifact is stale if its inputs have changed or the stage that
+    produced it has been updated.
+    """
+    
+    def __init__(self, artifact_validator: EnhancedArtifactValidator):
+        self.artifact_validator = artifact_validator
+        self.current_execution_context: Optional[Dict] = None
+    
+    def set_current_execution_context(self, context: Dict) -> None:
+        """Set current execution context for staleness checking."""
+        self.current_execution_context = context
+    
+    def check_staleness(self, artifact_path: str, stage_class: type) -> StalenessStatus:
+        """
+        Check if artifact is stale.
+        
+        Args:
+            artifact_path: Path to artifact
+            stage_class: Stage class that produces this artifact
+            
+        Returns:
+            Staleness status
+        """
+        # Check if artifact exists
+        if not os.path.exists(artifact_path):
+            return StalenessStatus.MISSING
+        
+        try:
+            artifact = self.artifact_validator.validate_artifact(artifact_path, verify_hashes=False)
+        except Exception as e:
+            # Artifact is corrupted or invalid
+            return StalenessStatus.STALE
+        
+        provenance = artifact["provenance"]
+        
+        # Check 1: Have input artifacts changed
+        for input_path, declared_hash in provenance["input_artifact_hashes"].items():
+            if not os.path.exists(input_path):
+                # Input artifact missing
+                return StalenessStatus.STALE
+            
+            actual_hash = ArtifactValidator.compute_artifact_hash(input_path)
+            if actual_hash != declared_hash:
+                # Input artifact changed
+                return StalenessStatus.STALE
+        
+        # Check 2: Has stage version changed
+        if stage_class.STAGE_VERSION != provenance["stage_version"]:
+            # Stage updated - artifact may still be valid but should be regenerated
+            return StalenessStatus.POTENTIALLY_STALE
+        
+        # Check 3: Has execution context changed materially
+        if self.current_execution_context:
+            current_exec_id = self.current_execution_context["provenance"]["execution_id"]
+            artifact_exec_id = provenance["execution_id"]
+            
+            if current_exec_id != artifact_exec_id:
+                # Different execution context - check if relevant fields changed
+                if self._execution_context_changed_materially():
+                    return StalenessStatus.STALE
+        
+        # All checks passed - artifact is fresh
+        return StalenessStatus.FRESH
+    
+    def _execution_context_changed_materially(self) -> bool:
+        """
+        Check if execution context changed in ways that affect artifacts.
+        
+        Material changes:
+        - Platform architecture changed (x64 → x86)
+        - Compiler changed or upgraded
+        - Compiler flags changed
+        
+        Non-material changes:
+        - Timestamp changed
+        - execution_id changed
+        - Working directory changed
+        """
+        # For now, assume any execution context change is material
+        # (Full implementation would compare specific fields)
+        return True
+
+# ───────────────────────────────────────────────────────────────────
+# 3.4 Incremental Pipeline Executor
+# ───────────────────────────────────────────────────────────────────
+
+class IncrementalPipelineExecutor:
+    """
+    Executes pipeline incrementally, reusing fresh artifacts.
+    
+    Only re-runs stages whose outputs are stale or missing.
+    """
+    
+    def __init__(
+        self,
+        pipeline: 'EnhancedVerificationPipeline',
+        staleness_detector: StalenessDetector
+    ):
+        self.pipeline = pipeline
+        self.staleness_detector = staleness_detector
+    
+    def execute_incremental(self, target_artifact: Optional[str] = None) -> bool:
+        """
+        Execute pipeline incrementally.
+        
+        Args:
+            target_artifact: Target artifact to produce (None = all artifacts)
+            
+        Returns:
+            True if execution successful
+        """
+        self.pipeline.execution_log.log_pipeline_start()
+        
+        # Build dependency graph
+        stage_classes = [
+            self.pipeline.registry.get_stage_class(name)
+            for name in self.pipeline.registry.list_stages()
+        ]
+        dep_graph = DependencyGraph(stage_classes)
+        
+        # Determine execution order
+        try:
+            execution_order = dep_graph.topological_sort()
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            self.pipeline.execution_log.log_pipeline_complete(False)
+            return False
+        
+        # If target specified, prune stages not needed for target
+        if target_artifact:
+            execution_order = self._prune_to_target(execution_order, target_artifact, dep_graph)
+        
+        # Check staleness and execute only stale stages
+        success = True
+        for stage_name in execution_order:
+            stage_class = self.pipeline.registry.get_stage_class(stage_name)
+            
+            # Determine artifact path
+            artifacts_dir = self.pipeline.execution_context["artifacts"]["working_directory"]
+            artifact_paths = [
+                os.path.join(artifacts_dir, f"{output}.json")
+                for output in stage_class.PRODUCED_OUTPUTS
+            ]
+            
+            # Check staleness
+            staleness_statuses = [
+                self.staleness_detector.check_staleness(path, stage_class)
+                for path in artifact_paths
+            ]
+            
+            # Skip if all artifacts are fresh
+            if all(status == StalenessStatus.FRESH for status in staleness_statuses):
+                print(f"⏭️  Skipping {stage_name} (artifacts are fresh)")
+                continue
+            
+            # Execute stage
+            print(f"▶️  Running {stage_name} (artifacts are {staleness_statuses[0].value})")
+            
+            try:
+                stage = stage_class(self.pipeline.execution_context)
+                self.pipeline.execution_log.log_stage_start(stage)
+                stage.execute()
+                self.pipeline.execution_log.log_stage_complete(stage)
+            except Exception as e:
+                self.pipeline.execution_log.log_stage_failed(stage, e)
+                print(f"ERROR: {e}")
+                success = False
+                break
+        
+        self.pipeline.execution_log.log_pipeline_complete(success)
+        
+        # Save execution log
+        log_path = os.path.join(
+            self.pipeline.execution_context["artifacts"]["working_directory"],
+            "pipeline_execution_log.json"
+        )
+        self.pipeline.execution_log.save(log_path)
+        
+        return success
+    
+    def _prune_to_target(
+        self,
+        execution_order: List[str],
+        target_artifact: str,
+        dep_graph: DependencyGraph
+    ) -> List[str]:
+        """Prune execution order to only include stages needed for target."""
+        # Find stage that produces target
+        target_stage = None
+        for stage_name, stage_class in self.pipeline.registry._stages.items():
+            if target_artifact in stage_class.PRODUCED_OUTPUTS:
+                target_stage = stage_name
+                break
+        
+        if not target_stage:
+            raise ValueError(f"No stage produces artifact: {target_artifact}")
+        
+        # Find all stages that target depends on (recursively)
+        needed_stages = set()
+        
+        def collect_dependencies(stage_name: str):
+            needed_stages.add(stage_name)
+            for dependency in dep_graph.graph.get(stage_name, set()):
+                collect_dependencies(dependency)
+        
+        collect_dependencies(target_stage)
+        
+        # Filter execution order
+        return [s for s in execution_order if s in needed_stages]
+
+# ───────────────────────────────────────────────────────────────────
+# 3.5 CLI Extensions for Incremental Verification
+# ───────────────────────────────────────────────────────────────────
+
+def main_with_incremental():
+    """CLI with incremental verification support."""
     parser = argparse.ArgumentParser(
         prog="verification_pipeline",
-        description="Polyglot FFI Verification Pipeline - Enhanced"
+        description="Polyglot FFI Verification Pipeline with Incremental Support"
     )
     
     subparsers = parser.add_subparsers(dest="command")
     
-        info_cmd = subparsers.add_parser("info", help="Show pipeline information")
+    # Existing commands
+    info_cmd = subparsers.add_parser("info", help="Show pipeline information")
     
-    # New command: validate-graph
-    validate_graph_cmd = subparsers.add_parser(
-        "validate-graph",
-        help="Validate dependency graph for cycles"
+    # New command: run-incremental
+    incremental_cmd = subparsers.add_parser(
+        "run-incremental",
+        help="Run pipeline incrementally (reuse fresh artifacts)"
     )
-    validate_graph_cmd.add_argument("--context", required=True)
+    incremental_cmd.add_argument("--context", required=True, help="Execution context path")
+    incremental_cmd.add_argument("--target", help="Target artifact to produce")
     
-    # New command: show-execution-order
-    show_order_cmd = subparsers.add_parser(
-        "show-execution-order",
-        help="Show stage execution order based on dependencies"
+    # New command: check-staleness
+    staleness_cmd = subparsers.add_parser(
+        "check-staleness",
+        help="Check artifact staleness status"
     )
-    show_order_cmd.add_argument("--context", required=True)
+    staleness_cmd.add_argument("artifact", help="Artifact path to check")
+    staleness_cmd.add_argument("--context", required=True)
     
     args = parser.parse_args()
     
     if args.command == "info":
         print("Polyglot FFI Verification Pipeline")
         print("=" * 60)
-        print("Version: 1.0.0 (Enhanced)")
+        print("Version: 1.0.0 (with Incremental Support)")
         print("Module: 02 - Verification Pipeline")
-        print("Prompt: 2/20 - State Machines & Validation")
+        print("Prompt: 3/20 - Artifact Schemas & Incremental Verification")
         return 0
     
-    elif args.command == "validate-graph":
+    elif args.command == "run-incremental":
         try:
             pipeline = EnhancedVerificationPipeline(args.context)
-            stage_classes = [pipeline.registry.get_stage_class(name) for name in pipeline.registry.list_stages()]
-            dep_graph = DependencyGraph(stage_classes)
+            pipeline.artifact_validator = EnhancedArtifactValidator()
             
-            cycle = dep_graph.detect_cycles()
-            if cycle:
-                print("❌ Dependency graph contains a cycle:")
-                print("   " + " → ".join(cycle))
-                return 1
-            else:
-                print("✓ Dependency graph is valid (no cycles)")
-                return 0
+            staleness_detector = StalenessDetector(pipeline.artifact_validator)
+            staleness_detector.set_current_execution_context(pipeline.execution_context)
+            
+            executor = IncrementalPipelineExecutor(pipeline, staleness_detector)
+            success = executor.execute_incremental(args.target)
+            
+            return 0 if success else 1
         except Exception as e:
             print(f"ERROR: {e}")
             return 1
     
-    elif args.command == "show-execution-order":
+    elif args.command == "check-staleness":
         try:
             pipeline = EnhancedVerificationPipeline(args.context)
-            stage_classes = [pipeline.registry.get_stage_class(name) for name in pipeline.registry.list_stages()]
-            dep_graph = DependencyGraph(stage_classes)
+            validator = EnhancedArtifactValidator()
+            detector = StalenessDetector(validator)
+            detector.set_current_execution_context(pipeline.execution_context)
             
-            execution_order = dep_graph.topological_sort()
-            print("Stage Execution Order:")
-            print("-" * 60)
-            for i, stage_name in enumerate(execution_order, 1):
-                print(f"{i}. {stage_name}")
-            return 0
+            # Determine which stage produces this artifact
+            artifact_name = os.path.basename(args.artifact).replace(".json", "")
+            stage_class = None
+            for name in pipeline.registry.list_stages():
+                sc = pipeline.registry.get_stage_class(name)
+                if artifact_name in sc.PRODUCED_OUTPUTS:
+                    stage_class = sc
+                    break
+            
+            if not stage_class:
+                print(f"Unknown artifact type: {artifact_name}")
+                return 1
+            
+            status = detector.check_staleness(args.artifact, stage_class)
+            print(f"Staleness status: {status.value}")
+            
+            if status == StalenessStatus.FRESH:
+                print("✓ Artifact is fresh and can be reused")
+            elif status == StalenessStatus.STALE:
+                print("✗ Artifact is stale and must be regenerated")
+            elif status == StalenessStatus.POTENTIALLY_STALE:
+                print("⚠ Artifact may be stale (stage version changed)")
+            elif status == StalenessStatus.MISSING:
+                print("✗ Artifact does not exist")
+            
+            return 0 if status == StalenessStatus.FRESH else 1
         except Exception as e:
             print(f"ERROR: {e}")
             return 1
@@ -1427,4 +1979,4 @@ def main_enhanced():
         return 1
 
 if __name__ == '__main__':
-    sys.exit(main_enhanced())
+    sys.exit(main_with_incremental())
