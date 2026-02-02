@@ -37,6 +37,7 @@ modules/
 **Files:**
 - `verification_pipeline.py` - Core pipeline orchestrator
 - `VERIFICATION_PIPELINE.md` - Technical specification
+- `verification_pipeline_test.py` - Incremental verification tests
 
 ### 📋 Module 03-28: Coming Soon
 **Status:** Planned  

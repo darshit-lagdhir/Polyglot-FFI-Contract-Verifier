@@ -10,13 +10,14 @@
 
 ## Document Overview
 
-This document provides the complete technical specification for the Verification Pipeline module of the Polyglot FFI Contract Verifier. The pipeline is the formal spine of the system—every correctness guarantee, diagnostic claim, and safety assertion derives from its properties.
+This document provides the complete technical specification for the Verification Pipeline module of the Polyglot FFI Contract Verifier.
 
 **Progress:**
 - ✅ : Pipeline Philosophy & Formal Model (COMPLETE)
 - ✅ : Stage State Machines & Artifact Validation (COMPLETE)
 - ✅ : Artifact Schemas & Incremental Verification (COMPLETE)
-- ⏳ Prompts 4-20: Additional pipeline components (PENDING)
+- ✅ : Native Interface Ingestion Stage (COMPLETE)
+- ⏳ Prompts 5-20: Additional pipeline components (PENDING)
 
 ---
 
@@ -25,208 +26,184 @@ This document provides the complete technical specification for the Verification
 1. [Pipeline Philosophy & Formal Model](#1-pipeline-philosophy--formal-model)
 2. [Stage State Machines & Artifact Validation](#2-stage-state-machines--artifact-validation)
 3. [Artifact Schemas & Incremental Verification](#3-artifact-schemas--incremental-verification)
-4. [Implementation Architecture](#4-implementation-architecture)
-5. [Usage Examples](#5-usage-examples)
-6. [Next Steps](#6-next-steps)
+4. [Native Interface Ingestion Stage](#4-native-interface-ingestion-stage)
+5. [Implementation Architecture](#5-implementation-architecture)
+6. [Usage Examples](#6-usage-examples)
+7. [Next Steps](#7-next-steps)
 
 ---
 
 ## 1. Pipeline Philosophy & Formal Model
 
-### 1.1 Overview
+*(See previous versions for full text - preserved)*
 
-The verification pipeline is not an implementation detail or convenience abstraction—it is a **formally constrained transformation system** that converts uncertainty into evidence. When developers interact with foreign function interfaces (FFIs), they operate under implicit assumptions. These assumptions are not checked, encoded, or enforced. The pipeline surfaces these assumptions, formalizes them into explicit constraints, and tests them against real execution behavior.
+### 1.1 Overview
+The verification pipeline is a **formally constrained transformation system** that converts uncertainty into evidence.
 
 ### 1.2 Foundational Principles
-
-#### Principle 1: No Implicit Correctness Judgments
-
-Every correctness claim must be backed by a chain of artifacts. This chain must be **inspectable independently** of the tool.
-
-#### Principle 2: Temporal Separation of Reasoning
-
-The pipeline enforces strict phase boundaries:
-1. **Structural Derivation** (before execution)
-2. **Semantic Synthesis** (before execution)
-3. **Enforcement** (during execution)
-4. **Interpretation** (after execution)
-
-#### Principle 3: Monotonicity of Information
-
-Once information is derived, it cannot be discarded or weakened silently.
-
-#### Principle 4: Closed System with Explicit Inputs
-
-All sources of information that influence verification must be declared upfront.
-
-#### Principle 5: Determinism
-
-Identical inputs must produce identical outputs.
-
-#### Principle 6: Conservatism in Synthesis
-
-When deriving constraints, the system is conservative (e.g., assumes pointers are non-null unless marked optional).
+1. **No Implicit Correctness Judgments**: Every claim backed by artifacts.
+2. **Temporal Separation**: Derivation → Synthesis → Enforcement → Interpretation.
+3. **Monotonicity**: Information is never lost, only refined.
+4. **Closed System**: All inputs declared upfront.
+5. **Determinism**: Identical inputs → Identical outputs.
+6. **Conservatism**: Assume worst case (e.g. non-null pointers).
 
 ---
 
 ## 2. Stage State Machines & Artifact Validation
 
 ### 2.1 State Machine Enforcement
-
-The stage state machine enforces strict transition rules:
-`PENDING` → `READY` → `EXECUTING` → `COMPLETED` / `FAILED` / `SKIPPED`.
-
-Invalid transitions raise `InvalidStateTransitionError`.
+`PENDING` → `READY` → `EXECUTING` → `COMPLETED` / `FAILED`.
 
 ### 2.2 Advanced Artifact Validation
-
-Validation includes:
-- **Schema Compatibility**: Semantic versioning checks.
-- **Content Validation**: UUIDs, Timestamps, Hashes.
-- **Hash Verification**: Ensuring input artifacts match declared hashes.
-- **Caching**: Performance optimization for repeated validation.
-
-### 2.3 Dependency Resolution
-
-- **Dependency Graph**: DAG of stage dependencies.
-- **Topological Sort**: Determines valid execution order.
-- **Cycle Detection**: Prevents infinite loops.
-
-### 2.4 Error Recovery Strategies
-
-- **ConfigError**: Fail fast.
-- **PreconditionError**: Suggest upstream execution.
-- **StageError**: Capture context, preserve partial artifacts.
-- **PostconditionError**: Report internal defect.
+- **Schema Compatibility**: Semantic versioning.
+- **Hash Verification**: Integrity checks.
 
 ---
 
 ## 3. Artifact Schemas & Incremental Verification
 
-### 3.1 Complete Artifact Schema System
+### 3.1 Artifact Types
+ExecutionContext, NativeInterface, Contract, TestPlan, ExecutionLog, etc.
 
-The pipeline produces multiple artifact types, each with a formal schema.
-
-**Core Artifact Types:**
-
-1. **ExecutionContext**: Immutable environment snapshot.
-2. **NativeInterface**: Raw ABI extraction from headers.
-3. **IntermediateRepresentation**: Normalized, platform-agnostic IR.
-4. **Contract**: Formal FFI correctness constraints.
-5. **TestPlan**: Deterministic test case specification.
-6. **ExecutionLog**: Runtime verification results.
-7. **Diagnostics**: Failure analysis.
-8. **Report**: Human-readable report.
-9. **PipelineExecutionLog**: Orchestration log.
-
-**Schema Registry:**
-A central registry manages all schemas, enforcing versioning and validation structure.
-
-### 3.2 Provenance Validation Deep Dive
-
-Provenance metadata enabling full traceability:
-- **Execution ID Consistency**: All artifacts in a run share an ID.
-- **Stage Sequence**: Producer runs after Dependency.
-- **Hash Integrity**: Inputs match declared hashes.
-- **Timestamp Ordering**: Monotonically increasing timestamps.
-
-### 3.3 Incremental Verification Architecture
-
-Reuse of artifacts from previous runs to improve performance.
-
-**Stalenless Detection:**
-An artifact is **STALE** if:
-1. Input artifacts have changed (hash mismatch/missing).
-2. Producing stage version has changed.
-3. Execution context has materially changed.
-
-**Staleness Propagation:**
-If Artifact A is stale, Artifact B (depends on A) is also stale.
-
-**Incremental Execution Strategy:**
-1. Build dependency graph.
-2. Prune graph to target artifact (and its dependencies).
-3. Check staleness of valid outputs.
-4. Execute only stages with stale/missing outputs.
-5. Skip stages with valid, fresh outputs.
-
-### 3.4 Artifact Versioning
-
-- **MAJOR**: Breaking changes (requires regeneration/migration).
-- **MINOR**: Backward compatible additions.
-- **PATCH**: Implementation fixes.
+### 3.2 Provenance & Incremental
+- **Provenance**: Chain of custody for data.
+- **Deep Hash Validation**: Ensuring inputs haven't changed.
+- **Staleness Detection**: Reusing fresh artifacts.
 
 ---
 
-## 4. Implementation Architecture
+## 4. Native Interface Ingestion Stage
 
-### 4.1 Core Components (Enhanced)
+### 4.1 Overview
 
-**VerificationPipeline (Orchestrator)**
-- **NEW**: `check-staleness` command.
-- **NEW**: `run-incremental` command.
+The Native Interface Ingestion stage is the entry point of the verification pipeline. It is responsible for extracting the ABI (Application Binary Interface) surface from C header files exactly as the compiler sees it. This stage must be **lossless** - no ABI-relevant details can be discarded or simplified.
 
-**EnhancedArtifactValidator**
-- Validates content and hashes.
+**Critical Principle: Compiler Reality, Not Developer Intention**
+We use `libclang` to parse headers with the exact compilation flags used for the library. This ensures we capture:
+- True struct sizes (including padding).
+- Actual calling conventions.
+- Explicit and implicit alignment rules.
 
-**SchemaRegistry (NEW)**
-- Manages `ArtifactSchema` definitions.
-- Validates artifacts against schemas.
+### 4.2 Extracted Information
 
-**ProvenanceChainValidator (NEW)**
-- Validates multi-artifact consistency.
+**1. Functions:**
+- Complete signature (return type, parameters with positions).
+- Calling convention (`cdecl`, `stdcall`, `fastcall`).
+- Linkage and visibility.
+- Source location.
 
-**StalenessDetector (NEW)**
-- Determines `StalenessStatus` (FRESH, STALE, MISSING).
+**2. Structures:**
+- Total size and alignment.
+- Fields with precise offsets.
+- **Implicit Padding**: Computed gaps between fields.
+- **Trailing Padding**: Padding at end of struct for array alignment.
 
-**IncrementalPipelineExecutor (NEW)**
-- Orchestrates selective execution based on freshness.
+**3. Types:**
+- Recursive type definitions (pointers to arrays of structs...).
+- Qualifiers (`const`, `volatile`).
+- Exact size and alignment for every type.
 
-### 4.2 Class Hierarchy
+### 4.3 Struct Layout Computation Algorithm
+
+1. **Extract Declared Fields**: Get offset/size from libclang.
+2. **Sort by Offset**: Ensure processing order.
+3. **Detect Implicit Padding**:
+   If `offset[i+1] > offset[i] + size[i]`, insert `__padding_N` field.
+4. **Detect Trailing Padding**:
+   If `struct_size > last_field_end`, insert `__padding_N` at end.
+5. **Handle Unions**: All fields at offset 0, size is max(fields).
+
+### 4.4 Calling Convention Detection
+
+Crucial for Windows FFI. We map libclang conventions:
+- `CallingConv.C` → `cdecl`
+- `CallingConv.X86_STDCALL` → `stdcall`
+- `CallingConv.X86_FASTCALL` → `fastcall`
+- `CallingConv.WIN64` → `win64`
+
+### 4.5 Error Handling
+
+- **Compilation Errors**: Fail stage with compiler diagnostics.
+- **Missing libclang**: Fail with ConfigError.
+- **Platform Mismatch**: Fail if header target differs from host.
+
+### 4.6 Artifact Schema: NativeInterface
+
+```json
+{
+  "provenance": { ... },
+  "header_path": "/abs/path.h",
+  "compilation_flags": ["-I...", "-DWIN32"],
+  "functions": [
+    {
+      "name": "func",
+      "calling_convention": "cdecl",
+      "parameters": [...]
+    }
+  ],
+  "structures": [
+    {
+      "name": "MyStruct",
+      "size_bytes": 16,
+      "fields": [
+        {"name": "a", "offset_bytes": 0, "size_bytes": 4},
+        {"name": "__padding_1", "offset_bytes": 4, "size_bytes": 4, "is_implicit": true},
+        {"name": "b", "offset_bytes": 8, "size_bytes": 8}
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 5. Implementation Architecture
+
+### 5.1 Class Hierarchy
 
 ```
 PipelineStage (ABC)
+├── NativeInterfaceIngestionStage (NEW)
+│   ├── Uses: libclang
+│   ├── Uses: TypeExtractor
+│   └── Uses: StructLayoutExtractor
 ...
 
 VerificationPipeline
-├── StageRegistry
-├── PipelineExecutionLog
-└── EnhancedVerificationPipeline
-    ├── StateMachineValidator
-    ├── EnhancedArtifactValidator
-    ├── DependencyGraph
+├── EnhancedVerificationPipeline
     ├── SchemaRegistry
     └── IncrementalPipelineExecutor
-        └── StalenessDetector
-            └── ProvenanceChainValidator
 ```
+
+### 5.2 External Dependencies
+- **libclang**: LLVM's C interface for parsing C/C++.
+- **clang.cindex**: Python bindings for libclang.
 
 ---
 
-## 5. Usage Examples
+## 6. Usage Examples
 
-### 5.1 CLI Usage (Incremental)
+### 6.1 Running Ingestion (via Incremental)
 
-**Check artifact staleness:**
-```bash
-python modules/module_02_verification_pipeline/verification_pipeline.py check-staleness \
-    artifacts/contract.json --context artifacts/execution_context.json
-```
-
-**Run incremental verification:**
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py run-incremental \
     --context artifacts/execution_context.json \
-    --target contract
+    --target native_interface
 ```
 
-If `contract.json` is fresh, this command does nothing. If `native_interface.json` (an input) has changed, it regenerates everything from that point down.
+### 6.2 Checking Staleness
+
+```bash
+python modules/module_02_verification_pipeline/verification_pipeline.py check-staleness \
+    artifacts/native_interface.json --context artifacts/execution_context.json
+```
 
 ---
 
-## 6. Next Steps
+## 7. Next Steps
 
 **** will implement:
-- **Native Interface Ingestion Stage**: The first concrete stage.
-- Utilizing `libclang` to parse C headers.
-- Producing the `NativeInterface` artifact.
+- **IR Normalization Stage**: Converting raw NativeInterface into a platform-agnostic Intermediate Representation (IR).
+- Canonicalization of types.
+- Resolution of typedefs.

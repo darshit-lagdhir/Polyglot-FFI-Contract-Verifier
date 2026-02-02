@@ -1283,6 +1283,10 @@ class EnhancedVerificationPipeline(VerificationPipeline):
         super().__init__(execution_context_path)
         self.artifact_validator = EnhancedArtifactValidator()
         self.state_validator = StateMachineValidator()
+        
+        # Register stages
+        if 'NativeInterfaceIngestionStage' in globals():
+            self.registry.register_stage(NativeInterfaceIngestionStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -1878,6 +1882,479 @@ class IncrementalPipelineExecutor:
         
         # Filter execution order
         return [s for s in execution_order if s in needed_stages]
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 4.1 libclang Integration
+# ───────────────────────────────────────────────────────────────────
+
+try:
+    import clang.cindex as clang
+    LIBCLANG_AVAILABLE = True
+except ImportError:
+    LIBCLANG_AVAILABLE = False
+    clang = None
+
+def initialize_libclang() -> bool:
+    """
+    Initialize libclang library.
+    
+    Attempts to locate libclang.dll/so and configure clang.cindex.
+    
+    Returns:
+        True if initialization successful, False otherwise
+    """
+    if not LIBCLANG_AVAILABLE:
+        return False
+    
+    # Check if LIBCLANG_PATH environment variable is set
+    libclang_path = os.environ.get('LIBCLANG_PATH')
+    
+    if libclang_path and os.path.exists(libclang_path):
+        clang.Config.set_library_file(libclang_path)
+        return True
+    
+    # Try using clang.native (from pip install libclang)
+    try:
+        import clang.native
+        native_dir = os.path.dirname(clang.native.__file__)
+        for file in os.listdir(native_dir):
+            if file.startswith("libclang") and (file.endswith(".dll") or file.endswith(".so") or file.endswith(".dylib")):
+                clang.Config.set_library_file(os.path.join(native_dir, file))
+                return True
+    except (ImportError, AttributeError, OSError):
+        pass
+
+    # Try common locations
+    common_paths = [
+        r"C:\Program Files\LLVM\bin\libclang.dll",
+        r"C:\Program Files (x86)\LLVM\bin\libclang.dll",
+        r"C:\Program Files\LLVM\bin\libclang.dll",
+        "/usr/lib/llvm-16/lib/libclang.so",
+        "/usr/lib/llvm-14/lib/libclang.so",
+        "/usr/local/lib/libclang.dylib"
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            clang.Config.set_library_file(path)
+            return True
+    
+    return False
+
+# ───────────────────────────────────────────────────────────────────
+# 4.2 Type Extractor
+# ───────────────────────────────────────────────────────────────────
+
+class TypeExtractor:
+    """
+    Extracts complete type information from libclang type objects.
+    
+    Handles recursive type structures (pointers to arrays to structs, etc.)
+    """
+    
+    @staticmethod
+    def extract_type(clang_type) -> Dict[str, Any]:
+        """
+        Extract complete type information from clang type.
+        
+        Args:
+            clang_type: clang.cindex.Type object
+            
+        Returns:
+            Dictionary with type information
+        """
+        type_info = {
+            "size_bytes": clang_type.get_size(),
+            "alignment_bytes": clang_type.get_align()
+        }
+        
+        # Determine type kind
+        kind = clang_type.kind
+        
+        if kind in [clang.TypeKind.VOID, clang.TypeKind.BOOL,
+                    clang.TypeKind.CHAR_U, clang.TypeKind.UCHAR,
+                    clang.TypeKind.CHAR_S, clang.TypeKind.SCHAR,
+                    clang.TypeKind.USHORT, clang.TypeKind.SHORT,
+                    clang.TypeKind.UINT, clang.TypeKind.INT,
+                    clang.TypeKind.ULONG, clang.TypeKind.LONG,
+                    clang.TypeKind.ULONGLONG, clang.TypeKind.LONGLONG,
+                    clang.TypeKind.FLOAT, clang.TypeKind.DOUBLE]:
+            type_info["kind"] = "primitive"
+            type_info["name"] = clang_type.spelling
+            type_info["is_signed"] = kind not in [
+                clang.TypeKind.UCHAR, clang.TypeKind.USHORT,
+                clang.TypeKind.UINT, clang.TypeKind.ULONG,
+                clang.TypeKind.ULONGLONG
+            ]
+        
+        elif kind == clang.TypeKind.POINTER:
+            type_info["kind"] = "pointer"
+            type_info["pointee"] = TypeExtractor.extract_type(clang_type.get_pointee())
+        
+        elif kind == clang.TypeKind.CONSTANTARRAY:
+            type_info["kind"] = "array"
+            type_info["element_type"] = TypeExtractor.extract_type(clang_type.get_array_element_type())
+            type_info["size"] = clang_type.get_array_size()
+        
+        elif kind in [clang.TypeKind.RECORD, clang.TypeKind.ELABORATED]:
+            decl = clang_type.get_declaration()
+            type_info["kind"] = "struct" if decl.kind == clang.IDEKind.STRUCT_DECL else "union"
+            type_info["name"] = clang_type.spelling
+        
+        elif kind == clang.TypeKind.TYPEDEF:
+            type_info["kind"] = "typedef"
+            type_info["name"] = clang_type.spelling
+            type_info["underlying_type"] = TypeExtractor.extract_type(clang_type.get_canonical())
+        
+        elif kind == clang.TypeKind.ENUM:
+            type_info["kind"] = "enum"
+            type_info["name"] = clang_type.spelling
+        
+        else:
+            type_info["kind"] = "unknown"
+            type_info["name"] = clang_type.spelling
+        
+        # Extract qualifiers
+        type_info["is_const"] = clang_type.is_const_qualified()
+        type_info["is_volatile"] = clang_type.is_volatile_qualified()
+        
+        return type_info
+
+# ───────────────────────────────────────────────────────────────────
+# 4.3 Struct Layout Extractor
+# ───────────────────────────────────────────────────────────────────
+
+class StructLayoutExtractor:
+    """
+    Extracts struct layouts with explicit padding detection.
+    
+    Computes implicit padding fields by comparing field offsets.
+    """
+    
+    @staticmethod
+    def extract_layout(cursor) -> Dict[str, Any]:
+        """
+        Extract complete struct layout including padding.
+        
+        Args:
+            cursor: clang.cindex.IDE for struct
+            
+        Returns:
+            Dictionary with struct layout information
+        """
+        is_union = cursor.kind == clang.IDEKind.UNION_DECL
+        
+        layout = {
+            "name": cursor.spelling,
+            "size_bytes": cursor.type.get_size(),
+            "alignment_bytes": cursor.type.get_align(),
+            "is_union": is_union,
+            "fields": []
+        }
+        
+        # Extract declared fields
+        declared_fields = []
+        for child in cursor.get_children():
+            if child.kind == clang.IDEKind.FIELD_DECL:
+                field_info = {
+                    "name": child.spelling,
+                    "offset_bytes": cursor.type.get_offset(child.spelling) // 8,
+                    "type": TypeExtractor.extract_type(child.type),
+                    "size_bytes": child.type.get_size(),
+                    "is_implicit": False
+                }
+                declared_fields.append(field_info)
+        
+        # Sort fields by offset
+        declared_fields.sort(key=lambda f: f["offset_bytes"])
+        
+        # Detect padding (not needed for unions)
+        if is_union:
+            layout["fields"] = declared_fields
+        else:
+            layout["fields"] = StructLayoutExtractor._insert_padding(
+                declared_fields,
+                layout["size_bytes"],
+                layout["alignment_bytes"]
+            )
+        
+        return layout
+    
+    @staticmethod
+    def _insert_padding(
+        fields: List[Dict],
+        total_size: int,
+        alignment: int
+    ) -> List[Dict]:
+        """
+        Insert implicit padding fields.
+        
+        Args:
+            fields: Declared fields (sorted by offset)
+            total_size: Total struct size
+            alignment: Struct alignment
+            
+        Returns:
+            Fields with padding inserted
+        """
+        result = []
+        padding_count = 0
+        
+        for i, field in enumerate(fields):
+            # Add this field
+            result.append(field)
+            
+            # Check if padding needed before next field
+            if i + 1 < len(fields):
+                next_field = fields[i + 1]
+                current_end = field["offset_bytes"] + field["size_bytes"]
+                next_start = next_field["offset_bytes"]
+                
+                if next_start > current_end:
+                    padding_count += 1
+                    padding_field = {
+                        "name": f"__padding_{padding_count}",
+                        "offset_bytes": current_end,
+                        "type": {"kind": "padding", "size_bytes": next_start - current_end},
+                        "size_bytes": next_start - current_end,
+                        "is_implicit": True
+                    }
+                    result.append(padding_field)
+        
+        # Check for trailing padding
+        if fields:
+            last_field = fields[-1]
+            last_end = last_field["offset_bytes"] + last_field["size_bytes"]
+            
+            if total_size > last_end:
+                padding_count += 1
+                padding_field = {
+                    "name": f"__padding_{padding_count}",
+                    "offset_bytes": last_end,
+                    "type": {"kind": "padding", "size_bytes": total_size - last_end},
+                    "size_bytes": total_size - last_end,
+                    "is_implicit": True
+                }
+                result.append(padding_field)
+        
+        return result
+
+# ───────────────────────────────────────────────────────────────────
+# 4.4 Native Interface Ingestion Stage
+# ───────────────────────────────────────────────────────────────────
+
+class NativeInterfaceIngestionStage(PipelineStage):
+    """
+    Stage 1: Native Interface Ingestion
+    
+    Extracts compiler-grade ABI information from C headers using libclang.
+    This is a lossless extraction - all ABI-relevant details are preserved.
+    """
+    
+    STAGE_NAME = "native_interface_ingestion"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Extract ABI surface from C headers using libclang"
+    
+    REQUIRED_INPUTS = []  # Only requires ExecutionContext (not an artifact)
+    PRODUCED_OUTPUTS = ["native_interface"]
+    
+    def _execute_impl(self) -> None:
+        """Extract native interface from header file."""
+        # Check libclang availability
+        if not LIBCLANG_AVAILABLE:
+            raise StageError(
+                "libclang not available. Install with: pip install libclang",
+                stage_name=self.STAGE_NAME,
+                details="libclang is required for native interface ingestion"
+            )
+        
+        if not initialize_libclang():
+            raise StageError(
+                "Failed to initialize libclang",
+                stage_name=self.STAGE_NAME,
+                details="Set LIBCLANG_PATH environment variable to libclang.dll/so location"
+            )
+        
+        # Extract paths from execution context
+        header_path = self.execution_context["native_library"]["interface_header_path"]
+        library_path = self.execution_context["native_library"]["library_path"]
+        
+        # Build compilation arguments
+        comp_args = self._build_compilation_args()
+        
+        # Parse header with libclang
+        index = clang.Index.create()
+        try:
+            tu = index.parse(
+                header_path,
+                args=comp_args,
+                options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+            )
+        except Exception as e:
+            raise StageError(
+                f"Failed to parse header: {e}",
+                stage_name=self.STAGE_NAME,
+                details=f"Header: {header_path}"
+            )
+        
+        # Check for parse errors
+        if tu.diagnostics:
+            errors = [d for d in tu.diagnostics if d.severity >= clang.Diagnostic.Error]
+            if errors:
+                error_msgs = "\n".join([f"{d.location}: {d.spelling}" for d in errors])
+                raise StageError(
+                    f"Header compilation failed:\n{error_msgs}",
+                    stage_name=self.STAGE_NAME,
+                    details="Fix syntax errors or add missing include paths"
+                )
+        
+        # Extract symbols
+        functions = []
+        structures = []
+        enumerations = []
+        typedefs = []
+        
+        for cursor in tu.cursor.walk_preorder():
+            # Only process symbols from the target header (not included headers)
+            if cursor.location.file and cursor.location.file.name != header_path:
+                continue
+            
+            if cursor.kind == clang.IDEKind.FUNCTION_DECL:
+                functions.append(self._extract_function(cursor))
+            
+            elif cursor.kind in [clang.IDEKind.STRUCT_DECL, clang.IDEKind.UNION_DECL]:
+                if cursor.is_definition():  # Only process definitions, not forward declarations
+                    structures.append(StructLayoutExtractor.extract_layout(cursor))
+            
+            elif cursor.kind == clang.IDEKind.ENUM_DECL:
+                if cursor.is_definition():
+                    enumerations.append(self._extract_enum(cursor))
+            
+            elif cursor.kind == clang.IDEKind.TYPEDEF_DECL:
+                typedefs.append(self._extract_typedef(cursor))
+        
+        # Build artifact
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        context_path = self.execution_context["artifacts"]["execution_context_path"]
+        
+        provenance = self.create_provenance([context_path])
+        
+        artifact = {
+            "provenance": provenance.to_dict(),
+            "header_path": os.path.abspath(header_path),
+            "library_path": os.path.abspath(library_path),
+            "compilation_flags": comp_args,
+            "functions": functions,
+            "structures": structures,
+            "enumerations": enumerations,
+            "typedefs": typedefs
+        }
+        
+        # Write artifact
+        output_path = os.path.join(artifacts_dir, "native_interface.json")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(artifact, f, indent=2)
+    
+    def _build_compilation_args(self) -> List[str]:
+        """Build compilation arguments from execution context."""
+        args = []
+        
+        compiler_info = self.execution_context["compiler"]
+        
+        # Add include paths
+        for include_path in compiler_info.get("include_paths", []):
+            args.append(f"-I{include_path}")
+        
+        # Add preprocessor macros
+        for macro, value in compiler_info.get("preprocessor_macros", {}).items():
+            if value:
+                args.append(f"-D{macro}={value}")
+            else:
+                args.append(f"-D{macro}")
+        
+        # Add platform-specific flags
+        platform = self.execution_context["platform"]
+        if platform["os_name"] == "Windows":
+            args.append("-fms-compatibility")
+            args.append("-fms-extensions")
+        
+        return args
+    
+    def _extract_function(self, cursor) -> Dict[str, Any]:
+        """Extract function information."""
+        # Extract parameters
+        parameters = []
+        for arg in cursor.get_arguments():
+            parameters.append({
+                "name": arg.spelling,
+                "type": TypeExtractor.extract_type(arg.type),
+                "position": len(parameters)
+            })
+        
+        # Detect calling convention
+        calling_conv = cursor.type.get_calling_conv()
+        calling_conv_str = self._map_calling_convention(calling_conv)
+        
+        return {
+            "name": cursor.spelling,
+            "return_type": TypeExtractor.extract_type(cursor.result_type),
+            "parameters": parameters,
+            "calling_convention": calling_conv_str,
+            "source_location": {
+                "file": cursor.location.file.name if cursor.location.file else "<unknown>",
+                "line": cursor.location.line,
+                "column": cursor.location.column
+            }
+        }
+    
+    def _map_calling_convention(self, clang_conv) -> str:
+        """Map libclang calling convention to string."""
+        conv_map = {
+            clang.CallingConv.C: "cdecl",
+            clang.CallingConv.X86_STDCALL: "stdcall",
+            clang.CallingConv.X86_FASTCALL: "fastcall",
+            clang.CallingConv.WIN64: "win64",
+            clang.CallingConv.X86_THISCALL: "thiscall"
+        }
+        return conv_map.get(clang_conv, "cdecl")
+    
+    def _extract_enum(self, cursor) -> Dict[str, Any]:
+        """Extract enumeration information."""
+        constants = []
+        for child in cursor.get_children():
+            if child.kind == clang.IDEKind.ENUM_CONSTANT_DECL:
+                constants.append({
+                    "name": child.spelling,
+                    "value": child.enum_value
+                })
+        
+        return {
+            "name": cursor.spelling,
+            "underlying_type": TypeExtractor.extract_type(cursor.enum_type),
+            "constants": constants,
+            "source_location": {
+                "file": cursor.location.file.name if cursor.location.file else "<unknown>",
+                "line": cursor.location.line,
+                "column": cursor.location.column
+            }
+        }
+    
+    def _extract_typedef(self, cursor) -> Dict[str, Any]:
+        """Extract typedef information."""
+        return {
+            "name": cursor.spelling,
+            "underlying_type": TypeExtractor.extract_type(cursor.underlying_typedef_type),
+            "source_location": {
+                "file": cursor.location.file.name if cursor.location.file else "<unknown>",
+                "line": cursor.location.line,
+                "column": cursor.location.column
+            }
+        }
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification
