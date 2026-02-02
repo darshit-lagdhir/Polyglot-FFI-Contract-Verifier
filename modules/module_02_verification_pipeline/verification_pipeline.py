@@ -1291,6 +1291,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
             self.registry.register_stage(IRNormalizationStage)
         if 'ContractSynthesisStage' in globals():
             self.registry.register_stage(ContractSynthesisStage)
+        if 'AdapterGenerationStage' in globals():
+            self.registry.register_stage(AdapterGenerationStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -3379,6 +3381,437 @@ class ContractSynthesisStage(PipelineStage):
                     )
         
         return warnings
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 7.1 Code Generator Utilities
+# ───────────────────────────────────────────────────────────────────
+
+class CodeGenerator:
+    """
+    Utility for generating Python code with proper indentation.
+    """
+    
+    def __init__(self, indent_size: int = 4):
+        self.lines: List[str] = []
+        self.indent_level = 0
+        self.indent_size = indent_size
+    
+    def add_line(self, line: str = ""):
+        """Add a line with current indentation."""
+        if line:
+            indent = " " * (self.indent_level * self.indent_size)
+            self.lines.append(f"{indent}{line}")
+        else:
+            self.lines.append("")
+    
+    def add_block(self, header: str, content_fn):
+        """Add a block with header and indented content."""
+        self.add_line(header)
+        self.indent()
+        content_fn()
+        self.dedent()
+    
+    def indent(self):
+        """Increase indentation level."""
+        self.indent_level += 1
+    
+    def dedent(self):
+        """Decrease indentation level."""
+        self.indent_level = max(0, self.indent_level - 1)
+    
+    def get_code(self) -> str:
+        """Get generated code as string."""
+        return "\n".join(self.lines)
+
+# ───────────────────────────────────────────────────────────────────
+# 7.2 Type Mapper
+# ───────────────────────────────────────────────────────────────────
+
+class TypeMapper:
+    """
+    Maps IR types to ctypes types.
+    """
+    
+    PRIMITIVE_MAP = {
+        "void": "None",
+        "char": "ctypes.c_char",
+        "signed char": "ctypes.c_char",
+        "unsigned char": "ctypes.c_ubyte",
+        "short": "ctypes.c_short",
+        "unsigned short": "ctypes.c_ushort",
+        "int": "ctypes.c_int",
+        "unsigned int": "ctypes.c_uint",
+        "long": "ctypes.c_long",
+        "unsigned long": "ctypes.c_ulong",
+        "long long": "ctypes.c_longlong",
+        "unsigned long long": "ctypes.c_ulonglong",
+        "float": "ctypes.c_float",
+        "double": "ctypes.c_double",
+        "size_t": "ctypes.c_size_t",
+    }
+    
+    @staticmethod
+    def map_type(type_id: str, type_registry: Dict) -> str:
+        """
+        Map IR type to ctypes type string.
+        
+        Args:
+            type_id: Type ID from IR
+            type_registry: Type registry from IR
+            
+        Returns:
+            Python code string for ctypes type
+        """
+        type_info = type_registry.get(type_id, {})
+        kind = type_info.get("kind")
+        
+        if kind == "primitive":
+            name = type_info.get("name", "int")
+            return TypeMapper.PRIMITIVE_MAP.get(name, "ctypes.c_int")
+        
+        elif kind == "pointer":
+            pointee_id = type_info.get("pointee_id")
+            pointee = type_registry.get(pointee_id, {})
+            
+            if pointee.get("kind") == "primitive":
+                pointee_name = pointee.get("name")
+                if pointee_name == "char":
+                    return "ctypes.c_char_p"  # String pointer
+                elif pointee_name == "void":
+                    return "ctypes.c_void_p"  # Generic pointer
+            
+            # Pointer to struct
+            if pointee.get("kind") == "struct":
+                struct_name = pointee.get("name", "Unknown")
+                return f"ctypes.POINTER({struct_name})"
+            
+            # Generic pointer
+            return "ctypes.c_void_p"
+        
+        elif kind == "struct":
+            return type_info.get("name", "Unknown")
+        
+        elif kind == "array":
+            element_id = type_info.get("element_type_id")
+            element_type = TypeMapper.map_type(element_id, type_registry)
+            size = type_info.get("size", 1)
+            return f"{element_type} * {size}"
+        
+        else:
+            return "ctypes.c_void_p"  # Fallback
+
+# ───────────────────────────────────────────────────────────────────
+# 7.3 Check Generator
+# ───────────────────────────────────────────────────────────────────
+
+class CheckGenerator:
+    """
+    Generates runtime check code from constraints.
+    """
+    
+    @staticmethod
+    def generate_check_function(
+        constraint: Dict,
+        function_name: str,
+        type_registry: Dict
+    ) -> str:
+        """
+        Generate check function for a constraint.
+        
+        Returns Python code as string.
+        """
+        gen = CodeGenerator()
+        constraint_type = constraint["type"]
+        target = constraint["target"]
+        constraint_id = constraint["constraint_id"]
+        
+        # Function name
+        check_func_name = f"_check_{constraint_type}_{target.replace('param_', '')}"
+        
+        if constraint_type == "non_null":
+            CheckGenerator._generate_non_null_check(gen, constraint, function_name)
+        
+        elif constraint_type == "buffer_size":
+            CheckGenerator._generate_buffer_size_check(gen, constraint, function_name)
+        
+        elif constraint_type == "null_terminated":
+            CheckGenerator._generate_null_terminated_check(gen, constraint, function_name)
+        
+        else:
+            # Generic check (placeholder)
+            gen.add_line(f"def {check_func_name}(*args):")
+            gen.indent()
+            gen.add_line("# TODO: Implement check for " + constraint_type)
+            gen.add_line("pass")
+            gen.dedent()
+        
+        return gen.get_code()
+    
+    @staticmethod
+    def _generate_non_null_check(gen: CodeGenerator, constraint: Dict, func_name: str):
+        """Generate NON_NULL check."""
+        target = constraint["target"].replace("param_", "")
+        constraint_id = constraint["constraint_id"]
+        
+        gen.add_line(f"def _check_NON_NULL_{target}({target}):")
+        gen.indent()
+        gen.add_line('"""Enforce NON_NULL constraint."""')
+        gen.add_line(f"if {target} is None:")
+        gen.indent()
+        gen.add_line("raise ContractViolation(")
+        gen.indent()
+        gen.add_line(f'constraint_id="{constraint_id}",')
+        gen.add_line(f'message="Parameter \'{target}\' must not be null",')
+        gen.add_line(f'function="{func_name}",')
+        gen.add_line(f'parameter="{target}"')
+        gen.dedent()
+        gen.add_line(")")
+        gen.dedent()
+        gen.dedent()
+    
+    @staticmethod
+    def _generate_buffer_size_check(gen: CodeGenerator, constraint: Dict, func_name: str):
+        """Generate BUFFER_SIZE check."""
+        target = constraint["target"].replace("param_", "")
+        related = constraint.get("related_target", "").replace("param_", "")
+        constraint_id = constraint["constraint_id"]
+        
+        gen.add_line(f"def _check_BUFFER_SIZE_{target}({target}, {related}):")
+        gen.indent()
+        gen.add_line('"""Enforce BUFFER_SIZE constraint."""')
+        gen.add_line(f"if {target} is not None:")
+        gen.indent()
+        gen.add_line(f"if len({target}) < {related}:")
+        gen.indent()
+        gen.add_line("raise ContractViolation(")
+        gen.indent()
+        gen.add_line(f'constraint_id="{constraint_id}",')
+        gen.add_line(f'message=f"Buffer \'{target}\' size {{len({target})}} < required {{{related}}}",')
+        gen.add_line(f'function="{func_name}",')
+        gen.add_line(f'parameter="{target}"')
+        gen.dedent()
+        gen.add_line(")")
+        gen.dedent()
+        gen.dedent()
+        gen.dedent()
+    
+    @staticmethod
+    def _generate_null_terminated_check(gen: CodeGenerator, constraint: Dict, func_name: str):
+        """Generate NULL_TERMINATED check."""
+        target = constraint["target"].replace("param_", "")
+        constraint_id = constraint["constraint_id"]
+        
+        gen.add_line(f"def _check_NULL_TERMINATED_{target}({target}):")
+        gen.indent()
+        gen.add_line('"""Enforce NULL_TERMINATED constraint."""')
+        gen.add_line(f"if {target} is not None:")
+        gen.indent()
+        gen.add_line(f"if b'\\x00' not in {target}:")
+        gen.indent()
+        gen.add_line("raise ContractViolation(")
+        gen.indent()
+        gen.add_line(f'constraint_id="{constraint_id}",')
+        gen.add_line(f'message="String \'{target}\' must be null-terminated",')
+        gen.add_line(f'function="{func_name}"')
+        gen.dedent()
+        gen.add_line(")")
+        gen.dedent()
+        gen.dedent()
+        gen.dedent()
+
+# ───────────────────────────────────────────────────────────────────
+# 7.4 Adapter Generator
+# ───────────────────────────────────────────────────────────────────
+
+class AdapterGenerator:
+    """
+    Generates complete adapter module from contract.
+    """
+    
+    def __init__(self, contract: Dict, ir: Dict):
+        self.contract = contract
+        self.ir = ir
+        self.type_registry = ir["type_registry"]
+    
+    def generate_adapter_module(self) -> str:
+        """Generate complete adapter module code."""
+        gen = CodeGenerator()
+        
+        # Header
+        gen.add_line('"""')
+        gen.add_line("Auto-generated adapter module")
+        gen.add_line("DO NOT EDIT - Generated by AdapterGenerationStage")
+        gen.add_line('"""')
+        gen.add_line()
+        
+        # Imports
+        gen.add_line("import ctypes")
+        gen.add_line("from typing import Optional")
+        gen.add_line()
+        
+        # Exception classes (inline for now)
+        gen.add_line("class ContractViolation(Exception):")
+        gen.indent()
+        gen.add_line('"""Contract constraint violated."""')
+        gen.add_line("def __init__(self, constraint_id, message, **metadata):")
+        gen.indent()
+        gen.add_line("super().__init__(message)")
+        gen.add_line("self.constraint_id = constraint_id")
+        gen.add_line("self.metadata = metadata")
+        gen.dedent()
+        gen.dedent()
+        gen.add_line()
+        
+        # Library loading
+        gen.add_line("# Load native library")
+        gen.add_line('_lib = ctypes.CDLL("library.dll")  # TODO: Use actual library path')
+        gen.add_line()
+        
+        # Generate check functions
+        for func_contract in self.contract.get("functions", []):
+            for constraint in func_contract.get("constraints", []):
+                check_code = CheckGenerator.generate_check_function(
+                    constraint, func_contract["name"], self.type_registry
+                )
+                gen.add_line(check_code)
+                gen.add_line()
+        
+        # Generate function wrappers
+        for func_contract in self.contract.get("functions", []):
+            wrapper_code = self._generate_function_wrapper(func_contract)
+            gen.add_line(wrapper_code)
+            gen.add_line()
+        
+        return gen.get_code()
+    
+    def _generate_function_wrapper(self, func_contract: Dict) -> str:
+        """Generate wrapper function."""
+        gen = CodeGenerator()
+        func_name = func_contract["name"]
+        
+        # Find function in IR
+        func_ir = None
+        for f in self.ir.get("functions", []):
+            if f["name"] == func_name:
+                func_ir = f
+                break
+        
+        if not func_ir:
+            return f"# Function {func_name} not found in IR"
+        
+        # Build parameter list
+        params = func_ir.get("parameters", [])
+        param_list = ", ".join([f"{p['name']}" for p in params])
+        
+        # Function signature
+        gen.add_line(f"def {func_name}({param_list}):")
+        gen.indent()
+        
+        # Docstring
+        gen.add_line('"""')
+        gen.add_line(f"Wrapper for: {func_contract.get('signature', func_name)}")
+        gen.add_line()
+        gen.add_line("Enforced constraints:")
+        for constraint in func_contract.get("constraints", []):
+            gen.add_line(f"- {constraint['constraint_id']}: {constraint['type']}")
+        gen.add_line('"""')
+        
+        # Pre-call checks
+        gen.add_line("# Pre-call checks")
+        for constraint in func_contract.get("constraints", []):
+            target = constraint["target"].replace("param_", "")
+            constraint_type = constraint["type"]
+            
+            if constraint_type in ["non_null", "null_terminated"]:
+                gen.add_line(f"_check_{constraint_type.upper()}_{target}({target})")
+            elif constraint_type == "buffer_size":
+                related = constraint.get("related_target", "").replace("param_", "")
+                gen.add_line(f"_check_BUFFER_SIZE_{target}({target}, {related})")
+        
+        gen.add_line()
+        
+        # Call native function
+        gen.add_line("# Call native function")
+        native_call_args = ", ".join([p["name"] for p in params])
+        gen.add_line(f"result = _lib.{func_name}({native_call_args})")
+        gen.add_line()
+        
+        # Post-call checks (none for now)
+        gen.add_line("# Post-call checks")
+        gen.add_line("# (none)")
+        gen.add_line()
+        
+        # Return
+        gen.add_line("return result")
+        
+        gen.dedent()
+        return gen.get_code()
+
+# ───────────────────────────────────────────────────────────────────
+# 7.5 Adapter Generation Stage
+# ───────────────────────────────────────────────────────────────────
+
+class AdapterGenerationStage(PipelineStage):
+    """
+    Stage 4: Adapter Generation
+    
+    Generates runtime enforcement adapters from contracts.
+    Produces Python ctypes wrappers with pre/post checks.
+    """
+    
+    STAGE_NAME = "adapter_generation"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Generate runtime enforcement adapters"
+    
+    REQUIRED_INPUTS = ["contract", "ir"]
+    PRODUCED_OUTPUTS = ["adapter_metadata"]
+    
+    def _execute_impl(self) -> None:
+        """Generate adapters from contract."""
+        # Load contract and IR
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        contract_path = os.path.join(artifacts_dir, "contract.json")
+        ir_path = os.path.join(artifacts_dir, "ir.json")
+        
+        with open(contract_path, 'r', encoding='utf-8') as f:
+            contract = json.load(f)
+        
+        with open(ir_path, 'r', encoding='utf-8') as f:
+            ir_artifact = json.load(f)
+        
+        # Generate adapter code
+        generator = AdapterGenerator(contract, ir_artifact)
+        adapter_code = generator.generate_adapter_module()
+        
+        # Write adapter module
+        adapter_dir = os.path.join(artifacts_dir, "adapters")
+        os.makedirs(adapter_dir, exist_ok=True)
+        
+        adapter_path = os.path.join(adapter_dir, "library_adapter.py")
+        with open(adapter_path, 'w', encoding='utf-8') as f:
+            f.write(adapter_code)
+        
+        # Generate metadata artifact
+        provenance = self.create_provenance([contract_path, ir_path])
+        
+        metadata = {
+            "provenance": provenance.to_dict(),
+            "adapter_module": "adapters.library_adapter",
+            "adapter_file": adapter_path,
+            "functions_wrapped": [f["name"] for f in contract.get("functions", [])],
+            "total_constraints": sum(
+                len(f.get("constraints", [])) for f in contract.get("functions", [])
+            ),
+            "generation_warnings": []
+        }
+        
+        # Write metadata
+        metadata_path = os.path.join(artifacts_dir, "adapter_metadata.json")
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification
