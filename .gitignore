@@ -39,3 +39,10 @@ artifacts/
 # ============================================================================
 Thumbs.db
 .DS_Store
+
+# Cleanup artifacts
+src_old_backup/
+src_old_backup.tar.gz
+polyglot_ffi_verifier_old.py
+cleanup_log.txt
+

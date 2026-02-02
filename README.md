@@ -240,40 +240,43 @@ See [`docs/CI_INTEGRATION.md`](docs/CI_INTEGRATION.md) for complete setup guides
 git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
 cd Polyglot-FFI-Contract-Verifier
 
-# Install dependencies
-pip install libclang
+# Install the package
+pip install -e .
 
-# Note: You may need to set LIBCLANG_PATH environment variable if libclang is not in your PATH
-# Example: set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
+# Verify installation
+polyglot-ffi-verifier --version
+
+# Note: You may need to set LIBCLANG_PATH environment variable:
+# Windows
+set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
+
+# Linux/Mac
+export LIBCLANG_PATH=/usr/lib/llvm-16/lib/libclang.so
 ```
 
 ### Basic Usage
 
 ```bash
-# Full verification pipeline (when implemented)
-python polyglot_ffi_verifier.py verify interface.h library.dll
+# Full verification pipeline
+polyglot-ffi-verifier verify interface.h library.dll
+
+# Or using Python module
+python -m polyglot_ffi_verifier verify interface.h library.dll
 
 # Individual stage execution
-python polyglot_ffi_verifier.py ingest interface.h library.dll
-python polyglot_ffi_verifier.py synthesize
-python polyglot_ffi_verifier.py generate-tests
+polyglot-ffi-verifier ingest interface.h library.dll
+polyglot-ffi-verifier synthesize
+polyglot-ffi-verifier generate-tests
 
 # Display execution context
-python polyglot_ffi_verifier.py context
+polyglot-ffi-verifier context
 
-# Validate implementations
-python validate_orchestration.py       # Phase 1
-python validate_ingestion.py           # Phase 2
-python validate_ir_normalization.py    # Phase 3
-python validate_contract_synthesis.py  # Phase 4
-python validate_contract_versioning.py # Phase 5
-python validate_adapter_generation.py  # Phase 6
-python validate_test_plan_generation.py # Phase 7
-python validate_verification_execution.py # Phase 8
-python validate_runtime_monitoring.py     # Phase 9
-python validate_diagnostics_mapping.py    # Phase 10
-python validate_report_generation.py      # Phase 11
-python validate_ci_integration.py         # Phase 12
+# Run tests
+pytest tests/ -v
+
+# Or run individual tests
+python tests/test_ingestion.py
+python tests/test_synthesis.py
 ```
 
 ## Architecture
@@ -354,56 +357,64 @@ The system is organized as a deterministic, artifact-driven pipeline:
 
 ```
 Polyglot-FFI-Contract-Verifier/
-├── src/
-│   ├── core/                       # Phase 1: Orchestration & context
-│   ├── ingestion/                  # Phase 2: Native interface ingestion
-│   ├── representation/             # Phase 3: IR normalization
-│   ├── synthesis/                  # Phase 4: Contract synthesis
-│   ├── contract/                   # Phase 5: Contract schema versioning
-│   ├── adapters/                   # Phase 6: Language adapter generation
-│   ├── testing/                    # Phase 7: Test plan generation
-│   ├── verification/               # Phase 8: Verification execution
-│   ├── monitoring/                 # Phase 9: Runtime monitoring
-│   ├── diagnostics/                # Phase 10: Diagnostics mapping
-│   ├── reporting/                  # Phase 11: Report generation
-│   ├── ci/                         # Phase 12: CI/CD integration
-│   └── ...                         # Additional phases
-├── docs/
-│   ├── ORCHESTRATION_IMPLEMENTATION.md
-│   ├── INGESTION_IMPLEMENTATION.md
-│   ├── IR_NORMALIZATION_IMPLEMENTATION.md
-│   ├── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
-│   ├── CONTRACT_VERSIONING_IMPLEMENTATION.md
-│   ├── ADAPTER_GENERATION_IMPLEMENTATION.md
-│   ├── TEST_PLAN_GENERATION_IMPLEMENTATION.md
-│   ├── VERIFICATION_EXECUTION_IMPLEMENTATION.md
-│   ├── RUNTIME_MONITORING_IMPLEMENTATION.md
-│   ├── DIAGNOSTICS_MAPPING_IMPLEMENTATION.md
-│   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   ├── CI_INTEGRATION.md
-│   ├── PERFORMANCE_CONSIDERATIONS.md
-│   ├── SECURITY_CONSIDERATIONS.md
-│   ├── LIMITATIONS_AND_NON_GOALS.md
-│   ├── ERROR_HANDLING_PATTERNS.md
-│   ├── LOGGING_STRATEGY.md
-│   └── BEST_PRACTICES.md
-├── polyglot_ffi_verifier.py        # Main entry point
-├── validate_orchestration.py       # Phase 1 validation
-├── validate_ingestion.py           # Phase 2 validation
-├── validate_ir_normalization.py    # Phase 3 validation
-├── validate_contract_synthesis.py  # Phase 4 validation
-├── validate_contract_versioning.py # Phase 5 validation
-├── validate_adapter_generation.py  # Phase 6 validation
-├── validate_test_plan_generation.py # Phase 7 validation
-├── validate_verification_execution.py # Phase 8
-├── validate_runtime_monitoring.py     # Phase 9
-├── validate_diagnostics_mapping.py    # Phase 10
-├── validate_report_generation.py      # Phase 11
-├── validate_ci_integration.py         # Phase 12
-├── validate_cross_cutting_concerns.py # Phase 13
-├── quick_test.py                   # Quick smoke test
-└── README.md                       # This file
+├── polyglot_ffi_verifier/     # Main package
+│   ├── __init__.py            # Package API
+│   ├── __main__.py            # CLI entry point
+│   ├── context.py             # Execution context
+│   ├── pipeline.py            # Pipeline orchestration
+│   ├── ingestion.py           # Phase 2: Native interface ingestion
+│   ├── normalization.py       # Phase 3: IR normalization
+│   ├── synthesis.py           # Phase 4: Contract synthesis
+│   ├── versioning.py          # Phase 5: Contract versioning
+│   ├── adapters.py            # Phase 6: Adapter generation
+│   ├── test_planning.py       # Phase 7: Test plan generation
+│   ├── execution.py           # Phase 8: Verification execution
+│   ├── subprocess_runner.py   # Phase 9: Crash detection
+│   ├── diagnosis.py           # Phase 10: Diagnostics mapping
+│   └── reporting.py           # Phase 11: Report generation
+├── tests/                     # Test suite
+│   ├── test_orchestration.py
+│   ├── test_ingestion.py
+│   ├── test_normalization.py
+│   ├── test_synthesis.py
+│   ├── test_versioning.py
+│   ├── test_adapters.py
+│   ├── test_test_planning.py
+│   ├── test_execution.py
+│   ├── test_monitoring.py
+│   ├── test_diagnosis.py
+│   ├── test_reporting.py
+│   ├── test_ci.py
+│   ├── test_cross_cutting.py
+│   ├── test_end_to_end_integration.py
+│   ├── test_quick_smoke.py
+│   ├── integration/
+│   │   └── test_end_to_end.py
+│   └── regression/
+│       └── test_system_stability.py
+├── docs/                      # Documentation
+│   ├── architecture/          # System design
+│   ├── implementation/        # Implementation details
+│   ├── api/                   # API reference
+│   └── operations/            # Operational guides
+├── examples/                  # Example usage
+│   └── demo/
+│       ├── run_demo.py
+│       ├── interface.h
+│       └── library.c
+├── scripts/                   # Utility scripts
+├── configs/                   # Configuration files
+├── .github/                   # GitHub Actions
+├── setup.py                   # Installation script
+├── pyproject.toml             # Project configuration
+├── requirements.txt           # Dependencies
+├── requirements-dev.txt       # Dev dependencies
+├── CHANGELOG.md               # Version history
+├── CONTRIBUTING.md            # Contribution guide
+├── README.md                  # This file
+├── LICENSE                    # MIT License
+├── BENCHMARKS.md              # Performance data
+└── .gitignore                 # Git ignore rules
 ```
 
 ## Development Roadmap
