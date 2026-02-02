@@ -1,0 +1,21 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  verifier:
+    build: .
+    image: polyglot-ffi-verifier:latest
+    volumes:
+      - ./examples:/examples
+      - ./results:/results
+    working_dir: /examples
+    command: simple_calculator/calculator.h simple_calculator/calculator.dll
+    
+  dev:
+    build: .
+    image: polyglot-ffi-verifier:dev
+    volumes:
+      - .:/app
+    command: bash
+    stdin_open: true
+    tty: true

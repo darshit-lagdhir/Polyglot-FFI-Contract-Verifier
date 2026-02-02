@@ -1,0 +1,9 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+include requirements.txt
+include requirements-dev.txt
+
+recursive-include docs *.md *.rst *.py Makefile
+recursive-include examples *.h *.c *.py *.bat *.sh README.md
+recursive-include modules *.py *.md
