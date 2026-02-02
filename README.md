@@ -125,13 +125,6 @@ Polyglot-FFI-Contract-Verifier/
 │   ├── module_03_.../            # 📋 Planned
 │   └── ...
 │
-├── polyglot_ffi_verifier/        # Modular packacge (for pip install)
-│   ├── __init__.py
-│   ├── context.py
-│   ├── pipeline.py
-│   ├── ingestion.py
-│   └── ...
-│
 ├── tests/                        # Test suite
 ├── examples/                     # Demo usage
 ├── docs/                         # Documentation
