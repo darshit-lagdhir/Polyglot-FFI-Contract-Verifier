@@ -84,7 +84,7 @@ structure. The original modular source is maintained separately for
 development purposes.
 
 For documentation, see: SYSTEM_ARCHITECTURE.md
-For modular source, see: polyglot_ffi_verifier/ directory
+For modular source, see: modules/ directory
 
 ═══════════════════════════════════════════════════════════════════════════
 """
