@@ -240,40 +240,43 @@ See [`docs/CI_INTEGRATION.md`](docs/CI_INTEGRATION.md) for complete setup guides
 git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
 cd Polyglot-FFI-Contract-Verifier
 
-# Install dependencies
-pip install libclang
+# Install the package
+pip install -e .
 
-# Important: You may need to set LIBCLANG_PATH environment variable if libclang is not in your PATH
-# Example: set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
+# Verify installation
+polyglot-ffi-verifier --version
+
+# Important: You may need to set LIBCLANG_PATH environment variable:
+# Windows
+set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
+
+# Linux/Mac
+export LIBCLANG_PATH=/usr/lib/llvm-16/lib/libclang.so
 ```
 
 ### Basic Usage
 
 ```bash
-# Full verification pipeline (when implemented)
-python polyglot_ffi_verifier.py verify interface.h library.dll
+# Full verification pipeline
+polyglot-ffi-verifier verify interface.h library.dll
+
+# Or using Python module
+python -m polyglot_ffi_verifier verify interface.h library.dll
 
 # Individual stage execution
-python polyglot_ffi_verifier.py ingest interface.h library.dll
-python polyglot_ffi_verifier.py synthesize
-python polyglot_ffi_verifier.py generate-tests
+polyglot-ffi-verifier ingest interface.h library.dll
+polyglot-ffi-verifier synthesize
+polyglot-ffi-verifier generate-tests
 
 # Display execution context
-python polyglot_ffi_verifier.py context
+polyglot-ffi-verifier context
 
-# Validate implementations
-python validate_orchestration.py       # 
-python validate_ingestion.py           # 
-python validate_ir_normalization.py    # 
-python validate_contract_synthesis.py  # 
-python validate_contract_versioning.py # 
-python validate_adapter_generation.py  # 
-python validate_test_plan_generation.py # 
-python validate_verification_execution.py # 
-python validate_runtime_monitoring.py     # 
-python validate_diagnostics_mapping.py    # 0
-python validate_report_generation.py      # 1
-python validate_ci_integration.py         # 2
+# Run tests
+pytest tests/ -v
+
+# Or run individual tests
+python tests/test_ingestion.py
+python tests/test_synthesis.py
 ```
 
 ## Architecture
@@ -354,56 +357,64 @@ The system is organized as a deterministic, artifact-driven pipeline:
 
 ```
 Polyglot-FFI-Contract-Verifier/
-├── src/
-│   ├── core/                       # : Orchestration & context
-│   ├── ingestion/                  # : Native interface ingestion
-│   ├── representation/             # : IR normalization
-│   ├── synthesis/                  # : Contract synthesis
-│   ├── contract/                   # : Contract schema versioning
-│   ├── adapters/                   # : Language adapter generation
-│   ├── testing/                    # : Test plan generation
-│   ├── verification/               # : Verification execution
-│   ├── monitoring/                 # : Runtime monitoring
-│   ├── diagnostics/                # 0: Diagnostics mapping
-│   ├── reporting/                  # 1: Report generation
-│   ├── ci/                         # 2: CI/CD integration
-│   └── ...                         # Additional phases
-├── docs/
-│   ├── ORCHESTRATION_IMPLEMENTATION.md
-│   ├── INGESTION_IMPLEMENTATION.md
-│   ├── IR_NORMALIZATION_IMPLEMENTATION.md
-│   ├── CONTRACT_SYNTHESIS_IMPLEMENTATION.md
-│   ├── CONTRACT_VERSIONING_IMPLEMENTATION.md
-│   ├── ADAPTER_GENERATION_IMPLEMENTATION.md
-│   ├── TEST_PLAN_GENERATION_IMPLEMENTATION.md
-│   ├── VERIFICATION_EXECUTION_IMPLEMENTATION.md
-│   ├── RUNTIME_MONITORING_IMPLEMENTATION.md
-│   ├── DIAGNOSTICS_MAPPING_IMPLEMENTATION.md
-│   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   ├── REPORT_GENERATION_IMPLEMENTATION.md
-│   ├── CI_INTEGRATION.md
-│   ├── PERFORMANCE_CONSIDERATIONS.md
-│   ├── SECURITY_CONSIDERATIONS.md
-│   ├── LIMITATIONS_AND_NON_GOALS.md
-│   ├── ERROR_HANDLING_PATTERNS.md
-│   ├── LOGGING_STRATEGY.md
-│   └── BEST_PRACTICES.md
-├── polyglot_ffi_verifier.py        # Main entry point
-├── validate_orchestration.py       #  validation
-├── validate_ingestion.py           #  validation
-├── validate_ir_normalization.py    #  validation
-├── validate_contract_synthesis.py  #  validation
-├── validate_contract_versioning.py #  validation
-├── validate_adapter_generation.py  #  validation
-├── validate_test_plan_generation.py #  validation
-├── validate_verification_execution.py # 
-├── validate_runtime_monitoring.py     # 
-├── validate_diagnostics_mapping.py    # 0
-├── validate_report_generation.py      # 1
-├── validate_ci_integration.py         # 2
-├── validate_cross_cutting_concerns.py # 3
-├── quick_test.py                   # Quick smoke test
-└── README.md                       # This file
+├── polyglot_ffi_verifier/     # Main package
+│   ├── __init__.py            # Package API
+│   ├── __main__.py            # CLI entry point
+│   ├── context.py             # Execution context
+│   ├── pipeline.py            # Pipeline orchestration
+│   ├── ingestion.py           # : Native interface ingestion
+│   ├── normalization.py       # : IR normalization
+│   ├── synthesis.py           # : Contract synthesis
+│   ├── versioning.py          # : Contract versioning
+│   ├── adapters.py            # : Adapter generation
+│   ├── test_planning.py       # : Test plan generation
+│   ├── execution.py           # : Verification execution
+│   ├── subprocess_runner.py   # : Crash detection
+│   ├── diagnosis.py           # 0: Diagnostics mapping
+│   └── reporting.py           # 1: Report generation
+├── tests/                     # Test suite
+│   ├── test_orchestration.py
+│   ├── test_ingestion.py
+│   ├── test_normalization.py
+│   ├── test_synthesis.py
+│   ├── test_versioning.py
+│   ├── test_adapters.py
+│   ├── test_test_planning.py
+│   ├── test_execution.py
+│   ├── test_monitoring.py
+│   ├── test_diagnosis.py
+│   ├── test_reporting.py
+│   ├── test_ci.py
+│   ├── test_cross_cutting.py
+│   ├── test_end_to_end_integration.py
+│   ├── test_quick_smoke.py
+│   ├── integration/
+│   │   └── test_end_to_end.py
+│   └── regression/
+│       └── test_system_stability.py
+├── docs/                      # Documentation
+│   ├── architecture/          # System design
+│   ├── implementation/        # Implementation details
+│   ├── api/                   # API reference
+│   └── operations/            # Operational guides
+├── examples/                  # Usage
+│   └── demo/
+│       ├── run_demo.py
+│       ├── interface.h
+│       └── library.c
+├── scripts/                   # Utility scripts
+├── configs/                   # Config files
+├── .github/                   # GitHub Actions
+├── setup.py                   # Install script
+├── pyproject.toml             # Project configuration
+├── requirements.txt           # Dependencies
+├── requirements-dev.txt       # Dev dependencies
+├── CHANGELOG.md               # Version history
+├── CONTRIBUTING.md            # Contribution guide
+├── README.md                  # This file
+├── LICENSE                    # MIT License
+├── BENCHMARKS.md              # Performance data
+└── .gitignore                 # Git ignore rules
 ```
 
 ## Development Roadmap

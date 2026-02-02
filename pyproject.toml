@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polyglot-ffi-contract-verifier"
+version = "1.0.0"
+description = "FFI contract verification for polyglot systems"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Darshit Lagdhir", email = "your.email@example.com"}
+]
+keywords = ["ffi", "verification", "contracts", "testing", "polyglot"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "libclang>=16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+polyglot-ffi-verifier = "polyglot_ffi_verifier.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier"
+Documentation = "https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/tree/main/docs"
+Repository = "https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier"
+"Bug Tracker" = "https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["polyglot_ffi_verifier"]
+omit = ["*/tests/*", "*/__pycache__/*"]
