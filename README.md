@@ -57,6 +57,59 @@ int process(struct Config* cfg);
 - ✅ **Confirmed** calling convention is `cdecl` (standard for C).
 - ✅ **Generated** report explaining why incorrect struct size would cause a heap corruption crash.
 
+## Consolidated Distribution
+
+For maximum portability, ease of presentation, and single-file distribution, complete consolidated versions are available:
+
+### 📄 `system_architecture.py`
+**Single-file Python distribution containing all 12 phases (~6,200 lines)**
+
+**Usage:**
+```bash
+python system_architecture.py verify interface.h library.dll
+python system_architecture.py context
+```
+
+**Advantages:**
+- ✅ **Self-contained** - No import issues, works standalone
+- ✅ **Portable** - Just copy one file and run
+- ✅ **Demo-ready** - Perfect for hackathon presentations
+- ✅ **Complete** - All 60+ classes, 200+ functions included
+- ✅ **Tested** - All tests pass identically to modular version
+
+### 📚 `SYSTEM_ARCHITECTURE.md`
+**Complete technical specification merging all documentation (~14,000 words)**
+
+**Contents:**
+- Complete system overview
+- All 12 phase implementations
+- Operational guides (performance, security, limitations)
+- Integration guides
+- Consolidated from 19 source documents
+
+**Advantages:**
+- ✅ **Single source of truth** - One file to rule them all
+- ✅ **Searchable** - Ctrl+F to find anything instantly
+- ✅ **Comprehensive** - All docs in one place
+- ✅ **Linear reading** - Read top to bottom for complete understanding
+
+### When to Use What
+
+**Use consolidated files (`system_architecture.py`, `SYSTEM_ARCHITECTURE.md`) when:**
+- 🎯 Demonstrating the system to judges/reviewers
+- 📤 Sharing with someone quickly
+- 🚀 Deploying without pip install
+- 📦 Vendoring into another project
+- 📖 Reading documentation linearly
+
+**Use modular structure (`polyglot_ffi_verifier/`, `docs/`) when:**
+- 🔧 Developing or extending the system
+- 📦 Installing via pip
+- 🗂️ Need modular structure for maintenance
+- 🔍 Navigating code with IDE
+
+**Both versions are functionally identical and kept in sync.**
+
 ## Current Status
 
 **** ✅ - Execution Context and Orchestration Layer  

@@ -21,16 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive report generation (1)
 - CI/CD integration (2)
 - End-to-end integration tests (4)
+- **Consolidated Distribution:**
+  - `system_architecture.py` - Single-file Python distribution (~6,200 lines)
+  - `SYSTEM_ARCHITECTURE.md` - Complete technical specification (~14,000 words)
+  - Automated build scripts for maintaining consolidated files
+  - Dual structure: modular for development, consolidated for distribution
 
 ### Changed
 - Restructured codebase into consolidated package structure
 - Moved from src/ to polyglot_ffi_verifier/ package
 - Consolidated 75+ files into 14 modules
+- Documentation consolidated from 19 files into 1 comprehensive reference
 
 ### Documentation
 - Complete implementation documentation for all phases
 - Performance, security, and limitations guides
 - Best practices and operational guides
+- Consolidated technical specification (SYSTEM_ARCHITECTURE.md)
 
 ## [0.1.0] - 2026-01-15
 
