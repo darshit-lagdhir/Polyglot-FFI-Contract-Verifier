@@ -222,173 +222,203 @@ Violating these laws invalidates verification results.
 
 ---
 
-## 2. Implementation Architecture
+## 2. Stage State Machines & Artifact Validation
 
-### 2.1 Core Components
+### 2.1 State Machine Enforcement
+
+The stage state machine is not merely a status tracking mechanism—it is a **formal contract enforcement system**. Each state transition must be explicit, validated, and logged. Invalid transitions are prohibited at runtime and cause immediate pipeline failure.
+
+**State Transition Rules:**
+
+The allowed state transitions are strictly defined:
+
+| Transition | From State | To State | Trigger | Reversible |
+|dir|---|---|---|---|
+| **Initialization** | `PENDING` | `READY` | `validate_preconditions()` succeeds | No |
+| **Execution** | `READY` | `EXECUTING` | `execute()` called | No |
+| **Success** | `EXECUTING` | `COMPLETED` | `_execute_impl()` succeeds AND `validate_postconditions()` succeeds | No |
+| **Failure** | `EXECUTING` | `FAILED` | Exception raised OR `validate_postconditions()` fails | No (Retry only) |
+| **Skip** | `PENDING` | `SKIPPED` | Upstream failure or config disables stage | No |
+
+**Invalid Transitions:**
+
+The following transitions are explicitly forbidden and will raise `InvalidStateTransitionError`:
+- `COMPLETED` → any state (completed stages cannot re-execute)
+- `FAILED` → `EXECUTING` (failed stages must restart from `PENDING`)
+- `SKIPPED` → `EXECUTING` (skipped stages must restart from `PENDING`)
+- Any backward transition except explicit retry
+
+**State Persistence:**
+
+Each state change is logged to the pipeline execution log with:
+- Previous state
+- New state
+- Timestamp (ISO 8601 UTC)
+- Trigger (what caused the transition)
+- Stage name and version
+
+This creates an immutable audit trail of all state transitions throughout pipeline execution.
+
+### 2.2 Advanced Artifact Validation
+
+Beyond basic existence and JSON validity checks, the system enforces strict validity:
+
+**Schema Version Compatibility:**
+
+Artifacts declare their schema version. The pipeline validates compatibility using semantic versioning:
+- **Major Version**: Must match exactly (breaking changes).
+- **Minor Version**: Artifact version must be >= required (backward compatible).
+- **Patch Version**: Ignored (assumed compatible).
+
+**Content Validation:**
+
+1. **Structural Validation**: All required fields present, types match.
+2. **Semantic Validation**:
+   - UUIDs are valid UUID v4
+   - Timestamps are valid ISO 8601
+   - Hashes are valid SHA-256 (64 hex chars)
+3. **Consistency Validation**:
+   - `execution_id` matches context
+   - Provenance chain validity
+
+**Hash Verification:**
+
+When an artifact declares `input_artifact_hashes`, the validator:
+1. Locates the referenced input artifact
+2. Computes its current SHA-256 hash
+3. Compares to the declared hash
+4. **Fails** if mismatch (indicates tampering or drift)
+
+**Validation Caching:**
+
+To perform efficiently, the validator caches results:
+- Key: `(artifact_path, file_mtime, file_size)`
+- Value: `(is_valid, parsed_artifact, validation_timestamp)`
+
+This speeds up repeated validation of unchanged artifacts.
+
+### 2.3 Dependency Resolution
+
+The pipeline automatically determines correct stage execution order.
+
+**Dependency Graph:**
+- **Nodes**: Stages
+- **Edges**: Stage A → Stage B if A produces output B requires
+
+**Topological Sort:**
+The system uses Kahn's algorithm to determine a valid execution sequence. It ensures that a stage only runs when all its dependencies have been satisfied.
+
+**Cycle Detection:**
+If the graph contains a cycle (A needs B, B needs A), the pipeline:
+1. Detects the cycle
+2. Reports the exact cycle path
+3. Halts execution (configuration error)
+
+### 2.4 Error Recovery Strategies
+
+The pipeline implements sophisticated error recovery based on error classification:
+
+**1. ConfigError Recovery:**
+- **Strategy**: Fail Fast
+- **Action**: Halt immediately, suggest user fix.
+- **Artifacts**: None produced.
+
+**2. PreconditionError Recovery:**
+- **Strategy**: Suggest Upstream Execution
+- **Action**: Halt failing stage, identify missing artifact and producing stage.
+- **Artifacts**: Existing artifacts preserved.
+
+**3. StageError Recovery:**
+- **Strategy**: Capture Context
+- **Action**: Halt pipeline, log stack trace and stage state.
+- **Artifacts**: Partial artifacts preserved in `artifacts/failed/` (marked INVALID).
+
+**4. PostconditionError Recovery:**
+- **Strategy**: Internal Defect Report
+- **Action**: Halt, report as bug in stage logic.
+- **Artifacts**: Diagnostic dump created.
+
+---
+
+## 3. Implementation Architecture
+
+### 3.1 Core Components (Enhanced)
 
 **PipelineStage (Abstract Base Class)**
-- Defines stage interface
-- Enforces precondition/postcondition contracts
-- Tracks state transitions
-- Logs execution events
+- Enforces state machine transitions
 - Provides provenance generation
+- Validates pre/postconditions
 
 **VerificationPipeline (Orchestrator)**
-- Registers stages
-- Validates execution context
-- Executes stages in order
-- Handles errors
-- Produces pipeline execution log
+- **NEW**: `execute_full_pipeline_with_dependency_resolution()`
+- Automatically resolves execution order
+- Handles state machine events
 
-**ArtifactValidator**
-- Validates artifacts against schemas
-- Checks provenance metadata
-- Verifies artifact hashes
-- Enforces architectural law #2
+**EnhancedArtifactValidator (NEW)**
+- Caches validation results
+- Verifies input hashes
+- Checks schema version compatibility
 
-**StageRegistry**
-- Maintains map of stage names to implementations
-- Validates stage definitions
-- Resolves stage dependencies
+**StateMachineValidator (NEW)**
+- Enforces valid state transitions
+- Prevents illegal operations
 
-**PipelineExecutionLog**
-- Records all stage executions
-- Tracks state transitions
-- Captures errors and warnings
-- Links to produced artifacts
+**DependencyGraph (NEW)**
+- Builds DAG of stages
+- Performs topological sort and cycle detection
 
-### 2.2 Class Hierarchy
+### 3.2 Class Hierarchy
 
 ```
 PipelineStage (ABC)
 ├── (Future) IngestionStage
 ├── (Future) NormalizationStage
 ├── (Future) SynthesisStage
-├── (Future) AdapterGenerationStage
-├── (Future) TestGenerationStage
-├── (Future) ExecutionStage
-├── (Future) DiagnosticsStage
-└── (Future) ReportingStage
+...
 
 VerificationPipeline
 ├── StageRegistry
 ├── PipelineExecutionLog
-└── ArtifactValidator
-```
-
-### 2.3 Data Flow
-
-```
-ExecutionContext (input)
-    ↓
-VerificationPipeline
-    ↓
-Stage 1 (validate preconditions → execute → validate postconditions)
-    ↓
-Artifact 1 (output)
-    ↓
-Stage 2 (validate preconditions → execute → validate postconditions)
-    ↓
-Artifact 2 (output)
-    ↓
-... (continue for all stages)
-    ↓
-Final Report (output)
+└── EnhancedVerificationPipeline (extends VerificationPipeline)
+    ├── StateMachineValidator
+    ├── EnhancedArtifactValidator
+    └── DependencyGraph
 ```
 
 ---
 
-## 3. Usage Examples
+## 4. Usage Examples
 
-### 3.1 CLI Usage
+### 4.1 CLI Usage (Enhanced)
 
 **Show pipeline information:**
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py info
 ```
 
-**List registered stages:**
+**Validate dependency graph:**
 ```bash
-python modules/module_02_verification_pipeline/verification_pipeline.py list-stages \
+python modules/module_02_verification_pipeline/verification_pipeline.py validate-graph \
     --context artifacts/execution_context.json
 ```
 
-### 3.2 Python API Usage
-
-```python
-from verification_pipeline import VerificationPipeline, PipelineStage
-
-# Load pipeline with execution context
-pipeline = VerificationPipeline("artifacts/execution_context.json")
-
-# Register stages (example - actual stages implemented in later prompts)
-# pipeline.register_stage(IngestionStage)
-# pipeline.register_stage(NormalizationStage)
-# ...
-
-# Execute full pipeline
-success = pipeline.execute_full_pipeline()
-
-if success:
-    print("Verification completed successfully")
-else:
-    print("Verification failed - see pipeline_execution_log.json")
-```
-
-### 3.3 Implementing a Custom Stage
-
-```python
-from verification_pipeline import PipelineStage
-
-class MyCustomStage(PipelineStage):
-    STAGE_NAME = "my_custom_stage"
-    STAGE_VERSION = "1.0.0"
-    STAGE_DESCRIPTION = "Example custom stage"
-    
-    REQUIRED_INPUTS = ["input_artifact"]
-    PRODUCED_OUTPUTS = ["output_artifact"]
-    
-    def _execute_impl(self) -> None:
-        # Read input artifact
-        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
-        input_path = os.path.join(artifacts_dir, "input_artifact.json")
-        
-        with open(input_path, 'r') as f:
-            input_data = json.load(f)
-        
-        # Process data
-        output_data = self._process(input_data)
-        
-        # Create provenance
-        provenance = self.create_provenance([input_path])
-        
-        # Write output artifact
-        output_path = os.path.join(artifacts_dir, "output_artifact.json")
-        output_artifact = {
-            "provenance": provenance.to_dict(),
-            "data": output_data
-        }
-        
-        with open(output_path, 'w') as f:
-            json.dump(output_artifact, f, indent=2)
-    
-    def _process(self, input_data):
-        # Stage-specific processing logic
-        return {"processed": True, "input": input_data}
+**Show execution order:**
+```bash
+python modules/module_02_verification_pipeline/verification_pipeline.py show-execution-order \
+    --context artifacts/execution_context.json
 ```
 
 ---
 
-## 4. Next Steps
-
-**** will implement:
-- Stage state machine enforcement
-- Detailed artifact validation rules
-- Dependency resolution algorithms
-- Advanced error recovery strategies
+## 5. Next Steps
 
 **** will implement:
 - Complete artifact schema definitions
-- Provenance validation
+- Provenance checker logic
 - Incremental verification support
 - Artifact versioning and migration
+
+**** will implement:
+- Detailed schema validation rules
+- Custom validation hooks
+

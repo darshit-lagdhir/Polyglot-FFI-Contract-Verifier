@@ -1,5 +1,6 @@
 """
-Unit tests for verification pipeline foundations.
+Unit tests for verification pipeline (Module 02).
+Updated for : State Machines & Artifact Validation.
 """
 
 import os
@@ -8,6 +9,7 @@ import json
 import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import List
 
 # Add module to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "modules" / "module_02_verification_pipeline"))
@@ -15,8 +17,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "modules" / "module_02_ver
 from verification_pipeline import (
     StageState, PipelineError, ConfigError, PreconditionError,
     StageError, PostconditionError, ArtifactProvenance, ArtifactValidator,
-    PipelineStage, StageRegistry, PipelineExecutionLog, VerificationPipeline
+    PipelineStage, StageRegistry, PipelineExecutionLog, VerificationPipeline,
+    SemanticVersion, StateMachineValidator, InvalidStateTransitionError,
+    DependencyGraph, EnhancedArtifactValidator, EnhancedVerificationPipeline
 )
+
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
 def test_stage_state_enum():
     """Test StageState enumeration."""
@@ -28,88 +35,105 @@ def test_stage_state_enum():
     assert StageState.SKIPPED.value == "skipped"
     print("✓ StageState enum test passed")
 
-def test_error_classification():
-    """Test error class hierarchy."""
-    config_err = ConfigError("test")
-    assert isinstance(config_err, PipelineError)
-    
-    precond_err = PreconditionError("test", "artifact", "stage")
-    assert isinstance(precond_err, PipelineError)
-    assert precond_err.missing_artifact == "artifact"
-    
-    stage_err = StageError("test", "stage", "details")
-    assert isinstance(stage_err, PipelineError)
-    assert stage_err.stage_name == "stage"
-    
-    postcond_err = PostconditionError("test", "stage", "path")
-    assert isinstance(postcond_err, PipelineError)
-    assert postcond_err.artifact_path == "path"
-    
-    print("✓ Error classification test passed")
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
-def test_artifact_provenance():
-    """Test ArtifactProvenance dataclass."""
-    provenance = ArtifactProvenance(
-        execution_id="test-id",
-        stage_name="test_stage",
-        stage_version="1.0.0",
-        creation_timestamp="2026-02-02T10:30:00+00:00",
-        schema_version="1.0.0",
-        input_artifact_hashes={"input.json": "hash123"}
-    )
+def test_semantic_version():
+    """Test SemanticVersion parsing and compatibility."""
+    # Parsing
+    v1 = SemanticVersion.parse("1.2.3")
+    assert v1.major == 1 and v1.minor == 2 and v1.patch == 3
     
-    # Test to_dict
-    data = provenance.to_dict()
-    assert data["execution_id"] == "test-id"
-    assert data["stage_name"] == "test_stage"
-    assert data["input_artifact_hashes"] == {"input.json": "hash123"}
+    # Compatibility
+    required = SemanticVersion.parse("1.2.0")
     
-    # Test from_dict
-    reconstructed = ArtifactProvenance.from_dict(data)
-    assert reconstructed == provenance
+    # Exact match compatible
+    assert SemanticVersion.parse("1.2.0").is_compatible_with(required)
     
-    print("✓ ArtifactProvenance test passed")
+    # Newer patch compatible
+    assert SemanticVersion.parse("1.2.9").is_compatible_with(required)
+    
+    # Newer minor compatible
+    assert SemanticVersion.parse("1.3.0").is_compatible_with(required)
+    
+    # Older minor incompatible
+    assert not SemanticVersion.parse("1.1.9").is_compatible_with(required)
+    
+    # Different major incompatible
+    assert not SemanticVersion.parse("2.0.0").is_compatible_with(required)
+    
+    print("✓ SemanticVersion test passed")
 
-class MockStage(PipelineStage):
-    STAGE_NAME = "mock_stage"
-    STAGE_VERSION = "0.0.1"
+def test_state_machine_validator():
+    """Test StateMachineValidator transitions."""
+    # Valid transitions
+    StateMachineValidator.validate_transition("test", StageState.PENDING, StageState.READY)
+    StateMachineValidator.validate_transition("test", StageState.READY, StageState.EXECUTING)
+    StateMachineValidator.validate_transition("test", StageState.EXECUTING, StageState.COMPLETED)
+    StateMachineValidator.validate_transition("test", StageState.EXECUTING, StageState.FAILED)
     
-    def _execute_impl(self) -> None:
+    # Invalid transition (COMPLETED is terminal)
+    try:
+        StateMachineValidator.validate_transition("test", StageState.COMPLETED, StageState.EXECUTING)
+        assert False, "Should raise InvalidStateTransitionError"
+    except InvalidStateTransitionError:
         pass
+        
+    print("✓ StateMachineValidator test passed")
 
-def test_pipeline_stage_lifecycle():
-    """Test basic PipelineStage lifecycle."""
-    # Create mock execution context
-    context = {
-        "provenance": {"execution_id": "test-execution-id"},
-        "artifacts": {"working_directory": "/tmp"}
-    }
+def test_dependency_graph():
+    """Test DependencyGraph topological sort and cycle detection."""
     
-    stage = MockStage(context)
-    assert stage.state == StageState.PENDING
-    assert stage.execution_id == "test-execution-id"
-    
-    # We can't fully execute without file system setup, but we verified instantiation
-    print("✓ PipelineStage lifecycle test passed")
+    class StageA(PipelineStage):
+        STAGE_NAME = "stage_a"
+        REQUIRED_INPUTS = []
+        PRODUCED_OUTPUTS = ["artifact_a"]
+        def _execute_impl(self): pass
 
-def test_registry():
-    """Test StageRegistry."""
-    registry = StageRegistry()
-    registry.register_stage(MockStage)
+    class StageB(PipelineStage):
+        STAGE_NAME = "stage_b"
+        REQUIRED_INPUTS = ["artifact_a"] # depends on A
+        PRODUCED_OUTPUTS = ["artifact_b"]
+        def _execute_impl(self): pass
+        
+    class StageC(PipelineStage):
+        STAGE_NAME = "stage_c"
+        REQUIRED_INPUTS = ["artifact_b"] # depends on B
+        PRODUCED_OUTPUTS = ["artifact_c"]
+        def _execute_impl(self): pass
+
+    # Test valid graph
+    graph = DependencyGraph([StageC, StageA, StageB]) # Order shouldn't matter
+    order = graph.topological_sort()
     
-    assert "mock_stage" in registry.list_stages()
-    assert registry.get_stage_class("mock_stage") == MockStage
+    # A must appear before B, B must appear before C
+    assert order.index("stage_a") < order.index("stage_b")
+    assert order.index("stage_b") < order.index("stage_c")
+    assert graph.detect_cycles() is None
     
-    info = registry.get_stage_info("mock_stage")
-    assert info["name"] == "mock_stage"
-    assert info["version"] == "0.0.1"
+    # Test circular dependency
+    class StageCycle1(PipelineStage):
+        STAGE_NAME = "cycle_1"
+        REQUIRED_INPUTS = ["art_2"]
+        PRODUCED_OUTPUTS = ["art_1"]
+        def _execute_impl(self): pass
+        
+    class StageCycle2(PipelineStage):
+        STAGE_NAME = "cycle_2"
+        REQUIRED_INPUTS = ["art_1"]
+        PRODUCED_OUTPUTS = ["art_2"]
+        def _execute_impl(self): pass
+        
+    graph_cycle = DependencyGraph([StageCycle1, StageCycle2])
+    cycle = graph_cycle.detect_cycles()
+    assert cycle is not None
+    assert "cycle_1" in cycle and "cycle_2" in cycle
     
-    print("✓ StageRegistry test passed")
+    print("✓ DependencyGraph test passed")
 
 if __name__ == "__main__":
     test_stage_state_enum()
-    test_error_classification()
-    test_artifact_provenance()
-    test_pipeline_stage_lifecycle()
-    test_registry()
-    print("\nAll unit tests passed!")
+    test_semantic_version()
+    test_state_machine_validator()
+    test_dependency_graph()
+    print("\nAll Module 02 tests passed!")

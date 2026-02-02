@@ -57,7 +57,7 @@ This project is organized into **28 technical modules**, each addressing a speci
 | Module | Name | Status | Progress |
 |--------|------|--------|----------|
 | 01 | FFI Contract Verifier | ✅ COMPLETE | 100% |
-| 02 | Verification Pipeline | 🔄 IN PROGRESS | 5% (1/20 prompts) |
+| 02 | Verification Pipeline | 🔄 IN PROGRESS | 10% (2/20 prompts) |
 | 03-28 | Various Technical Modules | 📋 PLANNED | 0% |
 
 **Overall Progress:** 2/28 modules started (7%)
@@ -202,9 +202,10 @@ python tests/test_quick_smoke.py
 - Diagnostics & reporting
 - CI/CD integration
 
-### Module 02: 🔄 In Progress (5%)
+### Module 02: 🔄 In Progress (10%)
 - Pipeline philosophy & formal model ✅
-- Remaining 19 prompts in progress
+- Stage state machines & artifact validation ✅
+- Remaining 18 prompts in progress
 
 ### Modules 03-28: 📋 Planned
 
