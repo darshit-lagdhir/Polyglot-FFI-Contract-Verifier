@@ -22,7 +22,8 @@ This document provides the complete technical specification for the Verification
 - ✅ : Adapter Generation Stage (COMPLETE)
 - ✅ : Test Plan Generation Stage (COMPLETE)
 - ✅ : Verification Execution Stage (COMPLETE)
-- ⏳ Prompts 10-20: Additional pipeline components (PENDING)
+- ✅ : Diagnostics & Reporting Stage (COMPLETE)
+- ⏳ Prompts 11-20: Additional pipeline components (PENDING)
 
 ---
 
@@ -37,97 +38,88 @@ This document provides the complete technical specification for the Verification
 7. [Adapter Generation Stage](#7-adapter-generation-stage)
 8. [Test Plan Generation Stage](#8-test-plan-generation-stage)
 9. [Verification Execution Stage](#9-verification-execution-stage)
-10. [Implementation Architecture](#10-implementation-architecture)
-11. [Usage Examples](#11-usage-examples)
-12. [Next Steps](#12-next-steps)
+10. [Diagnostics & Reporting Stage](#10-diagnostics--reporting-stage)
+11. [Implementation Architecture](#11-implementation-architecture)
+12. [Usage Examples](#12-usage-examples)
+13. [Next Steps](#13-next-steps)
 
 ---
 
-## 1-8. Previous Sections
+## 1-9. Previous Sections
 
 *(See previous versions for full text - preserved)*
 
 ---
 
-## 9. Verification Execution Stage
+## 10. Diagnostics & Reporting Stage
 
-### 9.1 Overview - The Execution Engine
+### 10.1 Overview - Actionable Intelligence
 
-The Verification Execution Stage runs the generated test plan against the generated Python adapter. It is responsible for instantiating abstract inputs, invoking adapter functions safely, capturing outcomes, and validating them against expectations.
+The Diagnostics & Reporting Stage transforms raw execution logs into actionable intelligence. It automatically classifies failures, determines root causes, and generates remediation advice.
 
-### 9.2 Execution Workflow
+### 10.2 Failure Categories
 
-1.  **Instantiation**: Convert `{"type": "bytes", "value": "b'Hello'"}` to concrete `b'Hello'`.
-2.  **Invocation**: Call `adapter.process_data(...)` wrapped in error handling.
-3.  **Outcome Classification**: Classify result as Success, ContractViolation, Crash, etc.
-4.  **Validation**: Compare Actual Outcome vs. Expected Outcome.
-5.  **Logging**: Record detailed execution log with timing and diagnostics.
+| Category | Description | Severity |
+|----------|-------------|----------|
+| **Uncaught Violation** | Adapter failed to detect contract violation | CRITICAL |
+| **False Positive** | Valid input rejected by adapter | HIGH |
+| **Native Bug** | Native code crashed or misbehaved | CRITICAL |
+| **Contract Incomplete** | Contract missing constraint | MEDIUM |
+| **Test Infrastructure** | Bug in test harness | LOW |
 
-### 9.3 Output Artifact: Execution Log
+### 10.3 Output Artifacts
 
-```json
-{
-  "summary": {
-    "total_tests": 50,
-    "tests_passed": 48,
-    "pass_rate": 96.0
-  },
-  "test_results": [
-    {
-      "test_id": "test_process_001_pos",
-      "validation_result": "PASS",
-      "execution_time_ms": 1.2,
-      "actual_outcome": { "type": "success", "return_value": 0 }
-    },
-    {
-      "test_id": "test_process_002_neg",
-      "validation_result": "PASS",
-      "actual_outcome": { 
-        "type": "contract_violation", 
-        "constraint_id": "process_NON_NULL_data_1" 
-      }
-    }
-  ],
-  "failures": [...]
-}
-```
+#### 1. `report.html`
+Interactive, visual report for developers. Includes pass/fail charts coverage graphs, and detailed failure analysis.
 
-### 9.4 Safety Features
-- **Isolation**: Each test runs independently.
-- **Exception Barriers**: Failures in one test do not abort the suite.
-- **Timing**: Execution time is tracked to detect performance regressions.
+#### 2. `report.md`
+Markdown report optimized for Git hosting and pull request comments.
+
+#### 3. `diagnostics.json`
+Machine-readable analysis for CI pipelines and automated tooling.
+
+### 10.4 Remediation Example
+
+**Failure:** `test_process_002_neg` (Uncaught Violation)
+
+**Root Cause:** Adapter failed to enforce NON_NULL constraint.
+
+**Remediation:**
+1. Inspect generated adapter: `adapters/library_adapter.py`
+2. specific check: `_check_NON_NULL_data`
+3. Verify it is called before `_lib.process`
 
 ---
 
-## 10. Implementation Architecture
+## 11. Implementation Architecture
 
-### 10.1 Class Hierarchy
+### 11.1 Class Hierarchy
 
 ```
 PipelineStage (ABC)
 ├── ...
-└── VerificationExecutionStage (NEW)
-    ├── Uses: InputInstantiator
-    ├── Uses: TestExecutor
-    ├── Uses: OutcomeValidator
-    └── Uses: ExecutionSummarizer
+└── DiagnosticsReportingStage (NEW)
+    ├── Uses: FailureClassifier
+    ├── Uses: RemediationGenerator
+    ├── Uses: HTMLReportGenerator
+    └── Uses: MarkdownReportGenerator
 ```
 
 ---
 
-## 11. Usage Examples
+## 12. Usage Examples
 
-### 11.1 Running Verification
+### 12.1 Running Diagnostics
 
 ```bash
 python modules/module_02_verification_pipeline/verification_pipeline.py run-incremental \
     --context artifacts/execution_context.json \
-    --target execution_log
+    --target diagnostics
 ```
 
 ---
 
-## 12. Next Steps
+## 13. Next Steps
 
 **** will implement:
-- **Diagnostics & Reporting Stage**: Analyzing execution logs to produce human-readable HTML/Markdown reports and actionable failure diagnostics.
+- **Pipeline Integration**: Integrating all 7 stages into a unified, easy-to-use `verify` command.

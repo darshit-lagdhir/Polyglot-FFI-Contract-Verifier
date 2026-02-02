@@ -1301,6 +1301,8 @@ class EnhancedVerificationPipeline(VerificationPipeline):
             self.registry.register_stage(TestPlanGenerationStage)
         if 'VerificationExecutionStage' in globals():
             self.registry.register_stage(VerificationExecutionStage)
+        if 'DiagnosticsReportingStage' in globals():
+            self.registry.register_stage(DiagnosticsReportingStage)
     
     def execute_full_pipeline_with_dependency_resolution(self) -> bool:
         """
@@ -4827,6 +4829,543 @@ class VerificationExecutionStage(PipelineStage):
             print(f"\n{len(failures)} test(s) failed:")
             for failure in failures[:10]:  # Show first 10
                 print(f"  - {failure['test_id']}: {failure.get('failure_reason', 'Unknown')}")
+
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# 10.1 Failure Categories and Severity
+# ───────────────────────────────────────────────────────────────────
+
+class FailureCategory(Enum):
+    """Categories of verification failures."""
+    UNCAUGHT_VIOLATION = "uncaught_violation"
+    FALSE_POSITIVE = "false_positive"
+    NATIVE_BUG = "native_bug"
+    CONTRACT_INCOMPLETE = "contract_incomplete"
+    ABI_MISMATCH = "abi_mismatch"
+    TEST_INFRASTRUCTURE = "test_infrastructure"
+    UNKNOWN = "unknown"
+
+class Severity(Enum):
+    """Failure severity levels."""
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+# ───────────────────────────────────────────────────────────────────
+# 10.2 Failure Classifier
+# ───────────────────────────────────────────────────────────────────
+
+class FailureClassifier:
+    """
+    Classifies test failures into categories and assigns severity.
+    """
+    
+    @staticmethod
+    def classify(test_result: Dict, test_case: Dict) -> Dict:
+        """
+        Classify a failed test.
+        
+        Args:
+            test_result: Test execution result
+            test_case: Original test case specification
+            
+        Returns:
+            Classification dict with category, severity, root_cause
+        """
+        expected = test_result.get("expected_outcome", {})
+        actual = test_result.get("actual_outcome", {})
+        category_name = test_case.get("category", "unknown")
+        
+        # Case 1: Expected violation, got success
+        if (expected.get("type") == "contract_violation" and 
+            actual.get("type") == "success"):
+            return {
+                "failure_category": FailureCategory.UNCAUGHT_VIOLATION,
+                "severity": Severity.CRITICAL,
+                "root_cause": "Adapter failed to detect contract violation",
+                "hypothesis": "Check function missing or incorrect in generated adapter"
+            }
+        
+        # Case 2: Expected success, got violation (in positive test)
+        if (expected.get("type") == "success" and 
+            actual.get("type") == "contract_violation" and
+            category_name == "positive"):
+            return {
+                "failure_category": FailureCategory.FALSE_POSITIVE,
+                "severity": Severity.HIGH,
+                "root_cause": "Valid input rejected by adapter",
+                "hypothesis": "Constraint too strict or check logic incorrect"
+            }
+        
+        # Case 3: Expected success, got crash
+        if (expected.get("type") == "success" and 
+            actual.get("type") in ["crash", "unexpected_exception"]):
+            return {
+                "failure_category": FailureCategory.NATIVE_BUG,
+                "severity": Severity.CRITICAL,
+                "root_cause": "Native code crashed or raised exception",
+                "hypothesis": "Bug in native implementation"
+            }
+        
+        # Case 4: Test infrastructure error
+        if test_result.get("validation_result") == "ERROR":
+            return {
+                "failure_category": FailureCategory.TEST_INFRASTRUCTURE,
+                "severity": Severity.LOW,
+                "root_cause": "Test execution infrastructure issue",
+                "hypothesis": test_result.get("error", "Unknown error")
+            }
+        
+        # Default: Unknown
+        return {
+            "failure_category": FailureCategory.UNKNOWN,
+            "severity": Severity.MEDIUM,
+            "root_cause": "Failure classification inconclusive",
+            "hypothesis": test_result.get("failure_reason", "Unknown")
+        }
+
+# ───────────────────────────────────────────────────────────────────
+# 10.3 Remediation Generator
+# ───────────────────────────────────────────────────────────────────
+
+class RemediationGenerator:
+    """
+    Generates actionable remediation recommendations for failures.
+    """
+    
+    @staticmethod
+    def generate(classification: Dict, test_result: Dict, test_case: Dict) -> List[str]:
+        """
+        Generate remediation steps.
+        
+        Args:
+            classification: Failure classification
+            test_result: Test execution result
+            test_case: Original test case
+            
+        Returns:
+            List of recommended actions
+        """
+        category = classification["failure_category"]
+        
+        if category == FailureCategory.UNCAUGHT_VIOLATION:
+            constraint_id = test_result["expected_outcome"].get("expected_constraint_id", "unknown")
+            return [
+                f"Inspect generated adapter for constraint: {constraint_id}",
+                "Verify check function exists and is called before native invocation",
+                "Check if constraint synthesis correctly identified requirement",
+                "If constraint missing from contract, add explicit annotation"
+            ]
+        
+        elif category == FailureCategory.FALSE_POSITIVE:
+            constraint_id = test_result["actual_outcome"].get("constraint_id", "unknown")
+            return [
+                f"Review constraint rationale in contract.json: {constraint_id}",
+                "Verify test input is actually valid",
+                "Check if constraint is too strict or check logic incorrect",
+                "Consider adjusting contract synthesis rules or adding annotation"
+            ]
+        
+        elif category == FailureCategory.NATIVE_BUG:
+            function = test_case.get("function", "unknown")
+            inputs = test_result.get("inputs", {})
+            return [
+                f"Debug native function '{function}' with test inputs: {inputs}",
+                "Use debugger (gdb/lldb/WinDbg) to locate crash site",
+                "Check for: off-by-one errors, null dereference, buffer overflow",
+                "Verify native code matches contract assumptions"
+            ]
+        
+        elif category == FailureCategory.CONTRACT_INCOMPLETE:
+            return [
+                "Analyze crash dump to identify violated assumption",
+                "Add missing constraint to contract (manual annotation)",
+                "Re-run contract synthesis with updated heuristics",
+                "Consider: alignment, pointer validity, state preconditions"
+            ]
+        
+        elif category == FailureCategory.TEST_INFRASTRUCTURE:
+            return [
+                "Check test plan generation for errors",
+                "Verify adapter module can be imported",
+                "Review input instantiation logic",
+                "Check for pipeline bugs"
+            ]
+        
+        else:
+            return [
+                "Review test failure details",
+                "Compare expected vs actual outcome",
+                "Investigate manually"
+            ]
+
+# ───────────────────────────────────────────────────────────────────
+# 10.4 Report Generator (HTML)
+# ───────────────────────────────────────────────────────────────────
+
+class HTMLReportGenerator:
+    """
+    Generates rich HTML report from execution results.
+    """
+    
+    @staticmethod
+    def generate(execution_log: Dict, diagnostics: Dict) -> str:
+        """Generate HTML report."""
+        summary = execution_log.get("summary", {})
+        failures = diagnostics.get("failure_analysis", [])
+        
+        html = []
+        
+        # Header
+        html.append("<!DOCTYPE html>")
+        html.append("<html>")
+        html.append("<head>")
+        html.append("<title>Verification Report</title>")
+        html.append("<style>")
+        html.append(HTMLReportGenerator._get_css())
+        html.append("</style>")
+        html.append("</head>")
+        html.append("<body>")
+        
+        # Title
+        html.append("<h1>FFI Verification Report</h1>")
+        
+        # Executive Summary
+        status = "PASS" if summary.get("tests_failed", 0) == 0 else "FAIL"
+        status_class = "pass" if status == "PASS" else "fail"
+        
+        html.append(f"<div class='summary {status_class}'>")
+        html.append(f"<h2>Status: {status}</h2>")
+        html.append(f"<p>Pass Rate: {summary.get('pass_rate', 0):.1f}%</p>")
+        html.append(f"<p>Tests Passed: {summary.get('tests_passed', 0)}/{summary.get('total_tests', 0)}</p>")
+        
+        critical_count = diagnostics.get("severity_counts", {}).get("CRITICAL", 0)
+        if critical_count > 0:
+            html.append(f"<p class='critical'>⚠ {critical_count} CRITICAL issues</p>")
+        
+        html.append("</div>")
+        
+        # Test Results Overview
+        html.append("<h2>Test Results Overview</h2>")
+        html.append("<table>")
+        html.append("<tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th></tr>")
+        
+        for category, stats in summary.get("tests_by_category", {}).items():
+            html.append(f"<tr>")
+            html.append(f"<td>{category}</td>")
+            html.append(f"<td>{stats['total']}</td>")
+            html.append(f"<td>{stats['passed']}</td>")
+            html.append(f"<td>{stats['failed']}</td>")
+            html.append(f"</tr>")
+        
+        html.append("</table>")
+        
+        # Failure Analysis
+        if failures:
+            html.append("<h2>Failure Analysis</h2>")
+            
+            for failure in failures:
+                test_id = failure.get("test_id", "unknown")
+                category = failure.get("failure_category", "unknown")
+                severity = failure.get("severity", "MEDIUM")
+                root_cause = failure.get("root_cause", "Unknown")
+                
+                html.append(f"<div class='failure'>")
+                html.append(f"<h3>{test_id} <span class='severity {severity.lower()}'>{severity}</span></h3>")
+                html.append(f"<p><strong>Category:</strong> {category}</p>")
+                html.append(f"<p><strong>Root Cause:</strong> {root_cause}</p>")
+                
+                # Remediation
+                remediation = failure.get("remediation", [])
+                if remediation:
+                    html.append("<p><strong>Recommended Actions:</strong></p>")
+                    html.append("<ol>")
+                    for step in remediation:
+                        html.append(f"<li>{step}</li>")
+                    html.append("</ol>")
+                
+                html.append("</div>")
+        
+        # Footer
+        html.append("<hr>")
+        html.append(f"<p class='footer'>Generated: {datetime.now(timezone.utc).isoformat()}</p>")
+        html.append("</body>")
+        html.append("</html>")
+        
+        return "\n".join(html)
+    
+    @staticmethod
+    def _get_css() -> str:
+        """Get embedded CSS for report."""
+        return """
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .summary {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .summary.pass {
+            background-color: #d4edda;
+            border: 2px solid #28a745;
+        }
+        .summary.fail {
+            background-color: #f8d7da;
+            border: 2px solid #dc3545;
+        }
+        .critical {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        .failure {
+            background-color: white;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #dc3545;
+            border-radius: 3px;
+        }
+        .severity {
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .severity.critical {
+            background-color: #dc3545;
+            color: white;
+        }
+        .severity.high {
+            background-color: #fd7e14;
+            color: white;
+        }
+        .severity.medium {
+            background-color: #ffc107;
+            color: black;
+        }
+        .severity.low {
+            background-color: #6c757d;
+            color: white;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        """
+
+# ───────────────────────────────────────────────────────────────────
+# 10.5 Report Generator (Markdown)
+# ───────────────────────────────────────────────────────────────────
+
+class MarkdownReportGenerator:
+    """
+    Generates Markdown report for version control.
+    """
+    
+    @staticmethod
+    def generate(execution_log: Dict, diagnostics: Dict) -> str:
+        """Generate Markdown report."""
+        summary = execution_log.get("summary", {})
+        failures = diagnostics.get("failure_analysis", [])
+        
+        md = []
+        
+        # Title
+        md.append("# FFI Verification Report")
+        md.append("")
+        
+        # Executive Summary
+        status = "✅ PASS" if summary.get("tests_failed", 0) == 0 else "❌ FAIL"
+        md.append(f"## Status: {status}")
+        md.append("")
+        md.append(f"- **Pass Rate:** {summary.get('pass_rate', 0):.1f}%")
+        md.append(f"- **Tests Passed:** {summary.get('tests_passed', 0)}/{summary.get('total_tests', 0)}")
+        md.append(f"- **Execution Time:** {summary.get('execution_time_total_seconds', 0):.2f}s")
+        
+        critical_count = diagnostics.get("severity_counts", {}).get("CRITICAL", 0)
+        if critical_count > 0:
+            md.append(f"- **⚠️ CRITICAL Issues:** {critical_count}")
+        
+        md.append("")
+        
+        # Test Results
+        md.append("## Test Results Overview")
+        md.append("")
+        md.append("| Category | Total | Passed | Failed |")
+        md.append("|----------|-------|--------|--------|")
+        
+        for category, stats in summary.get("tests_by_category", {}).items():
+            md.append(f"| {category} | {stats['total']} | {stats['passed']} | {stats['failed']} |")
+        
+        md.append("")
+        
+        # Failures
+        if failures:
+            md.append("## Failure Analysis")
+            md.append("")
+            
+            for failure in failures:
+                test_id = failure.get("test_id", "unknown")
+                severity = failure.get("severity", "MEDIUM")
+                root_cause = failure.get("root_cause", "Unknown")
+                
+                md.append(f"### {test_id} `[{severity}]`")
+                md.append("")
+                md.append(f"**Root Cause:** {root_cause}")
+                md.append("")
+                
+                remediation = failure.get("remediation", [])
+                if remediation:
+                    md.append("**Recommended Actions:**")
+                    for i, step in enumerate(remediation, 1):
+                        md.append(f"{i}. {step}")
+                    md.append("")
+        
+        # Footer
+        md.append("---")
+        md.append(f"*Generated: {datetime.now(timezone.utc).isoformat()}*")
+        
+        return "\n".join(md)
+
+# ───────────────────────────────────────────────────────────────────
+# 10.6 Diagnostics & Reporting Stage
+# ───────────────────────────────────────────────────────────────────
+
+class DiagnosticsReportingStage(PipelineStage):
+    """
+    Stage 7: Diagnostics & Reporting
+    
+    Analyzes execution results, classifies failures, generates root cause
+    analysis, and produces human-readable reports.
+    """
+    
+    STAGE_NAME = "diagnostics_reporting"
+    STAGE_VERSION = "1.0.0"
+    STAGE_DESCRIPTION = "Analyze failures and generate reports"
+    
+    REQUIRED_INPUTS = ["execution_log", "test_plan", "contract"]
+    PRODUCED_OUTPUTS = ["diagnostics", "report_html", "report_md"]
+    
+    def _execute_impl(self) -> None:
+        """Generate diagnostics and reports."""
+        # Load artifacts
+        artifacts_dir = self.execution_context["artifacts"]["working_directory"]
+        execution_log_path = os.path.join(artifacts_dir, "execution_log.json")
+        test_plan_path = os.path.join(artifacts_dir, "test_plan.json")
+        contract_path = os.path.join(artifacts_dir, "contract.json")
+        
+        with open(execution_log_path, 'r', encoding='utf-8') as f:
+            execution_log = json.load(f)
+        
+        with open(test_plan_path, 'r', encoding='utf-8') as f:
+            test_plan = json.load(f)
+        
+        with open(contract_path, 'r', encoding='utf-8') as f:
+            contract = json.load(f)
+        
+        # Analyze failures
+        test_results = execution_log.get("test_results", [])
+        test_cases_map = {tc["test_id"]: tc for tc in test_plan.get("test_cases", [])}
+        
+        failure_analysis = []
+        severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        
+        for result in test_results:
+            if result.get("validation_result") != "PASS":
+                test_id = result["test_id"]
+                test_case = test_cases_map.get(test_id, {})
+                
+                # Classify failure
+                classification = FailureClassifier.classify(result, test_case)
+                
+                # Generate remediation
+                remediation = RemediationGenerator.generate(classification, result, test_case)
+                
+                # Count severity
+                severity = classification["severity"].value
+                severity_counts[severity] += 1
+                
+                failure_analysis.append({
+                    "test_id": test_id,
+                    "failure_category": classification["failure_category"].value,
+                    "severity": severity,
+                    "root_cause": classification["root_cause"],
+                    "hypothesis": classification["hypothesis"],
+                    "remediation": remediation,
+                    "expected_outcome": result.get("expected_outcome"),
+                    "actual_outcome": result.get("actual_outcome")
+                })
+        
+        # Build diagnostics artifact
+        provenance = self.create_provenance([execution_log_path, test_plan_path, contract_path])
+        
+        diagnostics = {
+            "provenance": provenance.to_dict(),
+            "schema_version": "1.0.0",
+            "failure_analysis": failure_analysis,
+            "severity_counts": severity_counts,
+            "total_failures": len(failure_analysis)
+        }
+        
+        # Write diagnostics
+        diagnostics_path = os.path.join(artifacts_dir, "diagnostics.json")
+        with open(diagnostics_path, 'w', encoding='utf-8') as f:
+            json.dump(diagnostics, f, indent=2)
+        
+        # Generate HTML report
+        html_report = HTMLReportGenerator.generate(execution_log, diagnostics)
+        html_path = os.path.join(artifacts_dir, "report.html")
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_report)
+        
+        # Generate Markdown report
+        md_report = MarkdownReportGenerator.generate(execution_log, diagnostics)
+        md_path = os.path.join(artifacts_dir, "report.md")
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(md_report)
+        
+        # Print summary
+        print("\n" + "=" * 60)
+        print("DIAGNOSTICS & REPORTING COMPLETE")
+        print("=" * 60)
+        print(f"Total failures analyzed: {len(failure_analysis)}")
+        print(f"Severity breakdown:")
+        for sev, count in severity_counts.items():
+            if count > 0:
+                print(f"  {sev}: {count}")
+        print(f"\nReports generated:")
+        print(f"  - HTML: {html_path}")
+        print(f"  - Markdown: {md_path}")
+        print(f"  - Diagnostics: {diagnostics_path}")
+        print("=" * 60)
 
 # ───────────────────────────────────────────────────────────────────
 # 3.5 CLI Extensions for Incremental Verification
