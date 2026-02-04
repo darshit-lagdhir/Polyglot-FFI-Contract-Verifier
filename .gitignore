@@ -57,3 +57,16 @@ cleanup_smart.py
 
 # Build directory
 _build/
+
+# ============================================================================
+# Generated Files (Auto-generated, should not be committed)
+# ============================================================================
+validation_report.txt
+validation_report.json
+docs/API_REFERENCE_AUTO.md
+
+# ============================================================================
+# Runtime Cache
+# ============================================================================
+.verification_cache/
+.pytest_cache/
