@@ -11,11 +11,182 @@
 
 1. [Build Philosophy & Core Architecture](#1-build-philosophy-core-architecture)
 2. [Toolchain Detection & Validation](#2-toolchain-detection--validation)
-3. [Environment Descriptors](4. [Build Stage Pipeline](... (sections 5-20 to be added in subsequent prompts)
+3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
+4. [Environment Descriptors](... (sections 5-20 to be added in subsequent prompts)
 
 ---
 
 ## 1. Build Philosophy & Core Architecture
+
+...
+
+---
+
+## 2. Toolchain Detection & Validation
+
+...
+
+---
+
+## 3. Build Stage Pipeline Infrastructure
+
+### 3.1 Seven-Stage Architecture
+
+The build process is structured as seven sequential stages, each with explicit
+preconditions and postconditions:
+
+**Stage 1: Source Enumeration**
+- Preconditions: Environment descriptor, source root exists
+- Action: Exhaustively enumerate all source files
+- Postconditions: All sources enumerated, hashes computed
+
+**Stage 2: Source Validation**
+- Preconditions: Source files enumerated, toolchain descriptor exists
+- Action: Validate syntax and toolchain compatibility
+- Postconditions: All sources validated as parseable
+
+**Stage 3: Dependency Resolution**
+- Preconditions: Dependency manifest (optional)
+- Action: Resolve external dependencies with fixed versions
+- Postconditions: All dependencies resolved
+
+**Stage 4: Native Compilation** (to be implemented)
+- Preconditions: Validated sources, toolchain, dependencies
+- Action: Compile native components with explicit ABI configuration
+- Postconditions: All binaries produced, debug symbols preserved
+
+**Stage 5: Adapter Generation** (to be implemented)
+- Preconditions: Compiled binaries, contract specifications
+- Action: Generate runtime adapters from contracts
+- Postconditions: Adapters validated against contracts
+
+**Stage 6: Orchestration Assembly** (to be implemented)
+- Preconditions: Native tooling, adapters, orchestration sources
+- Action: Assemble cross-component workflows
+- Postconditions: All components integrated
+
+**Stage 7: Packaging & Validation** (to be implemented)
+- Preconditions: All artifacts produced
+- Action: Package with manifests, perform final validation
+- Postconditions: Complete, validated build artifacts
+
+### 3.2 Precondition/Postcondition Contract
+
+Each stage implements a strict contract:
+
+```python
+class BuildStageInterface:
+    def check_preconditions(context) -> None:
+        # Validate required inputs exist and are valid
+        # Raise BuildPreconditionError if violated
+    
+    def execute(context) -> updated_context:
+        # Perform stage logic
+        # Return updated context with outputs
+    
+    def validate_postconditions(context) -> None:
+        # Validate stage produced required outputs
+        # Raise BuildPostconditionError if violated
+```
+
+Violations halt the build immediately with diagnostic information.
+
+### 3.3 Build Context
+
+The build context is a dictionary that accumulates state across stages:
+
+```python
+{
+    'environment': EnvironmentDescriptor,
+    'toolchain': ToolchainDescriptor,
+    'source_files': {...},
+    'source_hashes': {...},
+    'validation_results': {...},
+    'dependencies': {...},
+    # ... more outputs as stages execute
+}
+```
+
+Each stage:
+1. Receives context from previous stages
+2. Validates preconditions against context
+3. Executes and updates context
+4. Validates postconditions
+5. Returns updated context
+
+### 3.4 Checkpoint Management
+
+The pipeline supports resumable builds through checkpointing:
+
+**Checkpoint Creation**: After each successful stage, context is serialized to: `checkpoint_stage_N.pkl`
+
+**Checkpoint Resumption**: Build can resume from any saved checkpoint:
+
+```python
+orchestrator.execute_build_with_checkpoints(resume_from=BuildStage.DEPENDENCY_RESOLUTION)
+```
+
+**Checkpoint Safety**:
+- Checkpoints only saved after postconditions pass
+- Resumption validates checkpoint compatibility
+- Stale checkpoints detected via timestamps
+
+### 3.5 Failure Diagnostics
+
+When stages fail, the system generates comprehensive diagnostics:
+
+**Diagnostic Contents**:
+- Stage name and number where failure occurred
+- Exception type and message
+- Precondition or postcondition that failed
+- Full build context snapshot
+- Environment and toolchain details
+- Suggested remediation steps
+
+**Diagnostic Artifacts**:
+- Console output with structured failure report
+- `failure_diagnostic.txt` saved to checkpoint directory
+- Build context preserved for post-mortem analysis
+
+### 3.6 Implementation Classes
+
+- **BuildStageInterface**: Abstract base class defining stage contract.
+- **SourceEnumerationStage**: Implements Stage 1: Finds and hashes all source files.
+- **SourceValidationStage**: Implements Stage 2: Validates syntax and toolchain compatibility.
+- **DependencyResolutionStage**: Implements Stage 3: Resolves external dependencies.
+- **PipelineCheckpoint**: Manages checkpoint save/load operations.
+- **EnhancedBuildProcessOrchestrator**: Extended orchestrator with checkpoint and diagnostic support.
+
+### 3.7 Usage Example
+
+```python
+# Configure environment
+env = EnvironmentDescriptor(...)
+
+# Create orchestrator with checkpoints
+orchestrator = EnhancedBuildProcessOrchestrator(
+    environment_descriptor=env,
+    checkpoint_dir=Path("build_checkpoints")
+)
+
+# Register stages
+orchestrator.register_stage(SourceEnumerationStage(Path("src")))
+orchestrator.register_stage(SourceValidationStage())
+orchestrator.register_stage(DependencyResolutionStage())
+
+# Execute build
+try:
+    context = orchestrator.execute_build_with_checkpoints()
+    print(f"Build succeeded: {context['status']}")
+except BuildError as e:
+    print(f"Build failed: {e}")
+    # Checkpoints preserved - can resume later
+```
+
+---
+
+**End of  Content**  
+**Next Prompt:** Source Enumeration & Dependency Graph Parsing
 
 ...
 

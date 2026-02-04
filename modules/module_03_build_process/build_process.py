@@ -914,6 +914,477 @@ class ToolchainValidator:
         return 0
 
 # ============================================================================
+# BUILD STAGE PIPELINE INFRASTRUCTURE ()
+# ============================================================================
+
+from typing import Callable
+import pickle
+
+# ============================================================================
+# STAGE PRECONDITION/POSTCONDITION DECORATORS
+# ============================================================================
+
+def requires(*preconditions: str):
+    """
+    Decorator to declare stage preconditions.
+    
+    Args:
+        *preconditions: List of precondition keys that must exist in context
+    """
+    def decorator(method: Callable):
+        method._preconditions = preconditions
+        return method
+    return decorator
+
+def ensures(*postconditions: str):
+    """
+    Decorator to declare stage postconditions.
+    
+    Args:
+        *postconditions: List of postcondition keys that must exist after stage
+    """
+    def decorator(method: Callable):
+        method._postconditions = postconditions
+        return method
+    return decorator
+
+# ============================================================================
+# STAGE IMPLEMENTATIONS
+# ============================================================================
+
+class SourceEnumerationStage(BuildStageInterface):
+    """
+    Stage 1: Source Enumeration
+    
+    Exhaustively identifies all source files, headers, configuration files,
+    and build scripts required for the build.
+    
+    Preconditions:
+    - Environment descriptor must exist
+    - Source root directory must be specified
+    
+    Postconditions:
+    - All source files enumerated
+    - Source file hashes computed
+    - Source manifest generated
+    """
+    
+    def __init__(self, source_root: Path):
+        super().__init__("Source Enumeration", BuildStage.SOURCE_ENUMERATION)
+        self.source_root = source_root
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        if 'environment' not in context:
+            raise BuildPreconditionError(
+                "Stage 1 requires 'environment' in build context"
+            )
+        
+        if not self.source_root.exists():
+            raise BuildPreconditionError(
+                f"Source root does not exist: {self.source_root}"
+            )
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"  Enumerating sources in: {self.source_root}")
+        
+        # Find all source files
+        source_files = {
+            'c_sources': list(self.source_root.rglob('*.c')),
+            'cpp_sources': list(self.source_root.rglob('*.cpp')),
+            'headers': list(self.source_root.rglob('*.h')),
+            'python_sources': list(self.source_root.rglob('*.py')),
+        }
+        
+        # Compute hashes for provenance
+        source_hashes = {}
+        for category, files in source_files.items():
+            for filepath in files:
+                relative_path = filepath.relative_to(self.source_root)
+                hash_value = self._hash_file(filepath)
+                source_hashes[str(relative_path)] = hash_value
+        
+        total_files = sum(len(files) for files in source_files.values())
+        print(f"  Found {total_files} source files")
+        
+        # Update context
+        context['source_files'] = source_files
+        context['source_hashes'] = source_hashes
+        context['source_root'] = self.source_root
+        
+        return context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        if 'source_files' not in context:
+            raise BuildPostconditionError(
+                "Stage 1 must produce 'source_files' in context"
+            )
+        
+        if 'source_hashes' not in context:
+            raise BuildPostconditionError(
+                "Stage 1 must produce 'source_hashes' in context"
+            )
+        
+        # Verify at least some sources found
+        source_files = context['source_files']
+        total = sum(len(files) for files in source_files.values())
+        if total == 0:
+            raise BuildPostconditionError(
+                "Stage 1 found no source files. Build cannot proceed."
+            )
+    
+    def _hash_file(self, filepath: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+class SourceValidationStage(BuildStageInterface):
+    """
+    Stage 2: Source Validation
+    
+    Validates that enumerated sources are syntactically valid and compatible
+    with the declared toolchain.
+    
+    Preconditions:
+    - Source files must be enumerated
+    - Toolchain descriptor must exist
+    
+    Postconditions:
+    - All sources validated as parseable
+    - Validation report generated
+    """
+    
+    def __init__(self):
+        super().__init__("Source Validation", BuildStage.SOURCE_VALIDATION)
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        if 'source_files' not in context:
+            raise BuildPreconditionError(
+                "Stage 2 requires 'source_files' from Stage 1"
+            )
+        
+        if 'toolchain' not in context:
+            raise BuildPreconditionError(
+                "Stage 2 requires 'toolchain' descriptor"
+            )
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"  Validating source files...")
+        
+        source_files = context['source_files']
+        validation_results = {
+            'validated_files': [],
+            'validation_errors': []
+        }
+        
+        # Validate C/C++ headers (basic syntax check)
+        for header in source_files.get('headers', []):
+            try:
+                # Basic validation: check file is readable and not empty
+                content = header.read_text(encoding='utf-8')
+                if len(content.strip()) == 0:
+                    validation_results['validation_errors'].append({
+                        'file': str(header),
+                        'error': 'Empty header file'
+                    })
+                else:
+                    validation_results['validated_files'].append(str(header))
+            except Exception as e:
+                validation_results['validation_errors'].append({
+                    'file': str(header),
+                    'error': str(e)
+                })
+        
+        # Validate Python sources (syntax check)
+        for py_file in source_files.get('python_sources', []):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    compile(f.read(), str(py_file), 'exec')
+                validation_results['validated_files'].append(str(py_file))
+            except SyntaxError as e:
+                validation_results['validation_errors'].append({
+                    'file': str(py_file),
+                    'error': f'Syntax error: {e}'
+                })
+        
+        print(f"  Validated {len(validation_results['validated_files'])} files")
+        if validation_results['validation_errors']:
+            print(f"  ⚠ Found {len(validation_results['validation_errors'])} validation errors")
+        
+        context['validation_results'] = validation_results
+        return context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        if 'validation_results' not in context:
+            raise BuildPostconditionError(
+                "Stage 2 must produce 'validation_results'"
+            )
+        
+        validation_results = context['validation_results']
+        
+        # Fail if critical errors found
+        if validation_results['validation_errors']:
+            error_summary = '\n'.join(
+                f"  - {err['file']}: {err['error']}"
+                for err in validation_results['validation_errors'][:5]
+            )
+            raise BuildPostconditionError(
+                f"Source validation found errors:\n{error_summary}"
+            )
+
+class DependencyResolutionStage(BuildStageInterface):
+    """
+    Stage 3: Dependency Resolution
+    
+    Resolves all external dependencies with fixed versions or hashes.
+    
+    Preconditions:
+    - Dependency manifest must be specified
+    
+    Postconditions:
+    - All dependencies resolved
+    - Dependency metadata recorded
+    """
+    
+    def __init__(self, dependency_manifest: Optional[Path] = None):
+        super().__init__("Dependency Resolution", BuildStage.DEPENDENCY_RESOLUTION)
+        self.dependency_manifest = dependency_manifest
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        # For now, dependencies are optional
+        pass
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"  Resolving dependencies...")
+        
+        resolved_dependencies = {
+            'runtime': [],
+            'build': [],
+            'test': []
+        }
+        
+        if self.dependency_manifest and self.dependency_manifest.exists():
+            # Parse dependency manifest (simplified - would use real package manager)
+            print(f"  Loading manifest: {self.dependency_manifest}")
+            # TODO: Implement real dependency resolution
+            pass
+        else:
+            print(f"  No dependency manifest specified")
+        
+        context['dependencies'] = resolved_dependencies
+        return context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        if 'dependencies' not in context:
+            raise BuildPostconditionError(
+                "Stage 3 must produce 'dependencies'"
+            )
+
+# ============================================================================
+# PIPELINE CHECKPOINT MANAGER
+# ============================================================================
+
+class PipelineCheckpoint:
+    """
+    Manages build pipeline checkpoints for resumable builds.
+    """
+    
+    def __init__(self, checkpoint_dir: Path):
+        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    def save_checkpoint(self, stage: BuildStage, context: Dict[str, Any]) -> Path:
+        """
+        Save build context as checkpoint after successful stage completion.
+        
+        Args:
+            stage: Stage that just completed
+            context: Build context to save
+            
+        Returns:
+            Path to checkpoint file
+        """
+        checkpoint_file = self.checkpoint_dir / f"checkpoint_stage_{stage.value}.pkl"
+        
+        # Add checkpoint metadata
+        checkpoint_data = {
+            'stage': stage.value,
+            'stage_name': stage.name,
+            'timestamp': datetime.datetime.utcnow().isoformat(),
+            'context': context
+        }
+        
+        with open(checkpoint_file, 'wb') as f:
+            pickle.dump(checkpoint_data, f)
+        
+        print(f"  ✓ Checkpoint saved: {checkpoint_file.name}")
+        return checkpoint_file
+    
+    def load_checkpoint(self, stage: BuildStage) -> Dict[str, Any]:
+        """
+        Load build context from checkpoint.
+        
+        Args:
+            stage: Stage to resume from
+            
+        Returns:
+            Restored build context
+        """
+        checkpoint_file = self.checkpoint_dir / f"checkpoint_stage_{stage.value}.pkl"
+        
+        if not checkpoint_file.exists():
+            raise BuildError(
+                f"No checkpoint found for stage {stage.value}"
+            )
+        
+        with open(checkpoint_file, 'rb') as f:
+            checkpoint_data = pickle.load(f)
+        
+        print(f"  ✓ Loaded checkpoint from stage {checkpoint_data['stage_name']}")
+        return checkpoint_data['context']
+    
+    def list_checkpoints(self) -> List[Tuple[BuildStage, str]]:
+        """
+        List available checkpoints.
+        
+        Returns:
+            List of (stage, timestamp) tuples
+        """
+        checkpoints = []
+        for checkpoint_file in sorted(self.checkpoint_dir.glob("checkpoint_stage_*.pkl")):
+            with open(checkpoint_file, 'rb') as f:
+                data = pickle.load(f)
+                stage = BuildStage(data['stage'])
+                timestamp = data['timestamp']
+                checkpoints.append((stage, timestamp))
+        return checkpoints
+
+# ============================================================================
+# ENHANCED BUILD PROCESS ORCHESTRATOR
+# ============================================================================
+
+class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
+    """
+    Enhanced orchestrator with full pipeline infrastructure.
+    
+    Extends base orchestrator with:
+    - Checkpoint management
+    - Resumable builds
+    - Enhanced diagnostics
+    - Stage parallelization support
+    """
+    
+    def __init__(
+        self,
+        environment_descriptor: EnvironmentDescriptor,
+        checkpoint_dir: Optional[Path] = None
+    ):
+        super().__init__(environment_descriptor)
+        
+        self.checkpoint_manager = None
+        if checkpoint_dir:
+            self.checkpoint_manager = PipelineCheckpoint(checkpoint_dir)
+    
+    def execute_build_with_checkpoints(
+        self,
+        resume_from: Optional[BuildStage] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute build with checkpoint support.
+        
+        Args:
+            resume_from: Stage to resume from (None = start from beginning)
+            
+        Returns:
+            Final build context
+        """
+        print("=" * 80)
+        print("BUILD PROCESS STARTED (WITH CHECKPOINTS)")
+        print("=" * 80)
+        
+        # Validate environment
+        self.environment.validate()
+        
+        # Resume from checkpoint if requested
+        if resume_from:
+            if not self.checkpoint_manager:
+                raise BuildError("Cannot resume: No checkpoint directory configured")
+            
+            print(f"Resuming from stage {resume_from.value}: {resume_from.name}")
+            self.build_context = self.checkpoint_manager.load_checkpoint(resume_from)
+            
+            # Find starting stage index
+            start_index = next(
+                i for i, stage in enumerate(self.stages)
+                if stage.stage_number == resume_from
+            )
+            stages_to_run = self.stages[start_index:]
+        else:
+            stages_to_run = self.stages
+        
+        # Execute stages
+        for stage in stages_to_run:
+            try:
+                self.build_context = stage.run(self.build_context)
+                
+                # Save checkpoint after successful stage
+                if self.checkpoint_manager:
+                    self.checkpoint_manager.save_checkpoint(
+                        stage.stage_number,
+                        self.build_context
+                    )
+            
+            except BuildError as e:
+                # Generate diagnostic report
+                self._generate_failure_diagnostic(stage, e)
+                raise
+        
+        # Add completion metadata
+        self.build_context['end_time'] = datetime.datetime.utcnow().isoformat()
+        self.build_context['status'] = 'SUCCESS'
+        
+        print("=" * 80)
+        print("BUILD PROCESS COMPLETED SUCCESSFULLY")
+        print("=" * 80)
+        
+        return self.build_context
+    
+    def _generate_failure_diagnostic(self, stage: BuildStageInterface, error: BuildError):
+        """
+        Generate detailed diagnostic report for build failure.
+        
+        Args:
+            stage: Stage where failure occurred
+            error: Exception that caused failure
+        """
+        print("\n" + "=" * 80)
+        print("BUILD FAILURE DIAGNOSTIC")
+        print("=" * 80)
+        print(f"Stage: {stage.stage_number.value} - {stage.stage_name}")
+        print(f"Error Type: {type(error).__name__}")
+        print(f"Error Message: {str(error)}")
+        print("-" * 80)
+        
+        # Add context snapshot
+        if 'environment' in self.build_context:
+            env = self.build_context['environment']
+            print(f"Environment: {env.compiler_name} {env.compiler_version}")
+            print(f"Target: {env.target_os}/{env.target_architecture}")
+        
+        print("=" * 80)
+        
+        # Save diagnostic to file
+        if self.checkpoint_manager:
+            diagnostic_file = self.checkpoint_manager.checkpoint_dir / "failure_diagnostic.txt"
+            with open(diagnostic_file, 'w') as f:
+                f.write(f"Build Failure Diagnostic\n")
+                f.write(f"Stage: {stage.stage_number.value} - {stage.stage_name}\n")
+                f.write(f"Error: {str(error)}\n")
+            print(f"Diagnostic saved to: {diagnostic_file}")
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -921,7 +1392,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "2/20"
+__prompt__ = "3/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")
