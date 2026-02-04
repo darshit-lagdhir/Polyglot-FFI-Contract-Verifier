@@ -1050,5 +1050,221 @@ class TestNativeCompiler:
             deterministic_output=True
         )
 
+class TestSymbol:
+    """Test symbol representation."""
+
+    def test_symbol_creation(self):
+        """Test creating symbol."""
+        from modules.module_03_build_process.build_process import Symbol
+        
+        sym = Symbol(name="my_function", symbol_type="T", address="00001000")
+        
+        assert sym.name == "my_function"
+        assert sym.symbol_type == "T"
+        assert sym.is_function is True
+        assert sym.is_data is False
+
+    def test_symbol_types(self):
+        """Test symbol type detection."""
+        from modules.module_03_build_process.build_process import Symbol
+        
+        func_sym = Symbol(name="func", symbol_type="T")
+        data_sym = Symbol(name="data", symbol_type="D")
+        undef_sym = Symbol(name="extern", symbol_type="U")
+        
+        assert func_sym.is_function is True
+        assert data_sym.is_data is True
+        assert undef_sym.is_undefined is True
+
+class TestValidationResult:
+    """Test validation result."""
+
+    def test_validation_result_creation(self):
+        """Test creating validation result."""
+        from modules.module_03_build_process.build_process import ValidationResult
+        
+        result = ValidationResult(
+            object_file=Path("test.o"),
+            format_valid=True,
+            symbols_valid=True,
+            debug_symbols_valid=True,
+            abi_conformance_valid=True
+        )
+        
+        assert result.object_file == Path("test.o")
+        assert result.overall_valid is True
+
+    def test_validation_result_with_issues(self):
+        """Test validation result with failures."""
+        from modules.module_03_build_process.build_process import ValidationResult
+        
+        result = ValidationResult(
+            object_file=Path("bad.o"),
+            format_valid=False,
+            symbols_valid=True
+        )
+        result.issues.append("Invalid object format")
+        
+        assert result.overall_valid is False
+        assert len(result.issues) == 1
+
+    def test_validation_report_generation(self):
+        """Test generating validation report."""
+        from modules.module_03_build_process.build_process import ValidationResult
+        
+        result = ValidationResult(
+            object_file=Path("test.o"),
+            format_valid=True,
+            symbols_valid=True
+        )
+        result.warnings.append("Debug symbols not found")
+        
+        report = result.generate_report()
+        
+        assert "test.o" in report
+        assert "Debug symbols not found" in report
+
+class TestObjectFileValidator:
+    """Test object file validator."""
+
+    def test_validator_creation(self):
+        """Test creating object file validator."""
+        from modules.module_03_build_process.build_process import (
+            ObjectFileValidator, ToolchainDescriptor
+        )
+        
+        toolchain = self._create_test_toolchain()
+        validator = ObjectFileValidator(toolchain)
+        
+        assert validator.toolchain == toolchain
+
+    def _create_test_toolchain(self):
+        """Create test toolchain."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_full_version="11.2.0",
+            compiler_executable=Path("/usr/bin/gcc"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+
+class TestLinkingMetadata:
+    """Test linking metadata."""
+
+    def test_metadata_creation(self):
+        """Test creating linking metadata."""
+        from modules.module_03_build_process.build_process import LinkingMetadata
+        
+        metadata = LinkingMetadata(
+            target_name="test_program",
+            input_objects=[Path("main.o")],
+            output_executable=Path("test_program"),
+            linker_name="ld",
+            success=True
+        )
+        
+        assert metadata.target_name == "test_program"
+        assert metadata.success is True
+
+    def test_metadata_serialization(self):
+        """Test metadata to_dict."""
+        from modules.module_03_build_process.build_process import LinkingMetadata
+        
+        metadata = LinkingMetadata(
+            target_name="program",
+            linker_flags=['-O2', '-s'],
+            lto_enabled=True
+        )
+        
+        data = metadata.to_dict()
+        assert data['target_name'] == "program"
+        assert data['lto_enabled'] is True
+
+class TestLinkTarget:
+    """Test link target specification."""
+
+    def test_link_target_creation(self):
+        """Test creating link target."""
+        from modules.module_03_build_process.build_process import LinkTarget
+        
+        target = LinkTarget(
+            target_name="myapp",
+            target_type="executable",
+            object_files=[Path("main.o"), Path("utils.o")],
+            output_path=Path("build/myapp"),
+            enable_lto=True
+        )
+        
+        assert target.target_name == "myapp"
+        assert target.target_type == "executable"
+        assert target.enable_lto is True
+        assert target.metadata is not None
+
+class TestLinker:
+    """Test linker."""
+
+    def test_linker_creation(self):
+        """Test creating linker."""
+        from modules.module_03_build_process.build_process import (
+            Linker, ToolchainDescriptor
+        )
+        
+        toolchain = self._create_test_toolchain()
+        linker = Linker(toolchain)
+        
+        assert linker.toolchain == toolchain
+
+    def _create_test_toolchain(self):
+        """Create test toolchain."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_full_version="11.2.0",
+            compiler_executable=Path("/usr/bin/gcc"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+
+class TestExecutableValidator:
+    """Test executable validator."""
+
+    def test_validator_creation(self):
+        """Test creating executable validator."""
+        from modules.module_03_build_process.build_process import ExecutableValidator
+        
+        validator = ExecutableValidator()
+        assert validator is not None
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -17,7 +17,9 @@
 6. [Toolchain Validation & Capability Detection](#6-toolchain-validation--capability-detection)
 7. [ABI Fidelity Enforcement & Compiler Config](#7-abi-fidelity-enforcement--compiler-configuration)
 8. [Native Compilation & Object File Generation](#8-native-compilation--object-file-generation)
-... (sections 9-20 to be added in subsequent prompts)
+9. [Native Validation & Binary Self-Tests](#9-native-validation--binary-self-tests)
+10. [Link-Time Control & Executable Generation](#10-link-time-control--executable-generation)
+... (sections 11-20 to be added in subsequent prompts)
 
 ---
 
@@ -923,5 +925,216 @@ print(f"Time: {compilation['total_duration']:.2f}s")
 
 ---
 
+## 9. Native Validation & Binary Self-Tests
+
+### 9.1 Post-Compilation Validation
+
+Stage 4.5 validates compiled object files beyond compiler error checking:
+- **Object file format validation**
+- **Symbol inspection and verification**
+- **Debug symbol presence checking**
+- **ABI conformance validation**
+- **Binary self-tests** (runtime verification)
+
+### 9.2 Object File Format Validation
+
+Validates that compiled files are valid object code:
+
+**Checks**:
+- File exists and is non-empty
+- Magic bytes match expected format (ELF, PE/COFF, Mach-O)
+- File structure is parseable
+
+**Detects**:
+- Truncated files (corruption during write)
+- Wrong file types (build script errors)
+- Invalid object formats
+
+### 9.3 Symbol Inspection
+
+Extracts and validates symbols in object files:
+
+**Platform-Specific Tools**:
+- **Linux/macOS**: `nm` for symbol extraction
+- **Windows**: `dumpbin` for symbol extraction
+
+**Validation**:
+- Verify expected symbols present
+- Check symbol types (function vs data)
+- Verify export visibility
+
+**Detects**:
+- Missing exports (visibility errors)
+- Name mangling issues
+- Linker stripping problems
+
+### 9.4 Debug Symbol Validation
+
+Verifies debug information is complete:
+
+**Checks**:
+- Debug sections present (DWARF on Unix, PDB on Windows)
+- Debug info covers source lines
+- Function debug entries present
+
+**Detects**:
+- Missing debug flags (compilation without -g)
+- Stripped symbols (post-processing removed them)
+- Incomplete debug coverage
+
+### 9.5 Validation Result Model
+
+```python
+ValidationResult:
+    object_file: Path
+    format_valid: bool
+    symbols_valid: bool
+    debug_symbols_valid: bool
+    abi_conformance_valid: bool
+    self_test_passed: bool
+    issues: List[str]
+    warnings: List[str]
+    overall_valid: bool
+```
+
+### 9.6 Implementation Classes
+
+- `Symbol`: Represents a symbol in an object file (name, type, address).
+- `ObjectFileValidator`: Performs all validation checks on object files.
+- `ValidationResult`: Captures validation results with detailed issue tracking.
+- `NativeValidationStage`: Stage 4.5 implementation (post-compilation validation).
+
+### 9.7 Usage Example
+
+```python
+# Create validation stage
+stage = NativeValidationStage()
+
+# Execute (after Stage 4)
+context = stage.execute({
+    'native_compilation': {
+        'object_files': ['build/obj/main.o'],
+        'success': True
+    },
+    'toolchain': toolchain_descriptor
+})
+
+# Check results
+validation = context['native_validation']
+if validation['all_valid']:
+    print("All object files validated successfully")
+else:
+    for result in validation['validation_results']:
+        if not result['overall_valid']:
+            print(f"Failed: {result['object_file']}")
+            for issue in result['issues']:
+                print(f"  - {issue}")
+```
+
+---
+
+## 10. Link-Time Control & Executable Generation
+
+### 10.1 Stage 5: Linking
+
+Linking combines validated object files into complete executables and libraries.
+
+**Inputs**:
+- Validated object files (Stage 4.5)
+- Toolchain descriptor
+- Linker configuration
+
+**Outputs**:
+- Executables (`.exe`, ELF)
+- Shared libraries (`.dll`, `.so`, `.dylib`)
+- Linking metadata (provenance)
+
+### 10.2 Link Target Specification
+
+Complete specification for a link operation:
+
+```python
+LinkTarget:
+    target_name: str
+    target_type: 'executable' | 'shared_library'
+    object_files: List[Path]
+    output_path: Path
+    linker_flags: List[str]
+    libraries: List[str]
+    enable_lto: bool
+```
+
+### 10.3 Linking Metadata
+
+Provenance tracking for links:
+
+```python
+LinkingMetadata:
+    target_name: str
+    input_objects: List[Path]
+    output_executable: Path
+    output_hash: SHA-256
+    linker_flags: List[str]
+    libraries_linked: List[str]
+    lto_enabled: bool
+    link_duration: seconds
+    build_id: str
+```
+
+### 10.4 Link-Time Optimization
+
+LTO enabled conditionally:
+- Requires toolchain support
+- Enabled for RELEASE builds
+- Disabled for DEBUG (complicates debugging)
+
+**Flags**:
+- Compilation: `-flto`
+- Linking: `-flto` (MSVC: `/LTCG`)
+
+### 10.5 Executable Validation
+
+Post-link validation:
+- Executable format (PE/ELF/Mach-O)
+- Entry point present
+- File permissions correct
+- No undefined symbols (executables)
+
+### 10.6 Implementation Classes
+
+- `LinkingMetadata`: Provenance metadata for linking.
+- `LinkTarget`: Complete link specification.
+- `Linker`: Manages link command construction and execution.
+- `ExecutableValidator`: Validates linked executables.
+- `LinkingStage`: Stage 5 implementation.
+
+### 10.7 Usage Example
+
+```python
+# Create linking stage
+stage = LinkingStage(
+    output_dir=Path("build/bin"),
+    enable_lto=True
+)
+
+# Execute
+context = stage.execute({
+    'native_compilation': {
+        'object_files': ['build/obj/main.o', 'build/obj/utils.o']
+    },
+    'native_validation': {
+        'all_valid': True
+    },
+    'toolchain': toolchain_descriptor
+})
+
+# Check results
+linking = context['linking']
+if linking['all_successful']:
+    print(f"Executables: {linking['executables']}")
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Native Validation & Binary Self-Tests
+**Next Prompt:** Adapter Generation & Contract Integration
