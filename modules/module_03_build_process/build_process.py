@@ -31,9 +31,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
 import datetime
-import platform
-import urllib.request
 import tempfile
+import shutil
+import platform
 
 # ============================================================================
 # CORE ENUMERATIONS
@@ -2306,6 +2306,561 @@ class EnhancedDependencyResolutionStage(BuildStageInterface):
         return dependencies
 
 # ============================================================================
+# ============================================================================
+
+@dataclass
+class ToolchainCapabilities:
+    """
+    Comprehensive capabilities of a validated toolchain.
+    
+    Documents exactly what features the toolchain supports for build
+    planning and feature selection.
+    """
+    # Language standards
+    language_standards: Dict[str, List[str]] = field(default_factory=dict)
+    
+    # Sanitizers
+    sanitizers: List[str] = field(default_factory=list)
+    
+    # Optimization
+    optimization_levels: List[str] = field(default_factory=list)
+    supports_lto: bool = False
+    supports_pgo: bool = False
+    
+    # Debug
+    debug_formats: List[str] = field(default_factory=list)
+    
+    # ABI
+    calling_conventions: List[str] = field(default_factory=list)
+    abi_compatible: bool = False
+    structure_packing_verified: bool = False
+    
+    # Reproducibility
+    deterministic_output: bool = False
+    determinism_flags: List[str] = field(default_factory=list)
+    
+    # Platform
+    supports_position_independent_code: bool = False
+    supports_exceptions: bool = True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'language_standards': self.language_standards,
+            'sanitizers': self.sanitizers,
+            'optimization_levels': self.optimization_levels,
+            'supports_lto': self.supports_lto,
+            'supports_pgo': self.supports_pgo,
+            'debug_formats': self.debug_formats,
+            'calling_conventions': self.calling_conventions,
+            'abi_compatible': self.abi_compatible,
+            'structure_packing_verified': self.structure_packing_verified,
+            'deterministic_output': self.deterministic_output,
+            'determinism_flags': self.determinism_flags,
+            'supports_position_independent_code': self.supports_position_independent_code,
+            'supports_exceptions': self.supports_exceptions,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ToolchainCapabilities':
+        """Deserialize from dictionary."""
+        return cls(
+            language_standards=data.get('language_standards', {}),
+            sanitizers=data.get('sanitizers', []),
+            optimization_levels=data.get('optimization_levels', []),
+            supports_lto=data.get('supports_lto', False),
+            supports_pgo=data.get('supports_pgo', False),
+            debug_formats=data.get('debug_formats', []),
+            calling_conventions=data.get('calling_conventions', []),
+            abi_compatible=data.get('abi_compatible', False),
+            structure_packing_verified=data.get('structure_packing_verified', False),
+            deterministic_output=data.get('deterministic_output', False),
+            determinism_flags=data.get('determinism_flags', []),
+            supports_position_independent_code=data.get('supports_position_independent_code', False),
+            supports_exceptions=data.get('supports_exceptions', True),
+        )
+
+class ToolchainValidator:
+    """
+    Validates toolchain capabilities through compilation tests.
+    
+    Performs feature detection, ABI verification, self-tests, and
+    determinism validation.
+    """
+    
+    def __init__(self, toolchain: 'ToolchainDescriptor', cache_dir: Optional[Path] = None):
+        self.toolchain = toolchain
+        self.cache_dir = cache_dir or Path.home() / '.build_cache' / 'toolchain_validation'
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.capabilities = ToolchainCapabilities()
+        self.validation_results: List[Dict[str, Any]] = []
+    
+    def validate(self) -> ToolchainCapabilities:
+        """
+        Perform complete toolchain validation.
+        
+        Returns:
+            Validated capabilities
+            
+        Raises:
+            BuildError: If critical validation fails
+        """
+        print(f"Validating toolchain: {self.toolchain.compiler_name} {self.toolchain.compiler_version}")
+        
+        # Check cache
+        cached_capabilities = self._load_cached_validation()
+        if cached_capabilities:
+            print("  ✓ Using cached validation results")
+            return cached_capabilities
+        
+        # Perform validation tests
+        self._detect_language_standards()
+        self._detect_sanitizers()
+        self._detect_optimization_support()
+        self._detect_debug_formats()
+        self._validate_abi_compatibility()
+        self._validate_determinism()
+        
+        # Run self-tests
+        self._run_smoke_test()
+        
+        # Cache results
+        self._cache_validation()
+        
+        print(f"  ✓ Toolchain validation complete")
+        return self.capabilities
+    
+    def _load_cached_validation(self) -> Optional[ToolchainCapabilities]:
+        """Load cached validation if available and valid."""
+        cache_key = self._get_cache_key()
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        
+        if not cache_file.exists():
+            return None
+        
+        try:
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+            
+            # Verify cache is recent (within 30 days)
+            cached_time = datetime.datetime.fromisoformat(data['timestamp'])
+            age = datetime.datetime.now(datetime.UTC) - cached_time
+            
+            if age.days > 30:
+                print("  Cache expired (>30 days old)")
+                return None
+            
+            # Verify compiler hash matches
+            if data.get('compiler_hash') != self.toolchain.compiler_executable_hash:
+                print("  Cache invalid (compiler changed)")
+                return None
+            
+            return ToolchainCapabilities.from_dict(data['capabilities'])
+        
+        except Exception as e:
+            print(f"  Cache load failed: {e}")
+            return None
+    
+    def _cache_validation(self):
+        """Cache validation results."""
+        cache_key = self._get_cache_key()
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        
+        data = {
+            'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),
+            'compiler_name': self.toolchain.compiler_name,
+            'compiler_version': self.toolchain.compiler_version,
+            'compiler_hash': self.toolchain.compiler_executable_hash,
+            'capabilities': self.capabilities.to_dict(),
+        }
+        
+        with open(cache_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    
+    def _get_cache_key(self) -> str:
+        """Generate cache key for this toolchain configuration."""
+        key_parts = [
+            self.toolchain.compiler_name,
+            self.toolchain.compiler_version,
+            self.toolchain.target_architecture,
+        ]
+        return '-'.join(key_parts).replace('/', '_').replace('\\', '_')
+    
+    def _detect_language_standards(self):
+        """Detect supported language standards."""
+        print("  Detecting language standards...")
+        
+        standards = {
+            'c': [],
+            'cpp': []
+        }
+        
+        # Use GCC/Clang style flags by default, but handle MSVC separately if needed
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        # Test C standards
+        c_stds = [('c99', '/std:c11' if is_msvc else '-std=c99'),
+                  ('c11', '/std:c11' if is_msvc else '-std=c11'),
+                  ('c17', '/std:clatest' if is_msvc else '-std=c17')]
+        
+        for name, flag in c_stds:
+            if self._test_compile_flag(flag, language='c'):
+                standards['c'].append(name)
+        
+        # Test C++ standards
+        cpp_stds = [('c++14', '/std:c++14' if is_msvc else '-std=c++14'),
+                    ('c++17', '/std:c++17' if is_msvc else '-std=c++17'),
+                    ('c++20', '/std:c++20' if is_msvc else '-std=c++20')]
+        
+        for name, flag in cpp_stds:
+            if self._test_compile_flag(flag, language='cpp'):
+                standards['cpp'].append(name)
+        
+        self.capabilities.language_standards = standards
+        print(f"    C: {standards['c']}")
+        print(f"    C++: {standards['cpp']}")
+    
+    def _detect_sanitizers(self):
+        """Detect supported sanitizers."""
+        print("  Detecting sanitizers...")
+        
+        sanitizers = []
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        # Test common sanitizers
+        test_sanitizers = [
+            ('asan', '/fsanitize=address' if is_msvc else '-fsanitize=address'),
+            ('ubsan', '-fsanitize=undefined'),
+            ('tsan', '-fsanitize=thread'),
+        ]
+        
+        for name, flag in test_sanitizers:
+            if self._test_compile_flag(flag):
+                sanitizers.append(name)
+        
+        self.capabilities.sanitizers = sanitizers
+        print(f"    Supported: {sanitizers}")
+    
+    def _detect_optimization_support(self):
+        """Detect supported optimization levels."""
+        print("  Detecting optimization support...")
+        
+        opt_levels = []
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        levels = ['/O1', '/O2', '/Ox'] if is_msvc else ['-O0', '-O1', '-O2', '-O3', '-Os']
+        
+        for level in levels:
+            if self._test_compile_flag(level):
+                opt_levels.append(level.lstrip('-/'))
+        
+        # Test LTO
+        lto_flag = '/GL' if is_msvc else '-flto'
+        lto_supported = self._test_compile_flag(lto_flag)
+        
+        self.capabilities.optimization_levels = opt_levels
+        self.capabilities.supports_lto = lto_supported
+        
+        print(f"    Levels: {opt_levels}")
+        print(f"    LTO: {lto_supported}")
+    
+    def _detect_debug_formats(self):
+        """Detect supported debug formats."""
+        print("  Detecting debug formats...")
+        
+        formats = []
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        if is_msvc:
+            if self._test_compile_flag('/Zi'):
+                formats.append('pdb')
+            if self._test_compile_flag('/Z7'):
+                formats.append('codeview')
+        else:
+            # DWARF versions
+            if self._test_compile_flag('-gdwarf-4'):
+                formats.append('dwarf4')
+            if self._test_compile_flag('-gdwarf-5'):
+                formats.append('dwarf5')
+            
+            # Generic debug
+            if not formats and self._test_compile_flag('-g'):
+                formats.append('default')
+        
+        self.capabilities.debug_formats = formats
+        print(f"    Formats: {formats}")
+    
+    def _validate_abi_compatibility(self):
+        """Validate ABI compatibility through structure layout test."""
+        print("  Validating ABI compatibility...")
+        
+        # Create ABI test program
+        test_program = r'''
+#include <stdio.h>
+#include <stddef.h>
+
+struct TestStruct {
+    char a;
+    int b;
+    char c;
+};
+
+int main() {
+    size_t size = sizeof(struct TestStruct);
+    size_t offset_b = offsetof(struct TestStruct, b);
+    
+    // Expected: 12 bytes with 4-byte alignment/padding
+    // or 8 bytes if tightly packed
+    printf("%zu %zu\n", size, offset_b);
+    return 0;
+}
+'''
+        
+        try:
+            output = self._compile_and_run(test_program, 'c')
+            size, offset = map(int, output.strip().split())
+            
+            # Validate reasonable structure layout
+            if size >= 8 and offset >= 4:
+                self.capabilities.abi_compatible = True
+                self.capabilities.structure_packing_verified = True
+                print(f"    ✓ ABI compatible (struct size: {size}, offset: {offset})")
+            else:
+                print(f"    ⚠ Unusual structure layout (size: {size}, offset: {offset})")
+                self.capabilities.abi_compatible = False
+        
+        except Exception as e:
+            print(f"    ✗ ABI validation failed: {e}")
+            self.capabilities.abi_compatible = False
+    
+    def _validate_determinism(self):
+        """Validate that toolchain produces deterministic outputs."""
+        print("  Validating determinism...")
+        
+        test_program = r'''
+#include <stdio.h>
+int main() {
+    printf("determinism test\n");
+    return 0;
+}
+'''
+        
+        try:
+            # Compile first time
+            binary1 = self._compile_to_binary(test_program, 'c', 'test1')
+            hash1 = self._hash_file(binary1)
+            
+            # Compile second time (identical source)
+            binary2 = self._compile_to_binary(test_program, 'c', 'test2')
+            hash2 = self._hash_file(binary2)
+            
+            if hash1 == hash2:
+                self.capabilities.deterministic_output = True
+                print(f"    ✓ Deterministic output verified")
+            else:
+                print(f"    ⚠ Non-deterministic output detected")
+                print(f"      First:  {hash1[:16]}...")
+                print(f"      Second: {hash2[:16]}...")
+                self.capabilities.deterministic_output = False
+            
+            # Cleanup
+            binary1.unlink(missing_ok=True)
+            binary2.unlink(missing_ok=True)
+        
+        except Exception as e:
+            print(f"    ✗ Determinism validation failed: {e}")
+            self.capabilities.deterministic_output = False
+    
+    def _run_smoke_test(self):
+        """Run basic smoke test to verify toolchain works."""
+        print("  Running smoke test...")
+        
+        test_program = r'''
+#include <stdio.h>
+int main() {
+    printf("smoke test passed\n");
+    return 0;
+}
+'''
+        
+        try:
+            output = self._compile_and_run(test_program, 'c')
+            if 'smoke test passed' in output:
+                print(f"    ✓ Smoke test passed")
+            else:
+                raise BuildError(f"Smoke test produced unexpected output: {output}")
+        except Exception as e:
+            raise BuildError(f"Smoke test failed: {e}")
+    
+    def _test_compile_flag(self, flag: str, language: str = 'c') -> bool:
+        """
+        Test if compiler accepts a specific flag.
+        
+        Args:
+            flag: Compiler flag to test
+            language: Language ('c' or 'cpp')
+            
+        Returns:
+            True if flag is supported
+        """
+        test_program = 'int main() { return 0; }'
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.c' if language == 'c' else '.cpp', delete=False) as f:
+                f.write(test_program)
+                source_file = Path(f.name)
+            
+            output_file = source_file.with_suffix('.exe' if platform.system() == 'Windows' else '')
+            
+            # Build command
+            if is_msvc:
+                # MSVC: cl /nologo <flag> source.c /Fe:output.exe
+                cmd = [
+                    str(self.toolchain.compiler_executable),
+                    '/nologo',
+                    flag,
+                    str(source_file),
+                    f'/Fe:{output_file}'
+                ]
+            else:
+                # GCC/Clang: gcc <flag> source.c -o output
+                cmd = [
+                    str(self.toolchain.compiler_executable),
+                    flag,
+                    str(source_file),
+                    '-o', str(output_file)
+                ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=10,
+                text=True
+            )
+            
+            success = result.returncode == 0
+            
+            # Cleanup
+            source_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+            # MSVC also creates .obj
+            if is_msvc:
+                source_file.with_suffix('.obj').unlink(missing_ok=True)
+            
+            return success
+        
+        except Exception:
+            return False
+    
+    def _compile_and_run(self, source_code: str, language: str) -> str:
+        """
+        Compile and execute test program.
+        
+        Args:
+            source_code: Source code to compile
+            language: Language ('c' or 'cpp')
+            
+        Returns:
+            Program output
+        """
+        suffix = '.c' if language == 'c' else '.cpp'
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
+            f.write(source_code)
+            source_file = Path(f.name)
+        
+        try:
+            # Compile
+            output_file = source_file.with_suffix('.exe' if platform.system() == 'Windows' else '')
+            
+            if is_msvc:
+                compile_cmd = [
+                    str(self.toolchain.compiler_executable),
+                    '/nologo',
+                    str(source_file),
+                    f'/Fe:{output_file}'
+                ]
+            else:
+                compile_cmd = [
+                    str(self.toolchain.compiler_executable),
+                    str(source_file),
+                    '-o', str(output_file)
+                ]
+            
+            compile_result = subprocess.run(
+                compile_cmd,
+                capture_output=True,
+                timeout=10,
+                text=True
+            )
+            
+            if compile_result.returncode != 0:
+                raise BuildError(f"Compilation failed: {compile_result.stderr or compile_result.stdout}")
+            
+            # Execute
+            run_result = subprocess.run(
+                [str(output_file)],
+                capture_output=True,
+                timeout=5,
+                text=True
+            )
+            
+            if run_result.returncode != 0:
+                raise BuildError(f"Execution failed with code {run_result.returncode}")
+            
+            return run_result.stdout
+        
+        finally:
+            source_file.unlink(missing_ok=True)
+            output_file.unlink(missing_ok=True)
+            if is_msvc:
+                source_file.with_suffix('.obj').unlink(missing_ok=True)
+    
+    def _compile_to_binary(self, source_code: str, language: str, name: str) -> Path:
+        """Compile source to binary and return path."""
+        suffix = '.c' if language == 'c' else '.cpp'
+        is_msvc = self.toolchain.compiler_name == 'MSVC'
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
+            f.write(source_code)
+            source_file = Path(f.name)
+        
+        output_file = self.cache_dir / f"{name}{'.exe' if platform.system() == 'Windows' else ''}"
+        
+        if is_msvc:
+            compile_cmd = [
+                str(self.toolchain.compiler_executable),
+                '/nologo',
+                str(source_file),
+                f'/Fe:{output_file}'
+            ]
+        else:
+            compile_cmd = [
+                str(self.toolchain.compiler_executable),
+                str(source_file),
+                '-o', str(output_file)
+            ]
+        
+        subprocess.run(compile_cmd, capture_output=True, timeout=10, check=True)
+        
+        source_file.unlink()
+        if is_msvc:
+            source_file.with_suffix('.obj').unlink(missing_ok=True)
+            
+        return output_file
+    
+    def _hash_file(self, filepath: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -2313,7 +2868,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "5/20"
+__prompt__ = "6/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")

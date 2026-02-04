@@ -14,7 +14,8 @@
 3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
 4. [Source Enumeration & Dependency Graph](#4-source-enumeration--dependency-graph)
 5. [Dependency Resolution & Package Management](#5-dependency-resolution--package-management)
-6. [Toolchain Detection & Validation](... (sections 7-20 to be added in subsequent prompts)
+6. [Toolchain Validation & Capability Detection](#6-toolchain-validation--capability-detection)
+... (sections 7-20 to be added in subsequent prompts)
 
 ---
 
@@ -629,5 +630,94 @@ resolver.install_from_lock(lock_file)
 
 ---
 
+## 6. Toolchain Validation & Capability Detection
+
+### 6.1 Comprehensive Toolchain Validation
+
+Toolchain validation verifies that detected toolchains can build verification
+tooling correctly through:
+- **Feature detection**: (language standards, sanitizers, optimizations)
+- **ABI compatibility verification**: (structure layout, calling conventions)
+- **Self-tests**: (compile and execute test programs)
+- **Determinism validation**: (reproducible binary outputs)
+
+### 6.2 Toolchain Capabilities
+
+Complete capability model:
+
+```python
+ToolchainCapabilities:
+    language_standards: {'c': [...], 'cpp': [...]}
+    sanitizers: ['asan', 'ubsan', 'tsan']
+    optimization_levels: ['O0', 'O1', 'O2', 'O3']
+    supports_lto: bool
+    debug_formats: ['dwarf4', 'dwarf5']
+    calling_conventions: ['cdecl', 'stdcall']
+    abi_compatible: bool
+    deterministic_output: bool
+```
+
+### 6.3 Validation Process
+
+**: Language Standard Detection**
+Test compilation with various `-std=` flags to detect supported standards.
+
+**: Sanitizer Detection**
+Test compilation with `-fsanitize=` flags to detect available sanitizers.
+
+**: Optimization Detection**
+Test compilation with `-O` flags and `-flto` for LTO support.
+
+**: ABI Validation**
+Compile structure layout test and verify expected padding/offsets.
+
+**: Determinism Validation**
+Compile same program twice and compare binary hashes.
+
+**: Smoke Test**
+Compile and execute simple program to verify basic functionality.
+
+### 6.4 Validation Caching
+
+Validation results cached to avoid repeated expensive tests:
+- **Cache Key**: `{compiler}-{version}-{architecture}`
+- **Cache Invalidation**:
+  - Compiler executable changed (hash mismatch)
+  - Cache older than 30 days
+  - Explicit cache clear requested
+
+**Cache Structure**:
+```json
+{
+    "timestamp": "2026-02-04T12:00:00Z",
+    "compiler_hash": "abc123...",
+    "capabilities": {...}
+}
+```
+
+### 6.5 Implementation Classes
+
+- `ToolchainCapabilities`: Complete capability model with serialization.
+- `ToolchainValidator`: Performs all validation tests and generates capability matrix.
+
+### 6.6 Usage Example
+
+```python
+# Create validator
+validator = ToolchainValidator(toolchain_descriptor)
+
+# Validate (uses cache if available)
+capabilities = validator.validate()
+
+# Query capabilities
+if 'asan' in capabilities.sanitizers:
+    print("AddressSanitizer available")
+
+if caps.deterministic_output:
+    print("Toolchain produces reproducible builds")
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Toolchain Detection & Validation
+**Next Prompt:** ABI Fidelity Enforcement & Compiler Config
