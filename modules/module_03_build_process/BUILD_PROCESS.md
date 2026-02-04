@@ -24,7 +24,8 @@
 13. [Build Completion & Validation Gates](#13-build-completion--validation-gates)
 14. [Incremental Build Infrastructure](#14-incremental-build-infrastructure)
 15. [Cache Management & Eviction Policies](#15-cache-management--eviction-policies)
-... (sections 16-20 to be added in subsequent prompts)
+16. [Build Reproducibility & Determinism](#16-build-reproducibility--determinism)
+... (sections 17-20 to be added in subsequent prompts)
 
 ---
 
@@ -1566,5 +1567,82 @@ manager.clean_stale_entries()
 
 ---
 
+## 16. Build Reproducibility & Determinism
+
+### 16.1 Reproducible Builds
+
+Reproducibility ensures building the same source multiple times produces bit-identical outputs.
+
+**Benefits**:
+- Verification (binaries match source)
+- Security (detect supply chain attacks)
+- Debugging (reproduce exact binaries)
+
+### 16.2 Sources of Non-Determinism
+
+**Timestamps**:
+- Compiler macros: `__DATE__`, `__TIME__`
+- File metadata in archives
+
+**Paths**:
+- Absolute paths in debug info
+
+**Randomness**:
+- Random seeds in compiler
+
+**Solution**: Control via flags and environment.
+
+### 16.3 SOURCE_DATE_EPOCH
+
+Standard for reproducible timestamps:
+
+```python
+# Set based on latest source modification
+epoch = set_source_date_epoch(source_files)
+
+# Export for tools
+os.environ['SOURCE_DATE_EPOCH'] = str(epoch)
+```
+
+### 16.4 Deterministic Flags
+
+Compiler flags for determinism:
+
+```python
+flags = [
+    '-Wno-builtin-macro-redefined',
+    '-D__DATE__="reproducible"',
+    '-D__TIME__="reproducible"',
+    '-frandom-seed=0'
+]
+```
+
+### 16.5 Implementation Classes
+
+- `DeterministicBuildConfig`: Config for reproducible builds.
+- `DeterministicFlagManager`: Manages determinism compiler flags.
+- `ReproducibilityVerifier`: Verifies build reproducibility.
+
+### 16.6 Usage Example
+
+```python
+# Set SOURCE_DATE_EPOCH
+epoch = set_source_date_epoch(sources)
+
+# Get determinism flags
+flag_manager = DeterministicFlagManager(toolchain)
+det_flags = flag_manager.get_determinism_flags()
+
+# Build with flags
+# ... build process ...
+
+# Verify reproducibility
+verifier = ReproducibilityVerifier()
+artifacts = verifier.collect_artifacts(context)
+verifier.verify_reproducibility(artifacts)
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Build Reproducibility & Determinism
+**Next Prompt:** Build Performance Profiling & Optimization

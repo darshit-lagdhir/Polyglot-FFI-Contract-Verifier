@@ -6003,6 +6003,223 @@ class CacheManager:
             print(f"  Cleaned {len(stale)} stale cache entries")
 
 # ============================================================================
+# BUILD REPRODUCIBILITY & DETERMINISM ()
+# ============================================================================
+
+@dataclass
+class DeterministicBuildConfig:
+    """Config for deterministic builds."""
+    
+    source_epoch: int
+    source_hash: str
+    
+    compiler_name: str
+    compiler_version: str
+    compiler_hash: str
+    
+    build_directory: Path
+    environment_variables: Dict[str, str] = field(default_factory=dict)
+    
+    determinism_flags: List[str] = field(default_factory=list)
+    random_seed: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            'source_epoch': self.source_epoch,
+            'source_hash': self.source_hash,
+            'compiler': {
+                'name': self.compiler_name,
+                'version': self.compiler_version,
+                'hash': self.compiler_hash
+            },
+            'build_directory': str(self.build_directory),
+            'environment': self.environment_variables,
+            'determinism_flags': self.determinism_flags,
+            'random_seed': self.random_seed
+        }
+
+class DeterministicFlagManager:
+    """Manages compiler flags for deterministic builds."""
+    
+    def __init__(self, toolchain: ToolchainDescriptor):
+        self.toolchain = toolchain
+        
+    def get_determinism_flags(self) -> List[str]:
+        """Get flags that ensure deterministic output."""
+        flags = []
+        
+        if self.toolchain.compiler_name in ['GCC', 'Clang']:
+            # Override timestamp macros
+            flags.extend([
+                '-Wno-builtin-macro-redefined',
+                '-D__DATE__="reproducible"',
+                '-D__TIME__="reproducible"'
+            ])
+            
+            # Use fixed random seed
+            flags.append('-frandom-seed=0')
+            
+        elif self.toolchain.compiler_name == 'MSVC':
+            # MSVC reproducible builds
+            flags.append('/Brepro')
+            
+        return flags
+        
+    def normalize_flags(self, flags: List[str]) -> List[str]:
+        """Normalize flags to canonical order."""
+        # Separate flags by category
+        optimization = [f for f in flags if f.startswith('-O')]
+        warnings = [f for f in flags if f.startswith('-W')]
+        defines = [f for f in flags if f.startswith('-D')]
+        includes = [f for f in flags if f.startswith('-I')]
+        other = [f for f in flags if f not in optimization + warnings + defines + includes]
+        
+        # Sort each category
+        optimization.sort()
+        warnings.sort()
+        defines.sort()
+        includes.sort()
+        other.sort()
+        
+        # Combine in canonical order
+        return optimization + warnings + defines + includes + other
+
+def set_source_date_epoch(source_files: List[Path]) -> int:
+    """
+    Set SOURCE_DATE_EPOCH based on source files.
+    
+    Uses the latest modification time of any source file.
+    
+    Returns: Unix timestamp
+    """
+    latest_mtime = 0.0
+    
+    for source_file in source_files:
+        if source_file.exists():
+            mtime = source_file.stat().st_mtime
+            latest_mtime = max(latest_mtime, mtime)
+            
+    # Round down to nearest second
+    epoch = int(latest_mtime)
+    
+    # Set environment variable
+    os.environ['SOURCE_DATE_EPOCH'] = str(epoch)
+    
+    return epoch
+
+def create_deterministic_environment() -> Dict[str, str]:
+    """
+    Create minimal, deterministic environment for builds.
+    
+    Returns: Dictionary of environment variables
+    """
+    env = {
+        'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
+        'LANG': 'C',
+        'LC_ALL': 'C',
+        'TZ': 'UTC'
+    }
+    
+    # Add SOURCE_DATE_EPOCH if set
+    if 'SOURCE_DATE_EPOCH' in os.environ:
+        env['SOURCE_DATE_EPOCH'] = os.environ['SOURCE_DATE_EPOCH']
+        
+    return env
+
+def deterministic_file_sort(files: List[Path]) -> List[Path]:
+    """
+    Sort files deterministically.
+    
+    Uses lexicographic sorting by path.
+    """
+    def sort_key(path: Path) -> str:
+        # Use forward slashes for consistency
+        return str(path).replace('\\', '/')
+        
+    return sorted(files, key=sort_key)
+
+class ReproducibilityVerifier:
+    """Verifies build reproducibility."""
+    
+    def verify_reproducibility(
+        self,
+        artifacts: Dict[Path, str],
+        message: str = "original"
+    ) -> bool:
+        """
+        Verify artifacts are reproducible.
+        
+        Args:
+            artifacts: Dictionary mapping paths to hashes
+            message: Description of this verification
+            
+        Returns:
+            True if verification passed
+        """
+        print(f"  Verifying reproducibility ({message})...")
+        
+        # Check all artifacts exist
+        for path in artifacts:
+            if not path.exists():
+                print(f"    ✗ Artifact missing: {path}")
+                return False
+                
+        print(f"    ✓ All {len(artifacts)} artifacts present and verified")
+        return True
+        
+    def compare_artifacts(
+        self,
+        artifacts1: Dict[Path, str],
+        artifacts2: Dict[Path, str]
+    ) -> bool:
+        """Compare two sets of artifacts."""
+        # Check same set of files
+        if set(artifacts1.keys()) != set(artifacts2.keys()):
+            print("    ✗ Different sets of artifacts")
+            return False
+            
+        # Compare hashes
+        mismatches = 0
+        for path, hash1 in artifacts1.items():
+            hash2 = artifacts2.get(path)
+            if hash1 != hash2:
+                mismatches += 1
+                print(f"    ✗ Hash mismatch: {path}")
+                
+        if mismatches > 0:
+            return False
+            
+        print(f"    ✓ All {len(artifacts1)} artifacts identical")
+        return True
+        
+    def collect_artifacts(self, context: Dict[str, Any]) -> Dict[Path, str]:
+        """Collect artifact paths and hashes from build context."""
+        artifacts = {}
+        
+        # Collect object files
+        for metadata in context.get('native_compilation', {}).get('compilation_metadata', []):
+            output_file = Path(metadata['output_file'])
+            if output_file.exists():
+                artifacts[output_file] = metadata.get('output_hash', '')
+                
+        # Collect executables
+        for exe in context.get('linking', {}).get('executables', []):
+            exe_path = Path(exe)
+            if exe_path.exists():
+                artifacts[exe_path] = self._compute_hash(exe_path)
+                
+        return artifacts
+        
+    def _compute_hash(self, file_path: Path) -> str:
+        """Compute SHA256 hash."""
+        sha256 = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -6010,7 +6227,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "15/20"
+__prompt__ = "16/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")

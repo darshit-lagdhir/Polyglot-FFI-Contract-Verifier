@@ -1587,7 +1587,107 @@ class TestCacheManager:
         manager = CacheManager(cache)
         
         stats = manager.get_statistics()
+
+        stats = manager.get_statistics()
         assert stats.total_entries == 0
+
+class TestDeterministicBuildConfig:
+    """Test deterministic build configuration."""
+    
+    def test_config_creation(self):
+        """Test creating deterministic config."""
+        from modules.module_03_build_process.build_process import DeterministicBuildConfig
+        
+        config = DeterministicBuildConfig(
+            source_epoch=1707048000,
+            source_hash="abc123",
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_hash="def456",
+            build_directory=Path("/build")
+        )
+        
+        assert config.source_epoch == 1707048000
+        assert config.compiler_name == "GCC"
+        
+    def test_config_serialization(self):
+        """Test config to_dict."""
+        from modules.module_03_build_process.build_process import DeterministicBuildConfig
+        
+        config = DeterministicBuildConfig(
+            source_epoch=1707048000,
+            source_hash="hash1",
+            compiler_name="Clang",
+            compiler_version="14.0.0",
+            compiler_hash="hash2",
+            build_directory=Path(".")
+        )
+        
+        data = config.to_dict()
+        assert data['source_epoch'] == 1707048000
+        assert data['compiler']['name'] == "Clang"
+
+class TestDeterministicFlagManager:
+    """Test deterministic flag manager."""
+    
+    def test_manager_creation(self):
+        """Test creating flag manager."""
+        from modules.module_03_build_process.build_process import (
+            DeterministicFlagManager, ToolchainDescriptor
+        )
+        
+        toolchain = self._create_test_toolchain()
+        manager = DeterministicFlagManager(toolchain)
+        
+        assert manager.toolchain == toolchain
+        
+    def test_get_determinism_flags(self):
+        """Test getting determinism flags."""
+        from modules.module_03_build_process.build_process import DeterministicFlagManager
+        
+        toolchain = self._create_test_toolchain()
+        manager = DeterministicFlagManager(toolchain)
+        
+        flags = manager.get_determinism_flags()
+        
+        assert any('__DATE__' in f for f in flags)
+        assert any('__TIME__' in f for f in flags)
+        
+    def _create_test_toolchain(self):
+        """Create test toolchain."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_full_version="11.2.0",
+            compiler_executable=Path("/usr/bin/gcc"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+
+class TestReproducibilityVerifier:
+    """Test reproducibility verifier."""
+    
+    def test_verifier_creation(self):
+        """Test creating verifier."""
+        from modules.module_03_build_process.build_process import ReproducibilityVerifier
+        
+        verifier = ReproducibilityVerifier()
+        assert verifier is not None
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
