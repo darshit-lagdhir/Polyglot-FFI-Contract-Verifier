@@ -1771,6 +1771,102 @@ class TestBuildOptimizationAdvisor:
         
         recommendations = advisor.generate_recommendations(profile)
         
+
         assert len(recommendations) > 0
         assert any('compilation' in r.lower() for r in recommendations)
+
+class TestBuildErrorDetail:
+    """Test build error detail."""
+    
+    def test_error_creation(self):
+        """Test creating build error."""
+        from modules.module_03_build_process.build_process import BuildErrorDetail
+        
+        error = BuildErrorDetail(
+            category='compilation',
+            source_file=Path("test.c"),
+            line_number=42,
+            parsed_message="syntax error"
+        )
+        
+        assert error.category == 'compilation'
+        assert error.line_number == 42
+
+    def test_error_formatting(self):
+        """Test formatting error message."""
+        from modules.module_03_build_process.build_process import BuildErrorDetail
+        
+        error = BuildErrorDetail(
+            category='compilation',
+            source_file=Path("main.c"),
+            line_number=10,
+            parsed_message="undefined symbol",
+            suggestions=["Include header file"]
+        )
+        
+        formatted = error.format_error_message()
+        assert "main.c" in formatted
+        assert "undefined symbol" in formatted
+        assert "Include header file" in formatted
+
+class TestCompilerErrorParser:
+    """Test compiler error parser."""
+    
+    def test_parser_creation(self):
+        """Test creating parser."""
+        from modules.module_03_build_process.build_process import CompilerErrorParser
+        
+        parser = CompilerErrorParser("GCC")
+        assert parser.compiler_name == "GCC"
+
+    def test_parse_gcc_error(self):
+        """Test parsing GCC error."""
+        from modules.module_03_build_process.build_process import CompilerErrorParser
+        
+        parser = CompilerErrorParser("GCC")
+        
+        output = "test.c:10:5: error: undeclared identifier 'foo'"
+        errors = parser.parse_errors(output)
+        
+        assert len(errors) == 1
+        assert errors[0].source_file == Path("test.c")
+        assert errors[0].line_number == 10
+
+class TestBuildErrorReport:
+    """Test build error report."""
+    
+    def test_report_creation(self):
+        """Test creating error report."""
+        from modules.module_03_build_process.build_process import (
+            BuildErrorReport, BuildErrorDetail
+        )
+        
+        errors = [
+            BuildErrorDetail(
+                category='compilation',
+                parsed_message="error 1"
+            )
+        ]
+        
+        report = BuildErrorReport(errors)
+        assert len(report.errors) == 1
+
+    def test_console_report(self):
+        """Test generating console report."""
+        from modules.module_03_build_process.build_process import (
+            BuildErrorReport, BuildErrorDetail
+        )
+        
+        errors = [
+            BuildErrorDetail(
+                category='compilation',
+                parsed_message="test error"
+            )
+        ]
+        
+        report = BuildErrorReport(errors)
+        console_output = report.generate_console_report()
+        
+        assert "BUILD FAILED" in console_output
+        assert "test error" in console_output
     pytest.main([__file__, "-v"])

@@ -6419,6 +6419,218 @@ class BuildOptimizationAdvisor:
         return recommendations
 
 # ============================================================================
+# BUILD ERROR DIAGNOSTICS & RECOVERY ()
+# ============================================================================
+
+@dataclass
+class BuildErrorDetail:
+    """Structured representation of a build error."""
+    
+    # Error classification
+    category: str  # 'compilation', 'linking', 'configuration'
+    subcategory: str = "other"
+    
+    # Error location
+    source_file: Optional[Path] = None
+    line_number: Optional[int] = None
+    column_number: Optional[int] = None
+    
+    # Error description
+    raw_message: str = ""
+    parsed_message: str = ""
+    
+    # Context
+    code_snippet: Optional[str] = None
+    suggestions: List[str] = field(default_factory=list)
+    
+    # Severity
+    severity: str = "error"
+    
+    def format_error_message(self) -> str:
+        """Format error for display."""
+        lines = []
+        
+        # Header
+        if self.source_file:
+            location = f"{self.source_file}"
+            if self.line_number:
+                location += f":{self.line_number}"
+            lines.append(f"{self.severity.upper()}: {location}")
+        else:
+            lines.append(f"{self.severity.upper()}")
+        
+        # Message
+        lines.append(f"  {self.parsed_message}")
+        
+        # Code excerpt
+        if self.code_snippet:
+            lines.append("")
+            lines.append("Code context:")
+            for snippet_line in self.code_snippet.split('\n'):
+                lines.append(f"  {snippet_line}")
+        
+        # Suggestions
+        if self.suggestions:
+            lines.append("")
+            lines.append("Suggestions:")
+            for i, suggestion in enumerate(self.suggestions, 1):
+                lines.append(f"  {i}. {suggestion}")
+        
+        return '\n'.join(lines)
+
+class CompilerErrorParser:
+    """
+    Parses compiler output to extract structured errors.
+    
+    Handles different compiler output formats (GCC, Clang, MSVC).
+    """
+    
+    def __init__(self, compiler_name: str):
+        self.compiler_name = compiler_name
+    
+    def parse_errors(self, compiler_output: str) -> List[BuildErrorDetail]:
+        """
+        Parse compiler output into structured errors.
+        
+        Args:
+            compiler_output: Raw compiler stderr/stdout
+            
+        Returns:
+            List of BuildErrorDetail objects
+        """
+        errors = []
+        
+        if self.compiler_name in ['GCC', 'Clang']:
+            errors = self._parse_gcc_errors(compiler_output)
+        elif self.compiler_name == 'MSVC':
+            errors = self._parse_msvc_errors(compiler_output)
+        
+        return errors
+    
+    def _parse_gcc_errors(self, output: str) -> List[BuildErrorDetail]:
+        """Parse GCC/Clang error format."""
+        errors = []
+        
+        # GCC format: file:line:column: error: message
+        pattern = re.compile(
+            r'^([^:]+):(\d+):(\d+):\s*(error|warning):\s*(.+)$',
+            re.MULTILINE
+        )
+        
+        for match in pattern.finditer(output):
+            file_path = Path(match.group(1))
+            line_num = int(match.group(2))
+            severity = match.group(4)
+            message = match.group(5)
+            
+            error = BuildErrorDetail(
+                category='compilation',
+                subcategory=self._classify_error_message(message),
+                source_file=file_path,
+                line_number=line_num,
+                raw_message=message,
+                parsed_message=message,
+                severity=severity
+            )
+            
+            error.suggestions = self._generate_suggestions(error)
+            errors.append(error)
+        
+        return errors
+    
+    def _parse_msvc_errors(self, output: str) -> List[BuildErrorDetail]:
+        """Parse MSVC error format."""
+        errors = []
+        
+        # MSVC format: file(line): error C1234: message
+        pattern = re.compile(
+            r'^([^(]+)\((\d+)\):\s*(error|warning)\s+C\d+:\s*(.+)$',
+            re.MULTILINE
+        )
+        
+        for match in pattern.finditer(output):
+            file_path = Path(match.group(1))
+            line_num = int(match.group(2))
+            severity = match.group(3)
+            message = match.group(4)
+            
+            error = BuildErrorDetail(
+                category='compilation',
+                subcategory=self._classify_error_message(message),
+                source_file=file_path,
+                line_number=line_num,
+                raw_message=message,
+                parsed_message=message,
+                severity=severity
+            )
+            
+            error.suggestions = self._generate_suggestions(error)
+            errors.append(error)
+        
+        return errors
+    
+    def _classify_error_message(self, message: str) -> str:
+        """Classify error by message content."""
+        message_lower = message.lower()
+        
+        if 'undefined reference' in message_lower or 'unresolved external' in message_lower:
+            return 'undefined_reference'
+        elif 'undeclared' in message_lower:
+            return 'undeclared_identifier'
+        elif 'expected' in message_lower:
+            return 'syntax_error'
+        else:
+            return 'other'
+    
+    def _generate_suggestions(self, error: BuildErrorDetail) -> List[str]:
+        """Generate suggestions based on error type."""
+        suggestions = []
+        
+        if error.subcategory == 'undeclared_identifier':
+            suggestions.append("Include the header that declares this identifier")
+            suggestions.append("Check for typos in identifier name")
+        elif error.subcategory == 'syntax_error':
+            suggestions.append("Check for missing semicolons")
+            suggestions.append("Verify matching braces/parentheses")
+        
+        return suggestions
+
+class BuildErrorReport:
+    """Generates comprehensive error reports."""
+    
+    def __init__(self, errors: List[BuildErrorDetail]):
+        self.errors = errors
+    
+    def generate_console_report(self) -> str:
+        """Generate report for console display."""
+        if not self.errors:
+            return "No errors found."
+        
+        lines = [
+            "=" * 80,
+            f"BUILD FAILED - {len(self.errors)} error(s) found",
+            "=" * 80,
+            ""
+        ]
+        
+        for i, error in enumerate(self.errors[:10], 1):  # Show first 10
+            lines.append(f"Error {i}:")
+            lines.append(error.format_error_message())
+            lines.append("")
+        
+        if len(self.errors) > 10:
+            lines.append(f"... and {len(self.errors) - 10} more errors")
+        
+        lines.append("=" * 80)
+        
+        return '\n'.join(lines)
+        
+    def save(self, output_path: Path):
+        """Save report to file."""
+        with open(output_path, 'w') as f:
+            f.write(self.generate_console_report())
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -6426,7 +6638,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "17/20"
+__prompt__ = "18/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")
