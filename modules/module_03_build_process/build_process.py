@@ -200,7 +200,7 @@ class EnvironmentDescriptor:
     
     # Metadata
     descriptor_version: str = "1.0.0"
-    creation_timestamp: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
+    creation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
     
     def to_json(self) -> str:
         """Serialize descriptor to JSON."""
@@ -387,7 +387,7 @@ class BuildProcessOrchestrator:
         self.stages: List[BuildStageInterface] = []
         self.build_context: Dict[str, Any] = {
             'environment': environment_descriptor,
-            'start_time': datetime.datetime.utcnow().isoformat(),
+            'start_time': datetime.datetime.now(datetime.UTC).isoformat(),
         }
     
     def register_stage(self, stage: BuildStageInterface) -> None:
@@ -420,7 +420,7 @@ class BuildProcessOrchestrator:
             self.build_context = stage.run(self.build_context)
         
         # Add completion metadata
-        self.build_context['end_time'] = datetime.datetime.utcnow().isoformat()
+        self.build_context['end_time'] = datetime.datetime.now(datetime.UTC).isoformat()
         self.build_context['status'] = 'SUCCESS'
         
         print("=" * 80)
@@ -476,7 +476,7 @@ class ToolchainDescriptor:
     deterministic_output: bool
     
     # Metadata
-    detection_timestamp: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
+    detection_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
     descriptor_version: str = "1.0.0"
     
     def to_json(self) -> str:
@@ -1212,7 +1212,7 @@ class PipelineCheckpoint:
         checkpoint_data = {
             'stage': stage.value,
             'stage_name': stage.name,
-            'timestamp': datetime.datetime.utcnow().isoformat(),
+            'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),
             'context': context
         }
         
@@ -1342,7 +1342,7 @@ class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
                 raise
         
         # Add completion metadata
-        self.build_context['end_time'] = datetime.datetime.utcnow().isoformat()
+        self.build_context['end_time'] = datetime.datetime.now(datetime.UTC).isoformat()
         self.build_context['status'] = 'SUCCESS'
         
         print("=" * 80)
