@@ -569,5 +569,113 @@ class TestDependencyResolver:
         # Conflict should be detected
         assert len(resolver.conflicts) > 0
 
+class TestToolchainCapabilities:
+    """Test toolchain capabilities model."""
+
+    def test_capabilities_creation(self):
+        """Test creating toolchain capabilities."""
+        from modules.module_03_build_process.build_process import ToolchainCapabilities
+        
+        caps = ToolchainCapabilities(
+            language_standards={'c': ['c99', 'c11'], 'cpp': ['c++17']},
+            sanitizers=['asan', 'ubsan'],
+            optimization_levels=['O0', 'O2'],
+            abi_compatible=True,
+            deterministic_output=True
+        )
+        
+        assert 'c99' in caps.language_standards['c']
+        assert 'asan' in caps.sanitizers
+        assert caps.abi_compatible is True
+
+    def test_capabilities_serialization(self):
+        """Test capabilities to_dict/from_dict."""
+        from modules.module_03_build_process.build_process import ToolchainCapabilities
+        
+        original = ToolchainCapabilities(
+            language_standards={'c': ['c11']},
+            sanitizers=['ubsan'],
+            optimization_levels=['O2', 'O3'],
+            supports_lto=True,
+            deterministic_output=False
+        )
+        
+        data = original.to_dict()
+        restored = ToolchainCapabilities.from_dict(data)
+        
+        assert restored.language_standards == original.language_standards
+        assert restored.supports_lto == original.supports_lto
+        assert restored.deterministic_output == original.deterministic_output
+
+class TestToolchainValidator:
+    """Test toolchain validator."""
+
+    def test_validator_creation(self, tmp_path):
+        """Test creating toolchain validator."""
+        from modules.module_03_build_process.build_process import (
+            ToolchainValidator, ToolchainDescriptor
+        )
+        
+        toolchain = ToolchainDescriptor(
+            compiler_name="TestCompiler",
+            compiler_version="1.0",
+            compiler_full_version="1.0.0",
+            compiler_executable=Path("/usr/bin/test"),
+            compiler_executable_hash="hash123",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash456",
+            linker_version="1.0",
+            target_triple="x86_64-unknown-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="cdecl",
+            default_structure_packing=8,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+        
+        validator = ToolchainValidator(toolchain, cache_dir=tmp_path)
+        assert validator.toolchain == toolchain
+        assert validator.cache_dir == tmp_path
+
+    def test_cache_key_generation(self, tmp_path):
+        """Test cache key generation."""
+        from modules.module_03_build_process.build_process import (
+            ToolchainValidator, ToolchainDescriptor
+        )
+        
+        toolchain = ToolchainDescriptor(
+            compiler_name="Clang",
+            compiler_version="14.0.0",
+            compiler_full_version="14.0.0",
+            compiler_executable=Path("/usr/bin/clang"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="1.0",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+        
+        validator = ToolchainValidator(toolchain, cache_dir=tmp_path)
+        cache_key = validator._get_cache_key()
+        
+        assert "Clang" in cache_key
+        assert "14.0.0" in cache_key
+        assert "x86_64" in cache_key
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
