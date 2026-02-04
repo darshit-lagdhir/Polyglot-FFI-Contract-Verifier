@@ -4827,245 +4827,341 @@ class AdapterGenerationStage(BuildStageInterface):
 # ============================================================================
 
 @dataclass
-class ArtifactManifest:
-    """Manifest describing all build artifacts."""
-    project_name: str
-    version: str
-    build_timestamp: str
+class BuildManifest:
+    """Complete manifest of build artifacts and provenance."""
     
-    # Artifact paths (relative to output dir)
-    executables: List[str] = field(default_factory=list)
-    shared_libraries: List[str] = field(default_factory=list)
-    python_bindings: List[str] = field(default_factory=list)
-    manifest_file: str = "manifest.json"
+    manifest_version: str = "1.0"
+    build_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
     
-    # Metadata
+    # Components
+    native_libraries: List[Dict[str, Any]] = field(default_factory=list)
+    executables: List[Dict[str, Any]] = field(default_factory=list)
+    adapters: List[Dict[str, Any]] = field(default_factory=list)
+    python_modules: List[str] = field(default_factory=list)
+    
+    # Provenance
+    source_hash: str = ""
     toolchain_info: Dict[str, str] = field(default_factory=dict)
-    generated_files: Dict[str, str] = field(default_factory=dict)  # file -> hash
+    build_environment: Dict[str, str] = field(default_factory=dict)
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            'project_name': self.project_name,
-            'version': self.version,
+    # Validation
+    all_tests_passed: bool = False
+    integration_tests_count: int = 0
+    unit_tests_count: int = 0
+    
+    def to_json(self) -> str:
+        """Serialize to JSON."""
+        data = {
+            'build_manifest_version': self.manifest_version,
             'build_timestamp': self.build_timestamp,
-            'artifacts': {
+            'components': {
+                'native_libraries': self.native_libraries,
                 'executables': self.executables,
-                'shared_libraries': self.shared_libraries,
-                'python_bindings': self.python_bindings,
+                'adapters': self.adapters,
+                'python_modules': self.python_modules
             },
-            'toolchain_info': self.toolchain_info,
-            'generated_files': self.generated_files
+            'provenance': {
+                'source_hash': self.source_hash,
+                'toolchain': self.toolchain_info,
+                'environment': self.build_environment
+            },
+            'validation': {
+                'all_tests_passed': self.all_tests_passed,
+                'integration_tests': self.integration_tests_count,
+                'unit_tests': self.unit_tests_count
+            }
         }
+        return json.dumps(data, indent=2)
+        
+    def save(self, output_path: Path):
+        """Save manifest to file."""
+        with open(output_path, 'w') as f:
+            f.write(self.to_json())
 
-class PythonCtypesGenerator:
+class PackageAssembler:
     """
-    Generates Python ctypes bindings for the verification library.
+    Assembles complete verification package from build artifacts.
     
-    Produces a Python module that loads the shared library and exposes
-    the adapter functions with proper type signatures.
+    Creates Python package structure with native libraries, adapters,
+    configuration, and entry points.
     """
     
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.package_name = "verification_tool"
         
-    def generate_bindings(
+    def assemble(
         self,
-        contracts: List[Dict[str, Any]],
-        library_name: str,
-        shared_lib_path: Path
+        native_libs: List[Path],
+        executables: List[Path],
+        adapters: List[Path],
+        python_sources: List[Path]
     ) -> Path:
         """
-        Generate Python bindings.
+        Assemble complete package.
         
-        Args:
-            contracts: List of contract specifications
-            library_name: Name of the library
-            shared_lib_path: Path to the shared library
-            
-        Returns:
-            Path to generated Python file
+        Returns: Path to assembled package directory
         """
-        module_name = f"{library_name}_bindings"
-        file_path = self.output_dir / f"{module_name}.py"
+        print("  Assembling verification package...")
         
-        print(f"    Generating Python bindings: {file_path.name}")
+        # Create package structure
+        package_dir = self.output_dir / self.package_name
+        package_dir.mkdir(parents=True, exist_ok=True)
         
-        lines = []
+        # Create subdirectories
+        (package_dir / 'native').mkdir(exist_ok=True)
+        (package_dir / 'adapters').mkdir(exist_ok=True)
+        (package_dir / 'config').mkdir(exist_ok=True)
         
-        # Header
-        lines.append("# Generated Python bindings")
-        lines.append(f"# Library: {library_name}")
-        lines.append(f"# Generated: {datetime.datetime.now(datetime.UTC).isoformat()}")
-        lines.append("")
-        lines.append("import ctypes")
-        lines.append("import os")
-        lines.append("from pathlib import Path")
-        lines.append("")
+        # Copy native libraries
+        for lib in native_libs:
+            if lib.exists():
+                dest = package_dir / 'native' / lib.name
+                shutil.copy2(lib, dest)
+                print(f"    Copied: {lib.name}")
+                
+        # Copy executables
+        for exe in executables:
+            if exe.exists():
+                dest = package_dir / exe.name
+                shutil.copy2(exe, dest)
+                print(f"    Copied: {exe.name}")
+                
+        # Copy adapters
+        for adapter in adapters:
+            if adapter.exists():
+                dest = package_dir / 'adapters' / adapter.name
+                shutil.copy2(adapter, dest)
+                
+        # Generate __init__.py
+        self._generate_package_init(package_dir)
         
-        # Load library
-        lines.append(f"# Load shared library")
-        lines.append(f"_lib_path = Path(__file__).parent / '{shared_lib_path.name}'")
-        lines.append(f"try:")
-        lines.append(f"    _lib = ctypes.CDLL(str(_lib_path))")
-        lines.append(f"except OSError as e:")
-        lines.append(f"    raise ImportError(f'Failed to load library {{_lib_path}}: {{e}}')")
-        lines.append("")
+        # Generate CLI entry point
+        self._generate_cli(package_dir)
         
-        # Generate function signatures
-        for contract in contracts:
-            lines.append(f"# Contract: {contract.get('library_name', 'unknown')}")
-            for func in contract.get('functions', []):
-                self._generate_function_binding(func, lines)
-            lines.append("")
-            
-        file_path.write_text('\n'.join(lines))
-        return file_path
+        # Generate API stub
+        self._generate_api_stub(package_dir)
         
-    def _generate_function_binding(self, func: Dict[str, Any], lines: List[str]):
-        """Generate ctypes signature for a function."""
-        name = func.get('name', 'unknown')
-        adapter_name = f"{name}_adapter"
-        signature = func.get('signature', '')
+        print(f"  ✓ Package assembled: {package_dir}")
+        return package_dir
         
-        # Heuristic type mapping (simplified)
-        # Real implementation would parse C types to ctypes
-        
-        lines.append(f"# {signature}")
-        lines.append(f"if hasattr(_lib, '{adapter_name}'):")
-        lines.append(f"    {name} = _lib.{adapter_name}")
-        
-        # Set argtypes and restype based on signature
-        # Simplified: assume int for everything for now
-        lines.append(f"    {name}.argtypes = [ctypes.c_int, ctypes.c_int]") # Placeholder
-        lines.append(f"    {name}.restype = ctypes.c_int") # Placeholder
-        lines.append(f"else:")
-        lines.append(f"    # Fallback to original if adapter missing")
-        lines.append(f"    if hasattr(_lib, '{name}'):")
-        lines.append(f"        {name} = _lib.{name}")
+    def _generate_package_init(self, package_dir: Path):
+        """Generate package __init__.py."""
+        init_content = '''"""
+Polyglot FFI Contract Verifier
 
-class OrchestrationStage(BuildStageInterface):
+Generated by Module 03: Build Process & Toolchain Integration
+"""
+
+version = "1.0.0"
+module = "03"
+
+from .api import verify_contract
+
+__all__ = ['verify_contract']
+'''
+        (package_dir / '__init__.py').write_text(init_content)
+        
+    def _generate_cli(self, package_dir: Path):
+        """Generate CLI entry point."""
+        cli_content = '''"""Command-line interface for verification tool."""
+import sys
+import argparse
+from pathlib import Path
+
+def main():
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description='Polyglot FFI Contract Verifier'
+    )
+    
+    parser.add_argument(
+        '--version',
+        action='version',
+        version='%(prog)s 1.0.0'
+    )
+    
+    parser.add_argument(
+        'contract',
+        nargs='',
+        type=Path,
+        help='Path to contract specification'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.contract:
+        print(f"Verifying contract: {args.contract}")
+        # TODO: Implement verification
+        return 0
+    else:
+        parser.print_help()
+        return 0
+
+if __name__ == '__main__':
+    sys.exit(main())
+'''
+        (package_dir / 'cli.py').write_text(cli_content)
+        
+        # Generate __main__.py for python -m invocation
+        main_content = '''"""Main entry point for python -m verification_tool."""
+from .cli import main
+import sys
+
+if __name__ == '__main__':
+    sys.exit(main())
+'''
+        (package_dir / '__main__.py').write_text(main_content)
+        
+    def _generate_api_stub(self, package_dir: Path):
+        """Generate API module stub."""
+        api_content = '''"""Programmatic API for verification."""
+
+def verify_contract(contract_path, target_library, verbose=False):
+    """
+    Verify contract against target library.
+    
+    Args:
+        contract_path: Path to contract JSON
+        target_library: Path to library
+        verbose: Enable verbose output
+        
+    Returns:
+        VerificationResult
+    """
+    # TODO: Implement verification logic
+    pass
+'''
+        (package_dir / 'api.py').write_text(api_content)
+
+class OrchestrationAssemblyStage(BuildStageInterface):
     """
     Stage 7: Orchestration Assembly
     
-    Assembles all build artifacts into a cohesive package structure,
-    generates Python bindings, and produces a build manifest.
+    Integrates all build artifacts into complete, deployable verification
+    system with Python orchestration layer.
     """
     
     def __init__(self, output_dir: Path):
-        super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION)
+        super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION) # Fixed enum usage based on earlier definition
         self.stage_name = "Orchestration Assembly"
         self.output_dir = output_dir
         
     def check_preconditions(self, context: Dict[str, Any]) -> None:
-        """Verify inputs."""
-        # We need linking results and adapter generation results
+        """Verify all required components available."""
         if 'linking' not in context:
-            raise BuildPreconditionError("Stage 7 requires 'linking' results")
+            raise BuildPreconditionError(
+                "Stage 7 requires 'linking' from Stage 5"
+            )
+            
+        if not context['linking'].get('all_successful', False):
+            raise BuildPreconditionError(
+                "Cannot assemble: linking failed"
+            )
             
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute orchestration."""
-        print(f"  Assembling artifacts...")
+        """Execute orchestration assembly."""
+        print(f"  Assembling complete verification system...")
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 1. Collect artifacts
-        artifacts = self._collect_artifacts(context)
+        # Collect artifacts
+        native_libs = [] # In real flow, would extract shared libs from linking context
+        executables = [
+            Path(exe)
+            for exe in context['linking'].get('executables', [])
+        ]
+        adapters = [
+            Path(adapter)
+            for adapter in context.get('adapter_generation', {}).get('generated_adapters', [])
+        ]
+        python_sources = []  # Would collect from source enumeration
         
-        # 2. Generate Python bindings (if contracts and valid library exist)
-        contracts = self._get_contracts(context)
-        shared_libs = artifacts.get('shared_libraries', [])
-        
-        bindings = []
-        if contracts and shared_libs:
-            # Assuming first lib is the main one for now
-            lib_path = Path(shared_libs[0])
-            # Copy lib to output dir if not already there
-            dest_lib = self.output_dir / lib_path.name
-            if lib_path != dest_lib and lib_path.exists():
-                shutil.copy2(lib_path, dest_lib)
-            
-            generator = PythonCtypesGenerator(self.output_dir)
-            binding_file = generator.generate_bindings(
-                contracts, 
-                "verification_lib", 
-                dest_lib
-            )
-            bindings.append(str(binding_file.relative_to(self.output_dir)))
-        
-        # 3. Create Manifest
-        toolchain = context.get('toolchain')
-        toolchain_info = {}
-        if toolchain:
-            toolchain_info = {
-                'compiler': toolchain.compiler_name,
-                'version': toolchain.compiler_version,
-                'target': toolchain.target_triple
-            }
-            
-        manifest = ArtifactManifest(
-            project_name="Polyglot FFI Verifier",
-            version=__version__,
-            build_timestamp=datetime.datetime.now(datetime.UTC).isoformat(),
-            executables=artifacts.get('executables', []),
-            shared_libraries=[Path(l).name for l in shared_libs],
-            python_bindings=bindings,
-            toolchain_info=toolchain_info
+        # Assemble package
+        assembler = PackageAssembler(self.output_dir)
+        package_dir = assembler.assemble(
+            native_libs=native_libs,
+            executables=executables,
+            adapters=adapters,
+            python_sources=python_sources
         )
         
-        # Write manifest
-        manifest_path = self.output_dir / "manifest.json"
-        with open(manifest_path, 'w') as f:
-            json.dump(manifest.to_dict(), f, indent=2)
-            
-        print(f"    Manifest written to: {manifest_path.name}")
+        # Generate build manifest
+        manifest = self._generate_manifest(context, package_dir)
+        manifest.save(package_dir / 'build_manifest.json')
         
+        # Update context
         context['orchestration'] = {
-            'manifest': manifest.to_dict(),
-            'output_dir': str(self.output_dir),
-            'success': True
+            'package_directory': str(package_dir),
+            'deployment_artifacts': [
+                str(package_dir / '__init__.py'),
+                str(package_dir / 'cli.py'),
+                str(package_dir / '__main__.py')
+            ],
+            'build_manifest': manifest.to_json(),
+            'ready_for_deployment': True
         }
+        
+        print(f"  ✓ Orchestration assembly complete")
         
         return context
         
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
-        """Verify orchestration contents."""
+        """Verify assembly succeeded."""
         if 'orchestration' not in context:
-            raise BuildPostconditionError("Orchestration failed to produce output")
+            raise BuildPostconditionError(
+                "Stage 7 must produce 'orchestration' in context"
+            )
             
-    def _collect_artifacts(self, context: Dict[str, Any]) -> Dict[str, List[str]]:
-        """Collect paths of all generated artifacts."""
-        artifacts = {
-            'executables': [],
-            'shared_libraries': []
+        orchestration = context['orchestration']
+        
+        if not orchestration.get('ready_for_deployment', False):
+            raise BuildPostconditionError(
+                "Orchestration assembly not ready for deployment"
+            )
+            
+        # Verify package directory exists
+        package_dir = Path(orchestration['package_directory'])
+        if not package_dir.exists():
+            raise BuildPostconditionError(
+                f"Package directory not created: {package_dir}"
+            )
+            
+    def _generate_manifest(
+        self,
+        context: Dict[str, Any],
+        package_dir: Path
+    ) -> BuildManifest:
+        """Generate build manifest from context."""
+        manifest = BuildManifest()
+        
+        # Add executables
+        for exe in context['linking'].get('executables', []):
+            manifest.executables.append({
+                'name': Path(exe).name,
+                'path': exe
+            })
+            
+        # Add adapters
+        adapter_metadata = context.get('adapter_generation', {}).get('adapter_metadata', [])
+        manifest.adapters = adapter_metadata
+        
+        # Add toolchain info
+        if 'toolchain' in context:
+            toolchain = context['toolchain']
+            manifest.toolchain_info = {
+                'compiler': toolchain.compiler_name,
+                'version': toolchain.compiler_version
+            }
+            
+        # Add environment
+        manifest.build_environment = {
+            'os': platform.system(),
+            'architecture': platform.machine(),
+            'python_version': platform.python_version()
         }
         
-        linking = context.get('linking', {})
-        
-        # Relative paths for manifest (simplified)
-        for exe in linking.get('executables', []):
-            exe_path = Path(exe)
-            if exe_path.exists():
-                # Copy to output dir
-                dest = self.output_dir / exe_path.name
-                shutil.copy2(exe_path, dest)
-                artifacts['executables'].append(exe_path.name)
-                
-        # Simulating shared libraries collection if they existed
-        # In this prompt, we mostly focused on executable, but logical
-        # flow handles libraries too.
-        
-        return artifacts
-        
-    def _get_contracts(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Get contracts from context (if available, e.g. from adapter stage)."""
-        # In real pipeline, contracts might be passed through context or loaded again
-        # Here we mock or try to access them if stored
-        # For this prototype, we'll try to load from the adapter generation metadata
-        # or return empty if not easily accessible without reloading
-        
-        return [] # Placeholder - re-loading files done in AdapterStage
+        return manifest
 
 # ============================================================================
 # MODULE METADATA

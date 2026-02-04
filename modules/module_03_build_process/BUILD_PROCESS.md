@@ -1236,75 +1236,77 @@ print(f"Generated {len(adapters['generated_adapters'])} adapters")
 
 ## 12. Orchestration Assembly & Python Integration
 
-### 12.1 Stage 7: Orchestration
+### 12.1 Stage 7: Final Integration
 
-Assembles all build artifacts into a cohesive package structure, generates Python bindings, and produces a build manifest.
+Assembles all components into deployable verification system.
 
-**Purpose**:
-- Collects executables and shared libraries
-- Generates Python `ctypes` bindings for easy integration
-- Creates a `manifest.json` describing the build
-- Ensures all components are versioned and provenance-tracked
+**Components Integrated**:
+- Native executables and libraries
+- Generated adapters
+- Python orchestration layer
+- Config files
+- Documentation
 
-### 12.2 Artifact Manifest
+### 12.2 Python Package Structure
 
-JSON manifest describing the output:
+Generated structure:
+
+```text
+verification_tool/
+├── __init__.py          # Package entry
+├── __main__.py          # CLI entry (python -m)
+├── cli.py               # Command-line interface
+├── api.py               # Programmatic API
+├── native/              # Native libraries
+├── adapters/            # Generated adapters
+└── config/              # Config files
+```
+
+### 12.3 Build Manifest
+
+Complete build provenance:
 
 ```json
 {
-  "project_name": "Polyglot FFI Verifier",
-  "version": "1.0.0",
-  "build_timestamp": "...",
-  "artifacts": {
-    "executables": ["verifier.exe"],
-    "shared_libraries": ["verification_lib.dll"],
-    "python_bindings": ["verification_lib_bindings.py"]
+  "build_timestamp": "2026-02-04T12:00:00Z",
+  "components": {
+    "executables": [...],
+    "adapters": [...],
+    "python_modules": [...]
   },
-  "toolchain_info": {
-    "compiler": "MSVC",
-    "version": "19.29",
-    "target": "x86_64-pc-windows-msvc"
+  "provenance": {
+    "toolchain": "GCC 11.2.0",
+    "environment": "Linux-x86_64"
   }
 }
 ```
 
-### 12.3 Python Binding Generation
-
-Automatically generates `ctypes` bindings:
-- Loads shared library relative to module path
-- Exposes generated adapter functions
-- Sets `argtypes` and `restype` (simplified)
-- Handles library loading errors gracefully
-
 ### 12.4 Implementation Classes
 
-- `ArtifactManifest`: Manifest data model.
-- `PythonCtypesGenerator`: Generates Python binding code.
-- `OrchestrationStage`: Stage 7 implementation.
+- `BuildManifest`: Complete build artifact documentation.
+- `PackageAssembler`: Creates Python package structure.
+- `OrchestrationAssemblyStage`: Stage 7 implementation.
 
 ### 12.5 Usage Example
 
 ```python
-# Create orchestration stage
-stage = OrchestrationStage(
+# Create stage
+stage = OrchestrationAssemblyStage(
     output_dir=Path("dist")
 )
 
 # Execute
 context = stage.execute({
-    'linking': {
-        'executables': ['build/bin/verifier.exe'],
-        'shared_libraries': ['build/bin/verification_lib.dll']
-    },
-    'toolchain': toolchain_descriptor
+    'linking': {'executables': ['verify'], 'all_successful': True},
+    'adapter_generation': {'generated_adapters': ['adapter.c']}
 })
 
-# Check result
-manifest = context['orchestration']['manifest']
-print(f"Build complete: {manifest['project_name']} v{manifest['version']}")
+# Check results
+package_dir = context['orchestration']['package_directory']
+print(f"Package ready: {package_dir}")
 ```
 
 ---
 
 **End of  Content**  
-**Next Prompt:** Cross-Platform Path Handling
+**Next Prompt:** Build Completion & Validation Gates

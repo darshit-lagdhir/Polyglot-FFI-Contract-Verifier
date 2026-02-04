@@ -1340,74 +1340,45 @@ class TestAdapterGenerator:
         assert metadata.contract_name == 'testlib'
         assert 'test_func' in source_file.read_text()
 
-class TestArtifactManifest:
-    """Test artifact manifest."""
+class TestBuildManifest:
+    """Test build manifest."""
     
     def test_manifest_creation(self):
-        """Test creating manifest."""
-        from modules.module_03_build_process.build_process import ArtifactManifest
+        """Test creating build manifest."""
+        from modules.module_03_build_process.build_process import BuildManifest
         
-        manifest = ArtifactManifest(
-            project_name="Test Project",
-            version="1.0",
-            build_timestamp="2023-01-01",
-            executables=["app.exe"],
-            shared_libraries=["lib.dll"],
-            python_bindings=["lib_bindings.py"]
-        )
+        manifest = BuildManifest()
+        manifest.executables.append({'name': 'verify', 'path': '/bin/verify'})
         
-        assert manifest.project_name == "Test Project"
         assert len(manifest.executables) == 1
+        assert manifest.all_tests_passed is False
         
-    def test_manifest_serialization(self):
-        """Test manifest to_dict."""
-        from modules.module_03_build_process.build_process import ArtifactManifest
+    def test_manifest_serialization(self, tmp_path):
+        """Test manifest JSON serialization."""
+        from modules.module_03_build_process.build_process import BuildManifest
         
-        manifest = ArtifactManifest(
-            project_name="Test",
-            version="1.0",
-            build_timestamp="now"
-        )
+        manifest = BuildManifest()
+        manifest.source_hash = "abc123"
+        manifest.all_tests_passed = True
         
-        data = manifest.to_dict()
-        assert data['project_name'] == "Test"
-        assert 'artifacts' in data
+        # Save to file
+        output_file = tmp_path / "manifest.json"
+        manifest.save(output_file)
+        
+        assert output_file.exists()
+        content = output_file.read_text()
+        assert "abc123" in content
 
-class TestPythonCtypesGenerator:
-    """Test Python ctypes generator."""
+class TestPackageAssembler:
+    """Test package assembler."""
     
-    def test_generator_creation(self, tmp_path):
-        """Test creating generator."""
-        from modules.module_03_build_process.build_process import PythonCtypesGenerator
+    def test_assembler_creation(self, tmp_path):
+        """Test creating package assembler."""
+        from modules.module_03_build_process.build_process import PackageAssembler
         
-        generator = PythonCtypesGenerator(tmp_path)
-        assert generator.output_dir == tmp_path
-        
-    def test_binding_generation(self, tmp_path):
-        """Test generating python bindings."""
-        from modules.module_03_build_process.build_process import PythonCtypesGenerator
-        
-        generator = PythonCtypesGenerator(tmp_path)
-        
-        contracts = [{
-            'library_name': 'testlib',
-            'functions': [{
-                'name': 'func1',
-                'signature': 'int func1(int x)'
-            }]
-        }]
-        
-        binding_file = generator.generate_bindings(
-            contracts,
-            "testlib",
-            Path("testlib.dll")
-        )
-        
-        assert binding_file.exists()
-        content = binding_file.read_text()
-        assert "import ctypes" in content
-        assert "class" not in content  # We assumed strict procedural bindings for now
-        assert "func1" in content
+        assembler = PackageAssembler(tmp_path)
+        assert assembler.output_dir == tmp_path
+        assert assembler.package_name == "verification_tool"
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
