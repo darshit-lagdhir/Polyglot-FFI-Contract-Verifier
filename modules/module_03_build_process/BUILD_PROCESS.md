@@ -10,11 +10,112 @@
 ## Table of Contents
 
 1. [Build Philosophy & Core Architecture](#1-build-philosophy-core-architecture)
-2. [Environment Descriptors](3. [Build Stage Pipeline](4. [Source Enumeration](5. [Dependency Resolution](6. [Toolchain Selection](7. [ABI Fidelity](8. [Native Compilation](9. [Native Validation](10. [Link-Time Control](... (sections 11-20 to be added in subsequent prompts)
+2. [Toolchain Detection & Validation](#2-toolchain-detection--validation)
+3. [Environment Descriptors](4. [Build Stage Pipeline](... (sections 5-20 to be added in subsequent prompts)
 
 ---
 
 ## 1. Build Philosophy & Core Architecture
+
+...
+
+---
+
+## 2. Toolchain Detection & Validation
+
+### 2.1 Introduction
+
+Toolchain detection transforms implicit environmental state (installed compilers)
+into explicit, validated build configuration. The compiler and linker are not
+incidental details but semantic inputs that determine ABI behavior.
+
+### 2.2 Detection Process
+
+#### : Executable Discovery
+The system searches for known compilers (MSVC, Clang, GCC) in system PATH and
+standard installation locations.
+
+#### : Version Extraction
+For each discovered compiler, the system extracts:
+- Short version (e.g., "19.29" for MSVC, "14" for Clang)
+- Full version string (e.g., "19.29.30133")
+- Executable hash for provenance
+
+#### : Linker Detection
+Associated linker is detected:
+- MSVC: link.exe in same directory
+- Clang/GCC: ld or lld in PATH
+
+#### : Target Triple Detection
+The system determines the target platform:
+- MSVC: Windows-x86_64-msvc or Windows-x86-msvc
+- Clang/GCC: Query with -dumpmachine (e.g., x86_64-pc-linux-gnu)
+
+#### : ABI Property Inference
+Based on compiler and target, infer:
+- Default calling convention (microsoft_x64, sysv_amd64, cdecl)
+- Default structure packing (8 for MSVC, 1 for GCC/Clang)
+- Name mangling scheme (msvc or itanium)
+- Determinism capability
+
+### 2.3 Toolchain Descriptor
+
+Generated descriptor includes:
+- Compiler identity (name, version, executable path, hash)
+- Linker identity (executable path, hash, version)
+- Target triple (OS-architecture-ABI)
+- ABI properties (calling convention, packing, mangling)
+- Capabilities (debug symbols, optimization, determinism)
+
+Descriptor is serialized to JSON and preserved as build artifact.
+
+### 2.4 Validation Rules
+
+**Rule 1: Executable Existence**
+All toolchain executables must exist and be executable.
+
+**Rule 2: Version Extractability**
+System must extract version information. Compilers that don't support --version
+or equivalent are rejected.
+
+**Rule 3: Target Compatibility**
+Toolchain target must match build target. Cannot use Linux toolchain for Windows builds.
+
+**Rule 4: Minimum Version**
+If specified, toolchain must meet minimum version requirements.
+
+**Rule 5: ABI Compatibility**
+Toolchain's default ABI must be compatible with verification requirements.
+
+### 2.5 Implementation Classes
+
+**ToolchainDescriptor**
+- Comprehensive toolchain metadata
+- Serializable to JSON
+- Includes provenance (hashes, timestamps)
+
+**ToolchainDetector**
+- Discovers available toolchains
+- Extracts version and ABI information
+- Generates validated descriptors
+
+**ToolchainValidator**
+- Validates toolchains against requirements
+- Enforces minimum versions
+- Checks ABI compatibility
+
+### 2.6 Integration Points
+
+Toolchain descriptors are used by:
+- Native compilation stages
+- ABI fidelity validation
+- Build provenance tracking
+- Incremental build change detection
+
+---
+
+**End of  Content**  
+**Next Prompt:** Build Stage Pipeline Infrastructure
 
 ### 1.1 Introduction
 

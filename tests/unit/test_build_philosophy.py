@@ -161,5 +161,108 @@ class TestBuildEnums:
         assert BuildMode.RELEASE.value == "release"
         assert BuildMode.CI.value == "ci"
 
+class TestToolchainDetection:
+    """Test toolchain detection and validation."""
+    
+    def test_toolchain_detector_creation(self):
+        """Test creating a ToolchainDetector instance."""
+        from modules.module_03_build_process.build_process import ToolchainDetector
+        
+        detector = ToolchainDetector()
+        assert detector is not None
+        assert len(detector.detected_toolchains) == 0
+    
+    def test_toolchain_descriptor_creation(self):
+        """Test creating a ToolchainDescriptor."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        descriptor = ToolchainDescriptor(
+            compiler_name="MSVC",
+            compiler_version="19.29",
+            compiler_full_version="19.29.30133",
+            compiler_executable=Path("/usr/bin/cl.exe"),
+            compiler_executable_hash="abc123",
+            linker_executable=Path("/usr/bin/link.exe"),
+            linker_executable_hash="def456",
+            linker_version="14.29",
+            target_triple="Windows-x86_64-msvc",
+            target_os="Windows",
+            target_architecture="x86_64",
+            target_abi="msvc",
+            default_calling_convention="microsoft_x64",
+            default_structure_packing=8,
+            supports_explicit_packing=True,
+            name_mangling_scheme="msvc",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=False
+        )
+        
+        assert descriptor.compiler_name == "MSVC"
+        assert descriptor.target_triple == "Windows-x86_64-msvc"
+        assert descriptor.default_structure_packing == 8
+    
+    def test_toolchain_descriptor_serialization(self):
+        """Test toolchain descriptor JSON serialization."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        original = ToolchainDescriptor(
+            compiler_name="Clang",
+            compiler_version="14",
+            compiler_full_version="14.0.0",
+            compiler_executable=Path("/usr/bin/clang"),
+            compiler_executable_hash="hash1",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash2",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv_amd64",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+        
+        # Serialize
+        json_str = original.to_json()
+        assert "Clang" in json_str
+        assert "sysv_amd64" in json_str
+        
+        # Deserialize
+        restored = ToolchainDescriptor.from_json(json_str)
+        assert restored.compiler_name == original.compiler_name
+        assert restored.target_triple == original.target_triple
+        assert restored.deterministic_output == original.deterministic_output
+    
+    def test_toolchain_validator_creation(self):
+        """Test creating a ToolchainValidator."""
+        from modules.module_03_build_process.build_process import ToolchainValidator
+        
+        requirements = {
+            'required_target_os': 'Windows',
+            'minimum_compiler_version': {
+                'MSVC': '19.20'
+            }
+        }
+        
+        validator = ToolchainValidator(requirements)
+        assert validator.requirements == requirements
+    
+    def test_version_comparison(self):
+        """Test version comparison logic."""
+        from modules.module_03_build_process.build_process import ToolchainValidator
+        
+        validator = ToolchainValidator({})
+        
+        assert validator._compare_versions("19.29", "19.20") == 1  # newer
+        assert validator._compare_versions("19.20", "19.29") == -1  # older
+        assert validator._compare_versions("19.29", "19.29") == 0  # equal
+        assert validator._compare_versions("14", "13") == 1
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
