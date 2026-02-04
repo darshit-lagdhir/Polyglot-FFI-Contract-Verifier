@@ -49,7 +49,17 @@ polyglot-verify = "polyglot_ffi_verifier.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=polyglot_ffi_verifier --cov-report=html"
+addopts = "-v"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "system: System tests",
+    "e2e: End-to-end tests",
+    "compatibility: Compatibility tests",
+    "benchmark: Performance benchmarks",
+    "stress: Stress tests",
+    "slow: Tests that take more than a few seconds",
+]
 
 [tool.black]
 line-length = 100
