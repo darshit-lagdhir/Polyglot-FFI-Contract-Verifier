@@ -25,7 +25,8 @@
 14. [Incremental Build Infrastructure](#14-incremental-build-infrastructure)
 15. [Cache Management & Eviction Policies](#15-cache-management--eviction-policies)
 16. [Build Reproducibility & Determinism](#16-build-reproducibility--determinism)
-... (sections 17-20 to be added in subsequent prompts)
+17. [Build Performance Profiling & Optimization](#17-build-performance-profiling--optimization)
+... (sections 18-20 to be added in subsequent prompts)
 
 ---
 
@@ -1644,5 +1645,91 @@ verifier.verify_reproducibility(artifacts)
 
 ---
 
+## 17. Build Performance Profiling & Optimization
+
+### 17.1 Performance Profiling
+
+Comprehensive profiling of build performance:
+
+**Metrics Tracked**:
+- Total build time
+- Per-stage timing
+- Per-file compilation timing
+- Cache hit/miss rates
+- Parallel speedup factor
+
+### 17.2 Performance Profile
+
+Complete performance snapshot:
+
+```python
+BuildPerformanceProfile:
+    total_build_time: float
+    stage_times: Dict[str, float]
+    compilation_times: List[Tuple[Path, float]]
+    cache_hit_rate: float
+    slowest_stage: str
+```
+
+### 17.3 Profiling Integration
+
+`ProfilingBuildStage`: Wraps any stage to add timing measurement.
+
+**Usage**:
+
+```python
+original_stage = NativeCompilationStage(...)
+profiled_stage = ProfilingBuildStage(original_stage)
+```
+
+### 17.4 Optimization Recommendations
+
+`BuildOptimizationAdvisor`: Analyzes profiles and generates recommendations.
+
+**Recommendations Include**:
+- Parallel compilation tuning
+- Cache configuration
+- Precompiled headers
+- I/O optimization
+
+### 17.5 Implementation Classes
+
+- `BuildPerformanceProfile`: Complete performance metrics.
+- `ProfilingBuildStage`: Stage wrapper with timing.
+- `BuildOptimizationAdvisor`: Generates optimization recommendations.
+
+### 17.6 Usage Example
+
+```python
+# Wrap stages with profiling
+stages = [
+    ProfilingBuildStage(EnumerationStage(...)),
+    ProfilingBuildStage(CompilationStage(...)),
+    ProfilingBuildStage(LinkingStage(...))
+]
+
+# Execute build
+for stage in stages:
+    context = stage.execute(context)
+
+# Generate profile
+profile = BuildPerformanceProfile()
+profile.stage_times = {
+    name: data['wall_time']
+    for name, data in context['profiling'].items()
+}
+
+# Print report
+print(profile.generate_report())
+
+# Get recommendations
+advisor = BuildOptimizationAdvisor()
+recommendations = advisor.generate_recommendations(profile)
+for rec in recommendations:
+    print(rec)
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Build Performance Profiling & Optimization
+**Next Prompt:** Build Error Diagnostics & Recovery

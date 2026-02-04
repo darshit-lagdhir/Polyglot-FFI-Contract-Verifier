@@ -1686,8 +1686,91 @@ class TestReproducibilityVerifier:
         """Test creating verifier."""
         from modules.module_03_build_process.build_process import ReproducibilityVerifier
         
+
         verifier = ReproducibilityVerifier()
         assert verifier is not None
 
-if __name__ == "__main__":
+class TestBuildPerformanceProfile:
+    """Test build performance profile."""
+    
+    def test_profile_creation(self):
+        """Test creating performance profile."""
+        from modules.module_03_build_process.build_process import BuildPerformanceProfile
+        
+        profile = BuildPerformanceProfile()
+        profile.total_build_time = 10.5
+        profile.stage_times['Compilation'] = 7.2
+        
+        assert profile.total_build_time == 10.5
+        assert profile.stage_times['Compilation'] == 7.2
+        
+    def test_profile_report(self):
+        """Test generating profile report."""
+        from modules.module_03_build_process.build_process import BuildPerformanceProfile
+        
+        profile = BuildPerformanceProfile()
+        profile.total_build_time = 15.0
+        profile.stage_times['Stage1'] = 5.0
+        profile.stage_times['Stage2'] = 10.0
+        
+        report = profile.generate_report()
+        
+        assert "BUILD PERFORMANCE PROFILE" in report
+        assert "15.00s" in report
+
+class TestProfilingBuildStage:
+    """Test profiling build stage."""
+    
+    def test_profiling_wrapper(self):
+        """Test wrapping stage with profiling."""
+        from modules.module_03_build_process.build_process import (
+            ProfilingBuildStage, BuildStageInterface, BuildStage
+        )
+        
+        # Create mock stage
+        class MockStage(BuildStageInterface):
+            def __init__(self):
+                super().__init__("Mock", BuildStage.SOURCE_ENUMERATION)
+            
+            def check_preconditions(self, context):
+                pass
+                
+            def execute(self, context):
+                return context
+                
+            def validate_postconditions(self, context):
+                pass
+                
+        mock = MockStage()
+        profiled = ProfilingBuildStage(mock)
+        
+        assert profiled.wrapped_stage == mock
+
+class TestBuildOptimizationAdvisor:
+    """Test build optimization advisor."""
+    
+    def test_advisor_creation(self):
+        """Test creating optimization advisor."""
+        from modules.module_03_build_process.build_process import BuildOptimizationAdvisor
+        
+        advisor = BuildOptimizationAdvisor()
+        assert advisor is not None
+        
+    def test_generate_recommendations(self):
+        """Test generating recommendations."""
+        from modules.module_03_build_process.build_process import (
+            BuildOptimizationAdvisor, BuildPerformanceProfile
+        )
+        
+        advisor = BuildOptimizationAdvisor()
+        
+        profile = BuildPerformanceProfile()
+        profile.total_build_time = 100.0
+        profile.total_compilation_time = 80.0  # 80% compilation
+        profile.cache_hit_rate = 0.3  # Low hit rate
+        
+        recommendations = advisor.generate_recommendations(profile)
+        
+        assert len(recommendations) > 0
+        assert any('compilation' in r.lower() for r in recommendations)
     pytest.main([__file__, "-v"])

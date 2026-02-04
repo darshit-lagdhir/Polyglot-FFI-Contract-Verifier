@@ -6220,6 +6220,205 @@ class ReproducibilityVerifier:
         return sha256.hexdigest()
 
 # ============================================================================
+# BUILD PERFORMANCE PROFILING & OPTIMIZATION ()
+# ============================================================================
+
+@dataclass
+class BuildPerformanceProfile:
+    """
+    Complete performance profile of a build.
+    
+    Captures timing information for all build stages and individual operations.
+    """
+    
+    # Overall timing
+    total_build_time: float = 0.0
+    
+    # Stage timing
+    stage_times: Dict[str, float] = field(default_factory=dict)
+    
+    # Compilation timing
+    compilation_times: List[Tuple[Path, float]] = field(default_factory=list)
+    total_compilation_time: float = 0.0
+    parallel_compilation_speedup: float = 1.0
+    
+    # Linking timing
+    linking_times: List[Tuple[str, float]] = field(default_factory=list)
+    total_linking_time: float = 0.0
+    
+    # Cache statistics
+    cache_hits: int = 0
+    cache_misses: int = 0
+    cache_hit_rate: float = 0.0
+    time_saved_by_cache: float = 0.0
+    
+    # I/O statistics
+    files_read: int = 0
+    files_written: int = 0
+    
+    # Bottleneck analysis
+    slowest_stage: str = ""
+    slowest_compilation: Optional[Path] = None
+    
+    def generate_report(self) -> str:
+        """Generate human-readable performance report."""
+        lines = [
+            "=" * 80,
+            "BUILD PERFORMANCE PROFILE",
+            "=" * 80,
+            f"Total Build Time: {self.total_build_time:.2f}s",
+            "",
+            "Stage Breakdown:",
+        ]
+        
+        # Sort stages by time
+        sorted_stages = sorted(
+            self.stage_times.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        for stage_name, stage_time in sorted_stages:
+            percentage = (stage_time / self.total_build_time) * 100 if self.total_build_time > 0 else 0
+            lines.append(f"  {stage_name:30s} {stage_time:8.2f}s ({percentage:5.1f}%)")
+        
+        lines.extend([
+            "",
+            "Compilation:",
+            f"  Total Time: {self.total_compilation_time:.2f}s",
+            f"  Files Compiled: {len(self.compilation_times)}",
+            f"  Parallel Speedup: {self.parallel_compilation_speedup:.2f}x"
+        ])
+        
+        if self.slowest_compilation:
+            # Find time for slowest compilation
+            slowest_time = 0.0
+            for path, time_val in self.compilation_times:
+                if path == self.slowest_compilation:
+                    slowest_time = time_val
+                    break
+            lines.append(f"  Slowest: {self.slowest_compilation.name} ({slowest_time:.2f}s)")
+        
+        lines.extend([
+            "",
+            "Cache Performance:",
+            f"  Hits: {self.cache_hits}",
+            f"  Misses: {self.cache_misses}",
+            f"  Hit Rate: {self.cache_hit_rate * 100:.1f}%",
+            f"  Time Saved: {self.time_saved_by_cache:.2f}s",
+            "",
+            f"Bottleneck: {self.slowest_stage}",
+            "=" * 80
+        ])
+        
+        return '\n'.join(lines)
+        
+    def save(self, output_path: Path):
+        """Save profile to file."""
+        with open(output_path, 'w') as f:
+            f.write(self.generate_report())
+
+class ProfilingBuildStage(BuildStageInterface):
+    """
+    Wrapper that adds profiling to any build stage.
+    
+    Measures execution time and tracks resource usage.
+    """
+    
+    def __init__(self, wrapped_stage: BuildStageInterface):
+        super().__init__(wrapped_stage.stage_name, wrapped_stage.stage_number)
+        self.wrapped_stage = wrapped_stage
+        self.execution_time: float = 0.0
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        self.wrapped_stage.check_preconditions(context)
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"\n{'=' * 80}")
+        print(f"Stage {self.stage_number.value}: {self.stage_name}")
+        print(f"{'=' * 80}")
+        
+        # Record start time
+        start_time = time.time()
+        start_cpu = time.process_time()
+        
+        # Execute wrapped stage
+        result_context = self.wrapped_stage.execute(context)
+        
+        # Record end time
+        end_time = time.time()
+        end_cpu = time.process_time()
+        
+        # Calculate metrics
+        self.execution_time = end_time - start_time
+        cpu_time = end_cpu - start_cpu
+        
+        print(f"\n✓ Stage completed in {self.execution_time:.2f}s (CPU: {cpu_time:.2f}s)")
+        
+        # Add profiling data to context
+        if 'profiling' not in result_context:
+            result_context['profiling'] = {}
+        
+        result_context['profiling'][self.stage_name] = {
+            'wall_time': self.execution_time,
+            'cpu_time': cpu_time,
+            'efficiency': cpu_time / self.execution_time if self.execution_time > 0 else 0
+        }
+        
+        return result_context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        self.wrapped_stage.validate_postconditions(context)
+
+class BuildOptimizationAdvisor:
+    """
+    Analyzes build performance and recommends optimizations.
+    """
+    
+    def generate_recommendations(
+        self,
+        profile: BuildPerformanceProfile
+    ) -> List[str]:
+        """
+        Generate optimization recommendations based on profile.
+        
+        Returns:
+            List of actionable recommendations
+        """
+        recommendations = []
+        
+        # Slow compilation
+        if profile.total_compilation_time > profile.total_build_time * 0.7:
+            recommendations.append(
+                "Compilation is bottleneck (>70% of build time). Consider:\n"
+                "  - Enabling precompiled headers\n"
+                "  - Increasing parallel compilation\n"
+                "  - Reducing template complexity"
+            )
+        
+        # Low cache hit rate
+        if profile.cache_hit_rate < 0.5:
+            recommendations.append(
+                f"Low cache hit rate ({profile.cache_hit_rate * 100:.1f}%). Consider:\n"
+                "  - Increasing cache size\n"
+                "  - Stabilizing build configuration\n"
+                "  - Investigating frequent invalidations"
+            )
+        
+        # Poor parallelization
+        if profile.parallel_compilation_speedup < 2.0 and profile.total_compilation_time > 5.0:
+             # Only complain about parallelism if build is slow enough to matter
+            recommendations.append(
+                f"Poor parallel speedup ({profile.parallel_compilation_speedup:.1f}x). Consider:\n"
+                "  - Reducing dependencies between files\n"
+                "  - Balancing compilation unit sizes"
+            )
+        
+        # I/O bound check could be added here if I/O stats were populated
+        
+        return recommendations
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -6227,7 +6426,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "16/20"
+__prompt__ = "17/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")
