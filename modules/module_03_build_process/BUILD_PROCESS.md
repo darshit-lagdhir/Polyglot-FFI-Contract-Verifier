@@ -12,11 +12,141 @@
 1. [Build Philosophy & Core Architecture](#1-build-philosophy-core-architecture)
 2. [Toolchain Detection & Validation](#2-toolchain-detection--validation)
 3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
-4. [Environment Descriptors](... (sections 5-20 to be added in subsequent prompts)
+4. [Source Enumeration & Dependency Graph](#4-source-enumeration--dependency-graph)
+5. [Environment Descriptors](... (sections 6-20 to be added in subsequent prompts)
 
 ---
 
 ## 1. Build Philosophy & Core Architecture
+
+...
+
+---
+
+## 2. Toolchain Detection & Validation
+
+...
+
+---
+
+## 3. Build Stage Pipeline Infrastructure
+
+...
+
+---
+
+## 4. Source Enumeration & Dependency Graph
+
+### 4.1 Enhanced Source Discovery
+
+Source enumeration is a semantic discovery process that:
+- Identifies all source artifacts
+- Extracts rich metadata for each source
+- Discovers dependencies between sources
+- Constructs queryable dependency graph
+- Classifies sources by role and language
+
+### 4.2 Source Metadata
+
+Each source file has comprehensive metadata:
+
+**File Properties**:
+- Path (absolute and relative)
+- Size (bytes)
+- Line count
+- Encoding
+- Hash (SHA-256)
+- Last modified timestamp
+
+**Language Classification**:
+- Language (C, C++, Python, Rust, etc.)
+- Role (production, test, generated, build, example)
+- Build domain (native, orchestration, targets)
+
+**Dependencies**:
+- List of dependencies (files this source depends on)
+- Dependency type (include, import, link)
+
+**Semantic Annotations**:
+- Correctness sensitive (influences verification guarantees)
+- ABI relevant (influences ABI behavior)
+- Generated (not hand-written)
+
+### 4.3 Language-Specific Handlers
+
+Different languages have dedicated handlers:
+
+**CSourceHandler**:
+- Handles .c, .cpp, .h, .hpp files
+- Extracts #include dependencies
+- Distinguishes system vs. local includes
+- Marks headers as ABI-relevant
+
+**PythonSourceHandler**:
+- Handles .py files
+- Extracts import dependencies using AST parsing
+- Distinguishes standard library vs. local imports
+- Classifies by role (production, test, generated)
+
+### 4.4 Dependency Graph
+
+The dependency graph is a directed acyclic graph (DAG):
+- **Nodes**: Source files with metadata
+- **Edges**: Dependencies (A depends on B)
+
+**Graph operations**:
+- `get_dependencies(source)`: Direct dependencies of source
+- `get_dependents(source)`: Sources that depend on this source
+- `topological_sort()`: Build order (dependencies first)
+- `detect_cycles()`: Find circular dependencies
+
+### 4.5 Source Classification
+
+Sources are classified multiple ways:
+
+**By Role**:
+- **Production**: Core implementation
+- **Test**: Unit/integration tests
+- **Generated**: Auto-generated code
+- **Build**: Build scripts
+- **Example**: Demonstrations
+
+**By Language**:
+- **C/C++**: Native sources
+- **Python**: Orchestration sources
+- **Rust**: Native components
+- **Build**: CMake, Makefiles, etc.
+
+**By Domain**:
+- Native Verification Tooling
+- Orchestration & Adapter Tooling
+- Verification Targets
+
+### 4.6 Usage
+
+```python
+stage = EnhancedSourceEnumerationStage(Path("src"))
+context = stage.execute({'environment': env})
+
+# Query metadata
+metadata = context['source_metadata']['src/main.c']
+print(f"Language: {metadata['language']}")
+print(f"Dependencies: {metadata['dependencies']}")
+
+# Query by role
+production_sources = context['sources_by_role']['production']
+test_sources = context['sources_by_role']['test']
+
+# Query dependency graph
+graph_data = context['dependency_graph']
+print(f"Nodes: {len(graph_data['nodes'])}")
+print(f"Edges: {len(graph_data['edges'])}")
+```
+
+---
+
+**End of  Content**  
+**Next Prompt:** Dependency Resolution & Package Management
 
 ...
 

@@ -1385,6 +1385,531 @@ class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
             print(f"Diagnostic saved to: {diagnostic_file}")
 
 # ============================================================================
+# SOURCE ENUMERATION & DEPENDENCY GRAPH ()
+# ============================================================================
+
+import ast
+from abc import ABC, abstractmethod
+
+# ============================================================================
+# SOURCE FILE METADATA
+# ============================================================================
+
+@dataclass
+class SourceMetadata:
+    """
+    Rich metadata for a source file.
+    
+    Captures file properties, language-specific information, dependencies,
+    and provenance.
+    """
+    # File identification
+    file_path: Path
+    relative_path: Path
+    file_hash: str
+    
+    # File properties
+    file_size: int
+    line_count: int
+    encoding: str
+    
+    # Language classification
+    language: str  # 'c', 'cpp', 'python', 'rust', etc.
+    role: str      # 'production', 'test', 'generated', 'build', 'example'
+    domain: BuildDomain
+    
+    # Dependencies
+    dependencies: List[str] = field(default_factory=list)
+    dependency_type: str = 'unknown'  # 'include', 'import', 'link'
+    
+    # Provenance
+    is_generated: bool = False
+    generator: Optional[str] = None
+    last_modified: str = ''
+    
+    # Semantic annotations
+    correctness_sensitive: bool = False
+    abi_relevant: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'file_path': str(self.file_path),
+            'relative_path': str(self.relative_path),
+            'file_hash': self.file_hash,
+            'file_size': self.file_size,
+            'line_count': self.line_count,
+            'encoding': self.encoding,
+            'language': self.language,
+            'role': self.role,
+            'domain': self.domain.value,
+            'dependencies': self.dependencies,
+            'dependency_type': self.dependency_type,
+            'is_generated': self.is_generated,
+            'generator': self.generator,
+            'last_modified': self.last_modified,
+            'correctness_sensitive': self.correctness_sensitive,
+            'abi_relevant': self.abi_relevant,
+        }
+
+# ============================================================================
+# DEPENDENCY GRAPH
+# ============================================================================
+
+@dataclass
+class DependencyNode:
+    """Node in dependency graph."""
+    source_path: str
+    metadata: SourceMetadata
+
+@dataclass
+class DependencyEdge:
+    """Edge in dependency graph."""
+    from_source: str
+    to_source: str
+    edge_type: str  # 'include', 'import', 'link'
+
+class DependencyGraph:
+    """
+    Directed acyclic graph of source dependencies.
+    
+    Enables build order determination, change impact analysis, and
+    incremental build optimization.
+    """
+    
+    def __init__(self):
+        self.nodes: Dict[str, DependencyNode] = {}
+        self.edges: List[DependencyEdge] = []
+    
+    def add_node(self, source_path: str, metadata: SourceMetadata):
+        """Add source node to graph."""
+        self.nodes[source_path] = DependencyNode(source_path, metadata)
+    
+    def add_edge(self, from_source: str, to_source: str, edge_type: str):
+        """Add dependency edge to graph."""
+        self.edges.append(DependencyEdge(from_source, to_source, edge_type))
+    
+    def get_dependencies(self, source_path: str) -> List[str]:
+        """Get all dependencies of a source file."""
+        return [
+            edge.to_source
+            for edge in self.edges
+            if edge.from_source == source_path
+        ]
+    
+    def get_dependents(self, source_path: str) -> List[str]:
+        """Get all sources that depend on this source."""
+        return [
+            edge.from_source
+            for edge in self.edges
+            if edge.to_source == source_path
+        ]
+    
+    def topological_sort(self) -> List[str]:
+        """
+        Return sources in build order (dependencies first).
+        
+        Returns:
+            List of source paths in dependency order
+            
+        Raises:
+            BuildError: If circular dependency detected
+        """
+        # Kahn's algorithm for topological sort
+        adj = {node: [] for node in self.nodes}
+        in_degree = {node: 0 for node in self.nodes}
+        
+        for edge in self.edges:
+            # edge.from_source depends on edge.to_source
+            # so edge.to_source must be processed before edge.from_source
+            # to_source -> from_source
+            if edge.to_source in adj and edge.from_source in adj:
+                adj[edge.to_source].append(edge.from_source)
+                in_degree[edge.from_source] += 1
+        
+        queue = [node for node, degree in in_degree.items() if degree == 0]
+        result = []
+        
+        while queue:
+            u = queue.pop(0)
+            result.append(u)
+            
+            for v in adj[u]:
+                in_degree[v] -= 1
+                if in_degree[v] == 0:
+                    queue.append(v)
+        
+        if len(result) != len(self.nodes):
+            raise BuildError("Circular dependency detected in source graph")
+        
+        return result
+
+    def detect_cycles(self) -> List[List[str]]:
+        """
+        Detect circular dependencies.
+        
+        Returns:
+            List of dependency cycles (each cycle is a list of source paths)
+        """
+        cycles = []
+        visited = set()
+        rec_stack = set()
+        
+        def dfs(node: str, path: List[str]):
+            visited.add(node)
+            rec_stack.add(node)
+            path.append(node)
+            
+            for edge in self.edges:
+                if edge.from_source == node:
+                    neighbor = edge.to_source
+                    
+                    if neighbor not in visited:
+                        dfs(neighbor, path.copy())
+                    elif neighbor in rec_stack:
+                        # Found cycle
+                        cycle_start = path.index(neighbor)
+                        cycles.append(path[cycle_start:] + [neighbor])
+            
+            rec_stack.remove(node)
+        
+        for node in self.nodes:
+            if node not in visited:
+                dfs(node, [])
+        
+        return cycles
+
+# ============================================================================
+# LANGUAGE-SPECIFIC SOURCE HANDLERS
+# ============================================================================
+
+class SourceHandler(ABC):
+    """Abstract base class for language-specific source handlers."""
+    
+    @abstractmethod
+    def can_handle(self, file_path: Path) -> bool:
+        """Check if this handler can process the given file."""
+        pass
+    
+    @abstractmethod
+    def extract_metadata(self, file_path: Path, source_root: Path) -> SourceMetadata:
+        """Extract metadata from source file."""
+        pass
+    
+    @abstractmethod
+    def extract_dependencies(self, file_path: Path, source_root: Path) -> List[str]:
+        """Extract dependencies from source file."""
+        pass
+
+class CSourceHandler(SourceHandler):
+    """Handler for C/C++ source files."""
+    
+    def can_handle(self, file_path: Path) -> bool:
+        return file_path.suffix in ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp']
+    
+    def extract_metadata(self, file_path: Path, source_root: Path) -> SourceMetadata:
+        """Extract metadata from C/C++ source."""
+        content = file_path.read_text(encoding='utf-8', errors='ignore')
+        relative_path = file_path.relative_to(source_root)
+        
+        return SourceMetadata(
+            file_path=file_path,
+            relative_path=relative_path,
+            file_hash=self._hash_file(file_path),
+            file_size=file_path.stat().st_size,
+            line_count=len(content.splitlines()),
+            encoding='utf-8',
+            language='cpp' if file_path.suffix in ['.cpp', '.hpp'] else 'c',
+            role=self._infer_role(relative_path),
+            domain=BuildDomain.NATIVE_VERIFICATION_TOOLING,
+            dependencies=[],
+            dependency_type='include',
+            last_modified=datetime.datetime.fromtimestamp(
+                file_path.stat().st_mtime
+            ).isoformat(),
+            correctness_sensitive=True,
+            abi_relevant=file_path.suffix in ['.h', '.hpp']
+        )
+    
+    def extract_dependencies(self, file_path: Path, source_root: Path) -> List[str]:
+        """Extract #include dependencies from C/C++ source."""
+        content = file_path.read_text(encoding='utf-8', errors='ignore')
+        
+        dependencies = []
+        include_pattern = re.compile(r'^\s*#include\s+[<"]([^>"]+)[>"]', re.MULTILINE)
+        
+        for match in include_pattern.finditer(content):
+            include_path = match.group(1)
+            
+            # Skip system includes for dependency graph (they are external)
+            if not self._is_system_include(include_path):
+                # Resolve relative to source directory
+                full_path = (file_path.parent / include_path).resolve()
+                if full_path.exists():
+                    dependencies.append(str(full_path))
+        
+        return dependencies
+    
+    def _is_system_include(self, include_path: str) -> bool:
+        """Check if include is a system header."""
+        system_headers = ['stdio.h', 'stdlib.h', 'string.h', 'windows.h']
+        return any(sys_header in include_path for sys_header in system_headers)
+    
+    def _infer_role(self, relative_path: Path) -> str:
+        """Infer source role from relative path."""
+        path_str = str(relative_path).lower()
+        if 'test' in path_str:
+            return 'test'
+        elif 'example' in path_str:
+            return 'example'
+        elif 'generated' in path_str:
+            return 'generated'
+        else:
+            return 'production'
+    
+    def _hash_file(self, filepath: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+class PythonSourceHandler(SourceHandler):
+    """Handler for Python source files."""
+    
+    def can_handle(self, file_path: Path) -> bool:
+        return file_path.suffix == '.py'
+    
+    def extract_metadata(self, file_path: Path, source_root: Path) -> SourceMetadata:
+        """Extract metadata from Python source."""
+        content = file_path.read_text(encoding='utf-8', errors='ignore')
+        relative_path = file_path.relative_to(source_root)
+        
+        return SourceMetadata(
+            file_path=file_path,
+            relative_path=relative_path,
+            file_hash=self._hash_file(file_path),
+            file_size=file_path.stat().st_size,
+            line_count=len(content.splitlines()),
+            encoding='utf-8',
+            language='python',
+            role=self._infer_role(relative_path),
+            domain=BuildDomain.ORCHESTRATION_ADAPTER_TOOLING,
+            dependencies=[],
+            dependency_type='import',
+            last_modified=datetime.datetime.fromtimestamp(
+                file_path.stat().st_mtime
+            ).isoformat(),
+            correctness_sensitive=False,
+            abi_relevant=False
+        )
+    
+    def extract_dependencies(self, file_path: Path, source_root: Path) -> List[str]:
+        """Extract import dependencies from Python source."""
+        content = file_path.read_text(encoding='utf-8')
+        
+        dependencies = []
+        
+        try:
+            tree = ast.parse(content)
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        dependencies.append(alias.name)
+                
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        dependencies.append(node.module)
+        
+        except SyntaxError:
+            # Skip files with syntax errors (will be caught in validation)
+            pass
+        
+        return dependencies
+    
+    def _infer_role(self, relative_path: Path) -> str:
+        """Infer source role from relative path."""
+        path_str = str(relative_path).lower()
+        if 'test' in path_str:
+            return 'test'
+        elif 'example' in path_str:
+            return 'example'
+        elif 'generated' in path_str or 'adapter' in path_str:
+            return 'generated'
+        else:
+            return 'production'
+    
+    def _hash_file(self, filepath: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+# ============================================================================
+# ENHANCED SOURCE ENUMERATION STAGE
+# ============================================================================
+
+class EnhancedSourceEnumerationStage(BuildStageInterface):
+    """
+    Enhanced Stage 1: Source Enumeration with Dependency Graph
+    
+    Performs comprehensive source discovery including:
+    - Language-specific metadata extraction
+    - Dependency graph construction
+    - Source classification by role and domain
+    - Provenance tracking
+    """
+    
+    def __init__(self, source_root: Path):
+        super().__init__("Enhanced Source Enumeration", BuildStage.SOURCE_ENUMERATION)
+        self.source_root = source_root
+        
+        # Register source handlers
+        self.handlers: List[SourceHandler] = [
+            CSourceHandler(),
+            PythonSourceHandler(),
+        ]
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        if 'environment' not in context:
+            raise BuildPreconditionError(
+                "Stage 1 requires 'environment' in build context"
+            )
+        
+        if not self.source_root.exists():
+            raise BuildPreconditionError(
+                f"Source root does not exist: {self.source_root}"
+            )
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"  Enumerating sources in: {self.source_root}")
+        
+        # Discover all files
+        all_files = list(self.source_root.rglob('*'))
+        all_files = [f for f in all_files if f.is_file()]
+        
+        print(f"  Found {len(all_files)} total files")
+        
+        # Extract metadata for each source
+        source_metadata_map: Dict[str, SourceMetadata] = {}
+        dependency_graph = DependencyGraph()
+        
+        processed_files = []
+        for file_path in all_files:
+            # Find appropriate handler
+            handler = self._find_handler(file_path)
+            if not handler:
+                continue
+            
+            # Extract metadata
+            metadata = handler.extract_metadata(file_path, self.source_root)
+            source_metadata_map[str(file_path)] = metadata
+            processed_files.append(file_path)
+            
+            # Add to dependency graph
+            dependency_graph.add_node(str(file_path), metadata)
+        
+        # Extract dependencies (second pass after all nodes added)
+        for file_path in processed_files:
+            handler = self._find_handler(file_path)
+            if not handler: continue
+            
+            metadata = source_metadata_map[str(file_path)]
+            dependencies = handler.extract_dependencies(file_path, self.source_root)
+            metadata.dependencies = dependencies
+            
+            # Add dependency edges
+            for dep in dependencies:
+                # We only add edges for dependencies that are within our source root
+                # and thus exist in our node map
+                if dep in source_metadata_map:
+                    dependency_graph.add_edge(str(file_path), dep, metadata.dependency_type)
+        
+        print(f"  Processed {len(source_metadata_map)} source files")
+        print(f"  Dependency graph: {len(dependency_graph.nodes)} nodes, "
+              f"{len(dependency_graph.edges)} edges")
+        
+        # Detect circular dependencies
+        cycles = dependency_graph.detect_cycles()
+        if cycles:
+            print(f"  ⚠ Warning: Detected {len(cycles)} circular dependencies")
+            for cycle in cycles[:3]:
+                print(f"    Cycle: {' -> '.join(cycle)}")
+        
+        # Classify sources by role and language
+        sources_by_role = self._classify_by_role(source_metadata_map)
+        sources_by_language = self._classify_by_language(source_metadata_map)
+        
+        # Update context
+        context['source_metadata'] = {
+            path: meta.to_dict()
+            for path, meta in source_metadata_map.items()
+        }
+        context['dependency_graph'] = {
+            'nodes': [node.source_path for node in dependency_graph.nodes.values()],
+            'edges': [
+                {'from': edge.from_source, 'to': edge.to_source, 'type': edge.edge_type}
+                for edge in dependency_graph.edges
+            ]
+        }
+        context['sources_by_role'] = sources_by_role
+        context['sources_by_language'] = sources_by_language
+        
+        return context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        if 'source_metadata' not in context:
+            raise BuildPostconditionError(
+                "Stage 1 must produce 'source_metadata'"
+            )
+        
+        if 'dependency_graph' not in context:
+            raise BuildPostconditionError(
+                "Stage 1 must produce 'dependency_graph'"
+            )
+        
+        # Verify at least some sources found
+        if len(context['source_metadata']) == 0:
+            raise BuildPostconditionError(
+                "Stage 1 found no processable source files"
+            )
+    
+    def _find_handler(self, file_path: Path) -> Optional[SourceHandler]:
+        """Find appropriate handler for file."""
+        for handler in self.handlers:
+            if handler.can_handle(file_path):
+                return handler
+        return None
+    
+    def _classify_by_role(
+        self, metadata_map: Dict[str, SourceMetadata]
+    ) -> Dict[str, List[str]]:
+        """Classify sources by role."""
+        by_role: Dict[str, List[str]] = {}
+        for path, metadata in metadata_map.items():
+            role = metadata.role
+            if role not in by_role:
+                by_role[role] = []
+            by_role[role].append(path)
+        return by_role
+    
+    def _classify_by_language(
+        self, metadata_map: Dict[str, SourceMetadata]
+    ) -> Dict[str, List[str]]:
+        """Classify sources by language."""
+        by_language: Dict[str, List[str]] = {}
+        for path, metadata in metadata_map.items():
+            language = metadata.language
+            if language not in by_language:
+                by_language[language] = []
+            by_language[language].append(path)
+        return by_language
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -1392,7 +1917,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "3/20"
+__prompt__ = "4/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")
