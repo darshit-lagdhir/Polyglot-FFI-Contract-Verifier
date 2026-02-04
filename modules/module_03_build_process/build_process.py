@@ -31,9 +31,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
 import datetime
+import platform
+import urllib.request
 import tempfile
 import shutil
-import platform
 
 # ============================================================================
 # CORE ENUMERATIONS
@@ -839,7 +840,7 @@ class ToolchainDetector:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-class ToolchainValidator:
+class ToolchainRequirementValidator:
     """
     Validates detected toolchains against build requirements.
     """

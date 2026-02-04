@@ -239,9 +239,9 @@ class TestToolchainDetection:
         assert restored.target_triple == original.target_triple
         assert restored.deterministic_output == original.deterministic_output
     
-    def test_toolchain_validator_creation(self):
-        """Test creating a ToolchainValidator."""
-        from modules.module_03_build_process.build_process import ToolchainValidator
+    def test_toolchain_requirement_validator_creation(self):
+        """Test creating a ToolchainRequirementValidator."""
+        from modules.module_03_build_process.build_process import ToolchainRequirementValidator
         
         requirements = {
             'required_target_os': 'Windows',
@@ -250,14 +250,14 @@ class TestToolchainDetection:
             }
         }
         
-        validator = ToolchainValidator(requirements)
+        validator = ToolchainRequirementValidator(requirements)
         assert validator.requirements == requirements
     
     def test_version_comparison(self):
         """Test version comparison logic."""
-        from modules.module_03_build_process.build_process import ToolchainValidator
+        from modules.module_03_build_process.build_process import ToolchainRequirementValidator
         
-        validator = ToolchainValidator({})
+        validator = ToolchainRequirementValidator({})
         
         assert validator._compare_versions("19.29", "19.20") == 1  # newer
         assert validator._compare_versions("19.20", "19.29") == -1  # older
