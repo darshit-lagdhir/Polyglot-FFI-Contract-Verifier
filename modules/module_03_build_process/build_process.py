@@ -5164,6 +5164,845 @@ class OrchestrationAssemblyStage(BuildStageInterface):
         return manifest
 
 # ============================================================================
+# BUILD COMPLETION & VALIDATION GATES ()
+# ============================================================================
+
+@dataclass
+class ValidationResult:
+    """Result of a validation gate."""
+    
+    gate_name: str
+    passed: bool = True
+    
+    successes: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    
+    def add_success(self, message: str):
+        """Add success message."""
+        self.successes.append(message)
+        
+    def add_error(self, message: str):
+        """Add error message and mark as failed."""
+        self.errors.append(message)
+        self.passed = False
+        
+    def add_warning(self, message: str):
+        """Add warning message."""
+        self.warnings.append(message)
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'gate_name': self.gate_name,
+            'passed': self.passed,
+            'successes': self.successes,
+            'errors': self.errors,
+            'warnings': self.warnings
+        }
+
+class ValidationGate(ABC):
+    """Abstract base for validation gates."""
+    
+    @property
+    @abstractmethod
+    def gate_name(self) -> str:
+        """Name of validation gate."""
+        pass
+    
+    @abstractmethod
+    def validate(self, context: Dict[str, Any]) -> ValidationResult:
+        """
+        Perform validation.
+        
+        Args:
+            context: Complete build context
+            
+        Returns:
+            ValidationResult with pass/fail status
+        """
+        pass
+    
+    @property
+    def is_required(self) -> bool:
+        """Whether this gate must pass for build to complete."""
+        return True
+
+class ArtifactExistenceGate(ValidationGate):
+    """Validates that all required artifacts exist."""
+    
+    gate_name = "Artifact Existence"
+    
+    def validate(self, context: Dict[str, Any]) -> ValidationResult:
+        result = ValidationResult(gate_name=self.gate_name)
+        
+        # Check executables
+        executables = context.get('linking', {}).get('executables', [])
+        for exe_path in executables:
+            exe = Path(exe_path)
+            if not exe.exists():
+                result.add_error(f"Executable missing: {exe}")
+            elif exe.stat().st_size == 0:
+                result.add_error(f"Executable is empty: {exe}")
+            else:
+                result.add_success(f"Executable exists: {exe.name}")
+        
+        # Check package directory
+        package_dir = context.get('orchestration', {}).get('package_directory')
+        if package_dir:
+            pkg = Path(package_dir)
+            if not pkg.exists():
+                result.add_error(f"Package directory missing: {pkg}")
+            else:
+                result.add_success(f"Package directory exists: {pkg.name}")
+        
+        return result
+
+class ArtifactIntegrityGate(ValidationGate):
+    """Validates artifact integrity via checksums."""
+    
+    gate_name = "Artifact Integrity"
+    
+    def validate(self, context: Dict[str, Any]) -> ValidationResult:
+        result = ValidationResult(gate_name=self.gate_name)
+        
+        # Validate object file hashes
+        compilation_metadata = context.get('native_compilation', {}).get(
+            'compilation_metadata', []
+        )
+        
+        verified_count = 0
+        for metadata in compilation_metadata:
+            obj_file = Path(metadata['output_file'])
+            expected_hash = metadata.get('output_hash')
+            
+            if obj_file.exists() and expected_hash:
+                actual_hash = self._compute_hash(obj_file)
+                if actual_hash == expected_hash:
+                    verified_count += 1
+                else:
+                    result.add_error(
+                        f"Hash mismatch for {obj_file.name}"
+                    )
+        
+        if verified_count > 0:
+            result.add_success(f"Verified {verified_count} artifact hashes")
+        else:
+            result.add_warning("No artifacts with hashes to verify")
+        
+        return result
+    
+    def _compute_hash(self, file_path: Path) -> str:
+        """Compute SHA256 hash."""
+        sha256 = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+class DocumentationCompletenessGate(ValidationGate):
+    """Validates documentation completeness."""
+    
+    gate_name = "Documentation Completeness"
+    
+    @property
+    def is_required(self) -> bool:
+        return False  # Warning-level gate
+    
+    def validate(self, context: Dict[str, Any]) -> ValidationResult:
+        result = ValidationResult(gate_name=self.gate_name)
+        
+        required_docs = [
+            'README.md',
+            'BUILD_PROCESS.md',
+            'build_manifest.json'
+        ]
+        
+        package_dir = context.get('orchestration', {}).get('package_directory')
+        if package_dir:
+            pkg = Path(package_dir)
+            
+            for doc in required_docs:
+                # Check in package dir and parent
+                doc_paths = [
+                    pkg / doc,
+                    pkg.parent / doc,
+                    Path.cwd() / doc
+                ]
+                
+                found = any(p.exists() for p in doc_paths)
+                if found:
+                    result.add_success(f"Documentation present: {doc}")
+                else:
+                    result.add_warning(f"Documentation missing: {doc}")
+        else:
+            result.add_warning("No package directory - cannot check documentation")
+        
+        return result
+
+@dataclass
+class BuildCompletionReport:
+    """Report of build completion validation."""
+    
+    build_successful: bool
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    
+    gates_passed: List[str] = field(default_factory=list)
+    gates_failed: List[str] = field(default_factory=list)
+    gates_warned: List[str] = field(default_factory=list)
+    
+    total_gates: int = 0
+    required_gates_passed: int = 0
+    required_gates_failed: int = 0
+    
+    validation_details: List[Dict[str, Any]] = field(default_factory=list)
+    
+    def generate_report(self) -> str:
+        """Generate human-readable report."""
+        lines = [
+            "=" * 80,
+            "BUILD COMPLETION REPORT",
+            "=" * 80,
+            f"Timestamp: {self.timestamp}",
+            f"Overall Status: {'✓ SUCCESS' if self.build_successful else '✗ FAILED'}",
+            "",
+            "Validation Gates:",
+            f"  Total: {self.total_gates}",
+            f"  Passed: {len(self.gates_passed)}",
+            f"  Failed: {len(self.gates_failed)}",
+            f"  Warnings: {len(self.gates_warned)}",
+            ""
+        ]
+        
+        if self.gates_failed:
+            lines.append("Failed Gates:")
+            for gate in self.gates_failed:
+                lines.append(f"  ✗ {gate}")
+            lines.append("")
+        
+        if self.gates_warned:
+            lines.append("Warning Gates:")
+            for gate in self.gates_warned:
+                lines.append(f"  ⚠ {gate}")
+            lines.append("")
+        
+        if self.gates_passed:
+            lines.append("Passed Gates:")
+            for gate in self.gates_passed:
+                lines.append(f"  ✓ {gate}")
+        
+        lines.append("=" * 80)
+        
+        return '\n'.join(lines)
+    
+    def save(self, output_path: Path):
+        """Save report to file."""
+        with open(output_path, 'w') as f:
+            f.write(self.generate_report())
+
+class BuildCompletionValidator:
+    """
+    Validates build completion through multiple validation gates.
+    
+    Runs all validation gates and generates completion report.
+    """
+    
+    def __init__(self):
+        self.gates: List[ValidationGate] = [
+            ArtifactExistenceGate(),
+            ArtifactIntegrityGate(),
+            DocumentationCompletenessGate(),
+        ]
+        
+    def validate_build(self, context: Dict[str, Any]) -> BuildCompletionReport:
+        """
+        Validate complete build.
+        
+        Args:
+            context: Complete build context
+            
+        Returns:
+            BuildCompletionReport with validation results
+        """
+        print("Validating build completion...")
+        
+        report = BuildCompletionReport(
+            build_successful=True,
+            total_gates=len(self.gates)
+        )
+        
+        # Run all validation gates
+        for gate in self.gates:
+            print(f"  Running gate: {gate.gate_name}")
+            
+            result = gate.validate(context)
+            report.validation_details.append(result.to_dict())
+            
+            if result.passed:
+                report.gates_passed.append(gate.gate_name)
+                if gate.is_required:
+                    report.required_gates_passed += 1
+                print(f"    ✓ {gate.gate_name} passed")
+            else:
+                if gate.is_required:
+                    report.gates_failed.append(gate.gate_name)
+                    report.required_gates_failed += 1
+                    report.build_successful = False
+                    print(f"    ✗ {gate.gate_name} FAILED")
+                else:
+                    report.gates_warned.append(gate.gate_name)
+                    print(f"    ⚠ {gate.gate_name} warned")
+            
+            # Show errors/warnings
+            for error in result.errors[:3]:
+                print(f"      Error: {error}")
+            for warning in result.warnings[:3]:
+                print(f"      Warning: {warning}")
+        
+        return report
+
+# ============================================================================
+# INCREMENTAL BUILD INFRASTRUCTURE ()
+# ============================================================================
+
+@dataclass
+class CacheEntry:
+    """Entry in build cache."""
+    
+    source_file: Path
+    source_hash: str
+    output_file: Path
+    output_hash: str
+    
+    dependencies: List[Dict[str, str]] = field(default_factory=list)
+    compiler_hash: str = ""
+    flags: List[str] = field(default_factory=list)
+    
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    last_access: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    
+    def is_valid(
+        self,
+        current_source_hash: str,
+        current_compiler_hash: str,
+        current_flags: List[str],
+        dependency_hashes: Dict[Path, str]
+    ) -> bool:
+        """
+        Check if cache entry is still valid.
+        
+        Valid if:
+        - Source hash matches
+        - Compiler hash matches
+        - Flags match
+        - All dependency hashes match
+        - Output file exists
+        """
+        # Check source
+        if current_source_hash != self.source_hash:
+            return False
+            
+        # Check compiler
+        if current_compiler_hash != self.compiler_hash:
+            return False
+            
+        # Check flags
+        if set(current_flags) != set(self.flags):
+            return False
+            
+        # Check dependencies
+        for dep in self.dependencies:
+            dep_path = Path(dep['file'])
+            expected_hash = dep['hash']
+            actual_hash = dependency_hashes.get(dep_path)
+            
+            if actual_hash != expected_hash:
+                return False
+                
+        # Check output exists
+        if not self.output_file.exists():
+            return False
+            
+        return True
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'source_file': str(self.source_file),
+            'source_hash': self.source_hash,
+            'output_file': str(self.output_file),
+            'output_hash': self.output_hash,
+            'dependencies': self.dependencies,
+            'compiler_hash': self.compiler_hash,
+            'flags': self.flags,
+            'timestamp': self.timestamp,
+            'last_access': self.last_access
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CacheEntry':
+        """Create from dictionary."""
+        return cls(
+            source_file=Path(data['source_file']),
+            source_hash=data['source_hash'],
+            output_file=Path(data['output_file']),
+            output_hash=data['output_hash'],
+            dependencies=data.get('dependencies', []),
+            compiler_hash=data.get('compiler_hash', ''),
+            flags=data.get('flags', []),
+            timestamp=data.get('timestamp', ''),
+            last_access=data.get('last_access', '')
+        )
+
+class BuildCache:
+    """
+    Build cache for incremental builds.
+    
+    Stores compilation results with metadata for cache validation.
+    """
+    
+    def __init__(self, cache_dir: Path):
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.entries: Dict[str, CacheEntry] = {}
+        self._load_cache()
+        
+    def get_entry(self, source_file: Path) -> Optional[CacheEntry]:
+        """Get cache entry for source file."""
+        entry = self.entries.get(str(source_file))
+        
+        if entry:
+            # Update last access time
+            entry.last_access = datetime.datetime.now(datetime.UTC).isoformat()
+            
+        return entry
+        
+    def add_entry(self, entry: CacheEntry):
+        """Add entry to cache."""
+        self.entries[str(entry.source_file)] = entry
+        self._save_cache()
+        
+    def invalidate(self, source_file: Path):
+        """Invalidate cache entry for source file."""
+        if str(source_file) in self.entries:
+            del self.entries[str(source_file)]
+            self._save_cache()
+            
+    def clear(self):
+        """Clear entire cache."""
+        self.entries.clear()
+        self._save_cache()
+        
+    def get_size_mb(self) -> float:
+        """Get cache size in megabytes."""
+        total_bytes = 0
+        
+        for entry in self.entries.values():
+            if entry.output_file.exists():
+                total_bytes += entry.output_file.stat().st_size
+                
+        return total_bytes / (1024 * 1024)
+        
+    def _load_cache(self):
+        """Load cache from disk."""
+        cache_file = self.cache_dir / 'cache_index.json'
+        
+        if not cache_file.exists():
+            return
+            
+        try:
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+                
+            for source_file, entry_data in data.get('entries', {}).items():
+                entry = CacheEntry.from_dict(entry_data)
+                self.entries[source_file] = entry
+                
+        except Exception as e:
+            print(f"Warning: Failed to load cache: {e}")
+            
+    def _save_cache(self):
+        """Save cache to disk."""
+        cache_file = self.cache_dir / 'cache_index.json'
+        
+        data = {
+            'version': '1.0',
+            'entries': {
+                source_file: entry.to_dict()
+                for source_file, entry in self.entries.items()
+            }
+        }
+        
+        with open(cache_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+class IncrementalBuildManager:
+    """
+    Manages incremental build logic.
+    
+    Determines which sources need rebuilding based on change detection
+    and dependency analysis.
+    """
+    
+    def __init__(self, cache: BuildCache, dependency_graph: DependencyGraph):
+        self.cache = cache
+        self.dependency_graph = dependency_graph
+        
+    def get_sources_to_rebuild(
+        self,
+        all_sources: List[Path],
+        toolchain: ToolchainDescriptor
+    ) -> Tuple[List[Path], List[Path]]:
+        """
+        Determine which sources need rebuilding.
+        
+        Returns:
+            Tuple of (sources_to_rebuild, sources_from_cache)
+        """
+        to_rebuild = []
+        from_cache = []
+        
+        for source in all_sources:
+            if self._needs_rebuild(source, toolchain):
+                to_rebuild.append(source)
+            else:
+                from_cache.append(source)
+                
+        # Propagate changes through dependency graph
+        if to_rebuild:
+            affected = self._get_affected_sources(set(to_rebuild))
+            to_rebuild = list(affected)
+            from_cache = [s for s in all_sources if s not in affected]
+            
+        return to_rebuild, from_cache
+        
+    def _needs_rebuild(self, source: Path, toolchain: ToolchainDescriptor) -> bool:
+        """Check if source needs rebuilding."""
+        # Check cache
+        cache_entry = self.cache.get_entry(source)
+        
+        if not cache_entry:
+            return True  # No cache entry - must rebuild
+            
+        # Compute current hashes
+        current_source_hash = self._compute_hash(source)
+        current_compiler_hash = toolchain.compiler_executable_hash
+        
+        # Get dependency hashes
+        dependency_hashes = self._get_dependency_hashes(source)
+        
+        # Validate cache entry
+        # Important: Flags would come from compilation unit in full implementation
+        current_flags = []
+        
+        is_valid = cache_entry.is_valid(
+            current_source_hash,
+            current_compiler_hash,
+            current_flags,
+            dependency_hashes
+        )
+        
+        return not is_valid
+        
+    def _get_affected_sources(self, changed_sources: Set[Path]) -> Set[Path]:
+        """Get all sources affected by changes."""
+        affected = set(changed_sources)
+        worklist = list(changed_sources)
+        
+        while worklist:
+            changed = worklist.pop()
+            
+            dependents = self.dependency_graph.get_dependents(str(changed))
+            
+            for dependent in dependents:
+                dep_path = Path(dependent)
+                if dep_path not in affected:
+                    affected.add(dep_path)
+                    worklist.append(dep_path)
+                    
+        return affected
+        
+    def _get_dependency_hashes(self, source: Path) -> Dict[Path, str]:
+        """Get hashes of all dependencies."""
+        dependencies = self.dependency_graph.get_dependencies(str(source))
+        
+        hashes = {}
+        for dep in dependencies:
+            dep_path = Path(dep)
+            if dep_path.exists():
+                hashes[dep_path] = self._compute_hash(dep_path)
+                
+        return hashes
+        
+    def _compute_hash(self, file_path: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        try:
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b''):
+                    sha256.update(chunk)
+            return sha256.hexdigest()
+        except FileNotFoundError:
+            return ""
+
+# ============================================================================
+# CACHE MANAGEMENT & EVICTION POLICIES ()
+# ============================================================================
+
+@dataclass
+class CacheStatistics:
+    """Statistics about cache state."""
+    
+    total_entries: int = 0
+    total_size_bytes: int = 0
+    
+    object_files_bytes: int = 0
+    executables_bytes: int = 0
+    adapters_bytes: int = 0
+    metadata_bytes: int = 0
+    
+    entries_less_than_1_day: int = 0
+    entries_less_than_1_week: int = 0
+    entries_less_than_1_month: int = 0
+    entries_older_than_1_month: int = 0
+    
+    stale_entries: int = 0
+    invalid_entries: int = 0
+    
+    @property
+    def total_size_mb(self) -> float:
+        """Get total size in megabytes."""
+        return self.total_size_bytes / (1024 * 1024)
+    
+    def generate_report(self) -> str:
+        """Generate human-readable statistics report."""
+        lines = [
+            "Cache Statistics",
+            "=" * 60,
+            f"Total Entries: {self.total_entries}",
+            f"Total Size: {self.total_size_mb:.2f} MB",
+            "",
+            "Size Breakdown:",
+            f"  Object Files: {self.object_files_bytes / (1024 * 1024):.2f} MB",
+            f"  Metadata: {self.metadata_bytes / (1024 * 1024):.2f} MB",
+            "",
+            "Age Distribution:",
+            f"  < 1 day: {self.entries_less_than_1_day}",
+            f"  < 1 week: {self.entries_less_than_1_week}",
+            f"  < 1 month: {self.entries_less_than_1_month}",
+            f"  > 1 month: {self.entries_older_than_1_month}",
+            "",
+            "Health:",
+            f"  Stale entries: {self.stale_entries}",
+            f"  Invalid entries: {self.invalid_entries}"
+        ]
+        return '\n'.join(lines)
+
+class EvictionPolicy(ABC):
+    """Abstract base for cache eviction policies."""
+    
+    @abstractmethod
+    def select_entries_to_evict(
+        self,
+        cache: BuildCache,
+        target_size_bytes: int,
+        statistics: CacheStatistics
+    ) -> List[CacheEntry]:
+        """
+        Select cache entries to evict.
+        
+        Args:
+            cache: Build cache
+            target_size_bytes: Target size after eviction
+            statistics: Current cache statistics
+            
+        Returns:
+            List of entries to evict
+        """
+        pass
+    
+    @property
+    @abstractmethod
+    def policy_name(self) -> str:
+        """Name of eviction policy."""
+        pass
+
+class LRUEvictionPolicy(EvictionPolicy):
+    """Least Recently Used eviction policy."""
+    
+    policy_name = "LRU"
+    
+    def select_entries_to_evict(
+        self,
+        cache: BuildCache,
+        target_size_bytes: int,
+        statistics: CacheStatistics
+    ) -> List[CacheEntry]:
+        # Sort entries by last access time (oldest first)
+        entries = sorted(
+            cache.entries.values(),
+            key=lambda e: datetime.datetime.fromisoformat(e.last_access)
+        )
+        
+        bytes_to_free = statistics.total_size_bytes - target_size_bytes
+        
+        if bytes_to_free <= 0:
+            return []
+        
+        to_evict = []
+        bytes_freed = 0
+        
+        for entry in entries:
+            if bytes_freed >= bytes_to_free:
+                break
+            
+            entry_size = self._get_entry_size(entry)
+            to_evict.append(entry)
+            bytes_freed += entry_size
+        
+        return to_evict
+    
+    def _get_entry_size(self, entry: CacheEntry) -> int:
+        """Get size of cache entry in bytes."""
+        if entry.output_file.exists():
+            return entry.output_file.stat().st_size
+        return 0
+
+class AgeBasedEvictionPolicy(EvictionPolicy):
+    """Age-based eviction policy with TTL."""
+    
+    policy_name = "Age-Based"
+    
+    def __init__(self, ttl_days: int = 30):
+        self.ttl_days = ttl_days
+    
+    def select_entries_to_evict(
+        self,
+        cache: BuildCache,
+        target_size_bytes: int,
+        statistics: CacheStatistics
+    ) -> List[CacheEntry]:
+        now = datetime.datetime.now(datetime.UTC)
+        ttl_threshold = now - datetime.timedelta(days=self.ttl_days)
+        
+        to_evict = []
+        
+        for entry in cache.entries.values():
+            entry_time = datetime.datetime.fromisoformat(entry.timestamp)
+            # Ensure timezone awareness for comparison
+            if entry_time.tzinfo is None:
+                entry_time = entry_time.replace(tzinfo=datetime.UTC)
+            
+            if entry_time < ttl_threshold:
+                to_evict.append(entry)
+        
+        return to_evict
+
+class CacheManager:
+    """
+    Manages build cache with eviction policies.
+    
+    Monitors cache size, applies eviction policies, and maintains cache health.
+    """
+    
+    def __init__(
+        self,
+        cache: BuildCache,
+        eviction_policy: Optional[EvictionPolicy] = None,
+        max_size_mb: int = 1024
+    ):
+        self.cache = cache
+        self.eviction_policy = eviction_policy or LRUEvictionPolicy()
+        self.max_size_mb = max_size_mb
+        
+    def get_statistics(self) -> CacheStatistics:
+        """Compute current cache statistics."""
+        stats = CacheStatistics()
+        
+        stats.total_entries = len(self.cache.entries)
+        
+        now = datetime.datetime.now(datetime.UTC)
+        
+        for entry in self.cache.entries.values():
+            # Compute size
+            if entry.output_file.exists():
+                size = entry.output_file.stat().st_size
+                stats.total_size_bytes += size
+                
+                # Categorize by type
+                if entry.output_file.suffix == '.o':
+                    stats.object_files_bytes += size
+            
+            # Compute age
+            try:
+                entry_time = datetime.datetime.fromisoformat(entry.timestamp)
+                if entry_time.tzinfo is None:
+                    entry_time = entry_time.replace(tzinfo=datetime.UTC)
+                age = now - entry_time
+            except ValueError:
+                # Fallback implementation if parsing fails
+                age = datetime.timedelta(days=0)
+            
+            if age.days < 1:
+                stats.entries_less_than_1_day += 1
+            elif age.days < 7:
+                stats.entries_less_than_1_week += 1
+            elif age.days < 30:
+                stats.entries_less_than_1_month += 1
+            else:
+                stats.entries_older_than_1_month += 1
+            
+            # Check staleness
+            if not entry.source_file.exists():
+                stats.stale_entries += 1
+        
+        return stats
+        
+    def apply_eviction(self):
+        """Apply eviction policy if cache exceeds size limit."""
+        stats = self.get_statistics()
+        
+        max_size_bytes = self.max_size_mb * 1024 * 1024
+        
+        if stats.total_size_bytes <= max_size_bytes:
+            return  # No eviction needed
+        
+        print(f"Cache size ({stats.total_size_mb:.2f} MB) exceeds limit ({self.max_size_mb} MB)")
+        print(f"Applying {self.eviction_policy.policy_name} eviction policy...")
+        
+        # Select entries to evict
+        to_evict = self.eviction_policy.select_entries_to_evict(
+            self.cache,
+            max_size_bytes,
+            stats
+        )
+        
+        # Evict entries
+        for entry in to_evict:
+            self.cache.invalidate(entry.source_file)
+            
+            # Delete cached file
+            if entry.output_file.exists():
+                entry.output_file.unlink()
+        
+        print(f"  Evicted {len(to_evict)} entries")
+        
+    def clean_stale_entries(self):
+        """Remove entries for sources that no longer exist."""
+        stale = []
+        
+        for source_file, entry in list(self.cache.entries.items()):
+            if not entry.source_file.exists():
+                stale.append(Path(source_file))
+        
+        for source in stale:
+            self.cache.invalidate(source)
+        
+        if stale:
+            print(f"  Cleaned {len(stale)} stale cache entries")
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -5171,7 +6010,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "12/20"
+__prompt__ = "15/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")

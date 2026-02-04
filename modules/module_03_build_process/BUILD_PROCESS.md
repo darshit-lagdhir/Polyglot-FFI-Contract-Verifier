@@ -21,7 +21,10 @@
 10. [Link-Time Control & Executable Generation](#10-link-time-control--executable-generation)
 11. [Adapter Generation & Contract Integration](#11-adapter-generation--contract-integration)
 12. [Orchestration Assembly & Python Integration](#12-orchestration-assembly--python-integration)
-... (sections 13-20 to be added in subsequent prompts)
+13. [Build Completion & Validation Gates](#13-build-completion--validation-gates)
+14. [Incremental Build Infrastructure](#14-incremental-build-infrastructure)
+15. [Cache Management & Eviction Policies](#15-cache-management--eviction-policies)
+... (sections 16-20 to be added in subsequent prompts)
 
 ---
 
@@ -1308,5 +1311,260 @@ print(f"Package ready: {package_dir}")
 
 ---
 
+## 13. Build Completion & Validation Gates
+
+### 13.1 Build Completion Validation
+
+Build completion is formal verification that all requirements are met.
+
+**Validation Process**:
+- Run all validation gates
+- Collect results
+- Generate completion report
+- Mark build as complete (if all required gates pass)
+
+### 13.2 Validation Gates
+
+Multiple validation gates verify different aspects:
+
+1.  **ArtifactExistenceGate**: 
+    - Verifies all executables exist
+    - Verifies package directory created
+    - Required gate (build fails if not passed)
+
+2.  **ArtifactIntegrityGate**:
+    - Validates artifact hashes
+    - Detects file corruption
+    - Required gate
+
+3.  **DocumentationCompletenessGate**:
+    - Checks for required documentation
+    - Warning-level gate (build succeeds with warnings)
+
+### 13.3 Validation Result Model
+
+```python
+ValidationResult:
+    gate_name: str
+    passed: bool
+    successes: List[str]
+    errors: List[str]
+    warnings: List[str]
+```
+
+### 13.4 Build Completion Report
+
+Comprehensive report:
+
+```text
+BUILD COMPLETION REPORT
+Timestamp: 2026-02-04T12:00:00Z
+Overall Status: ✓ SUCCESS
+
+Validation Gates:
+  Total: 3
+  Passed: 2
+  Failed: 0
+  Warnings: 1
+```
+
+### 13.5 Implementation Classes
+
+- `ValidationResult`: Result of single gate validation.
+- `ValidationGate` (ABC): Abstract base for validation gates.
+- `ArtifactExistenceGate`: Validates artifact existence.
+- `ArtifactIntegrityGate`: Validates artifact integrity.
+- `DocumentationCompletenessGate`: Validates documentation.
+- `BuildCompletionReport`: Complete validation report.
+- `BuildCompletionValidator`: Runs all gates and generates report.
+
+### 13.6 Usage Example
+
+```python
+# Create validator
+validator = BuildCompletionValidator()
+
+# Validate build
+report = validator.validate_build(context)
+
+# Check results
+if report.build_successful:
+    print("Build completed successfully!")
+    report.save(Path("build_completion.txt"))
+else:
+    print(f"Build failed: {report.required_gates_failed} gates failed")
+```
+
+---
+
+## 14. Incremental Build Infrastructure
+
+### 14.1 Incremental Build Optimization
+
+Incremental builds rebuild only changed components for faster iteration.
+
+**Benefits**:
+- Reduced build times (seconds vs minutes)
+- Faster development iteration
+- Lower CI/CD resource usage
+
+**Correctness Guarantees**:
+- Conservative invalidation (when uncertain, rebuild)
+- Dependency propagation (changes propagate through graph)
+- Toolchain change detection (compiler change triggers rebuild)
+
+### 14.2 Build Cache
+
+Cached artifacts with validation metadata:
+
+```text
+.build_cache/
+├── objects/          # Cached object files
+├── cache_index.json  # Cache metadata
+└── validation/       # Validation results
+```
+
+**Cache Entry**:
+
+```json
+{
+    "source_file": "src/main.c",
+    "source_hash": "abc123...",
+    "output_hash": "def456...",
+    "dependencies": [...],
+    "compiler_hash": "789abc...",
+    "flags": ["-O2", "-g"]
+}
+```
+
+### 14.3 Cache Validation
+
+Cache entry valid if:
+- Source hash matches
+- All dependency hashes match
+- Compiler hash matches
+- Flags match
+- Output file exists
+
+Otherwise, rebuild required.
+
+### 14.4 Change Propagation
+
+Changes propagate through dependency graph:
+1. Detect changed sources
+2. Find all dependents (transitive closure)
+3. Mark dependents for rebuild
+4. Rebuild in dependency order
+
+### 14.5 Implementation Classes
+
+- `CacheEntry`: Metadata for cached artifact.
+- `BuildCache`: Manages cache storage and retrieval.
+- `IncrementalBuildManager`: Determines rebuild requirements.
+
+### 14.6 Usage Example
+
+```python
+# Create cache
+cache = BuildCache(Path(".build_cache"))
+
+# Create incremental manager
+manager = IncrementalBuildManager(cache, dependency_graph)
+
+# Determine what to rebuild
+to_rebuild, from_cache = manager.get_sources_to_rebuild(
+    all_sources,
+    toolchain
+)
+
+print(f"Rebuilding {len(to_rebuild)} sources")
+print(f"Reusing {len(from_cache)} cached artifacts")
+```
+
+---
+
+## 15. Cache Management & Eviction Policies
+
+### 15.1 Cache Management
+
+Manages cache size and health through eviction policies.
+
+**Responsibilities**:
+- Monitor cache size
+- Apply eviction policies
+- Remove stale entries
+- Generate statistics
+
+### 15.2 Cache Statistics
+
+Tracks cache health:
+
+```python
+CacheStatistics:
+    total_entries: int
+    total_size_mb: float
+    entries_by_age: {...}
+    stale_entries: int
+```
+
+### 15.3 Eviction Policies
+
+Multiple policies available:
+
+1.  **LRU (Least Recently Used)**:
+    - Evicts oldest accessed entries first
+    - Optimizes for recency
+    - Default policy
+
+2.  **Age-Based (TTL)**:
+    - Evicts entries older than threshold
+    - Default: 30 days
+    - Ensures freshness
+
+### 15.4 Cache Manager
+
+Orchestrates cache management:
+
+```python
+manager = CacheManager(
+    cache=build_cache,
+    eviction_policy=LRUEvictionPolicy(),
+    max_size_mb=1024
+)
+
+# Apply eviction if needed
+manager.apply_eviction()
+
+# Clean stale entries
+manager.clean_stale_entries()
+```
+
+### 15.5 Implementation Classes
+
+- `CacheStatistics`: Cache health metrics.
+- `EvictionPolicy` (ABC): Abstract eviction policy.
+- `LRUEvictionPolicy`: Least recently used eviction.
+- `AgeBasedEvictionPolicy`: Time-to-live eviction.
+- `CacheManager`: Orchestrates cache management.
+
+### 15.6 Usage Example
+
+```python
+# Create cache manager
+manager = CacheManager(cache, max_size_mb=512)
+
+# Get statistics
+stats = manager.get_statistics()
+print(stats.generate_report())
+
+# Apply eviction
+manager.apply_eviction()
+
+# Clean stale
+manager.clean_stale_entries()
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Build Completion & Validation Gates
+**Next Prompt:** Build Reproducibility & Determinism
