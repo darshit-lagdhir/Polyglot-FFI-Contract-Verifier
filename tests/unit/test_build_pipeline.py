@@ -386,5 +386,188 @@ class TestEnhancedSourceEnumeration:
         assert 'sources_by_language' in context
         assert len(context['source_metadata']) == 2
 
+class TestDependencySpecification:
+    """Test dependency specification model."""
+
+    def test_spec_creation(self):
+        """Test creating dependency specification."""
+        from modules.module_03_build_process.build_process import DependencySpecification
+        
+        dep = DependencySpecification(
+            name="libclang",
+            version="16.0.6",
+            source="pypi",
+            hash="sha256:abc123",
+            license="Apache-2.0",
+            scope="runtime"
+        )
+        
+        assert dep.name == "libclang"
+        assert dep.version == "16.0.6"
+        assert dep.source == "pypi"
+
+    def test_spec_serialization(self):
+        """Test dependency spec to_dict/from_dict."""
+        from modules.module_03_build_process.build_process import DependencySpecification
+        
+        original = DependencySpecification(
+            name="pytest",
+            version="7.4.0",
+            source="pypi",
+            scope="test"
+        )
+        
+        data = original.to_dict()
+        restored = DependencySpecification.from_dict(data)
+        
+        assert restored.name == original.name
+        assert restored.version == original.version
+        assert restored.scope == original.scope
+
+    def test_hash_verification(self, tmp_path):
+        """Test dependency hash verification."""
+        from modules.module_03_build_process.build_process import DependencySpecification
+        
+        # Create test file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+        
+        # Compute actual hash
+        import hashlib
+        actual_hash = hashlib.sha256(b"hello world").hexdigest()
+        
+        # Create spec with correct hash
+        dep = DependencySpecification(
+            name="test",
+            version="1.0",
+            source="local",
+            hash=actual_hash
+        )
+        
+        # Verification should succeed
+        assert dep.verify_hash(test_file) is True
+        
+        # Create spec with wrong hash
+        dep_wrong = DependencySpecification(
+            name="test",
+            version="1.0",
+            source="local",
+            hash="wronghash"
+        )
+        
+        # Verification should fail
+        assert dep_wrong.verify_hash(test_file) is False
+
+class TestDependencyLockFile:
+    """Test dependency lock file."""
+
+    def test_lock_file_creation(self):
+        """Test creating lock file."""
+        from modules.module_03_build_process.build_process import (
+            DependencyLockFile, DependencySpecification
+        )
+        
+        lock = DependencyLockFile(platform="Linux-x86_64")
+        
+        dep = DependencySpecification(
+            name="numpy",
+            version="1.24.0",
+            source="pypi"
+        )
+        lock.add_dependency(dep)
+        
+        assert len(lock.dependencies) == 1
+        assert lock.get_dependency("numpy") is not None
+
+    def test_lock_file_save_load(self, tmp_path):
+        """Test lock file serialization."""
+        from modules.module_03_build_process.build_process import (
+            DependencyLockFile, DependencySpecification
+        )
+        
+        # Create lock file
+        original_lock = DependencyLockFile(platform="Windows-x86_64")
+        dep = DependencySpecification(
+            name="requests",
+            version="2.31.0",
+            source="pypi",
+            hash="sha256:abc123"
+        )
+        original_lock.add_dependency(dep)
+        
+        # Save
+        lock_path = tmp_path / "test.lock"
+        original_lock.save(lock_path)
+        
+        assert lock_path.exists()
+        
+        # Load
+        loaded_lock = DependencyLockFile.load(lock_path)
+        assert len(loaded_lock.dependencies) == 1
+        assert loaded_lock.get_dependency("requests") is not None
+        assert loaded_lock.get_dependency("requests").version == "2.31.0"
+
+class TestDependencyResolver:
+    """Test dependency resolver."""
+
+    def test_resolver_creation(self, tmp_path):
+        """Test creating dependency resolver."""
+        from modules.module_03_build_process.build_process import DependencyResolver
+        
+        resolver = DependencyResolver(cache_dir=tmp_path)
+        assert resolver.cache_dir == tmp_path
+        assert len(resolver.resolved) == 0
+
+    def test_simple_resolution(self, tmp_path):
+        """Test resolving simple dependency tree."""
+        from modules.module_03_build_process.build_process import (
+            DependencyResolver, DependencySpecification
+        )
+        
+        resolver = DependencyResolver(cache_dir=tmp_path)
+        
+        deps = [
+            DependencySpecification(
+                name="pkg1",
+                version="1.0.0",
+                source="pypi"
+            )
+        ]
+        
+        lock_file = resolver.resolve(deps)
+        
+        assert len(lock_file.dependencies) == 1
+        assert "pkg1" in lock_file.dependencies
+
+    def test_conflict_detection(self, tmp_path):
+        """Test dependency conflict detection."""
+        from modules.module_03_build_process.build_process import (
+            DependencyResolver, DependencySpecification, DependencyLockFile
+        )
+        
+        resolver = DependencyResolver(cache_dir=tmp_path)
+        
+        # Create conflicting dependencies
+        dep1 = DependencySpecification(
+            name="conflict_pkg",
+            version="1.0.0",
+            source="pypi"
+        )
+        dep2 = DependencySpecification(
+            name="conflict_pkg",
+            version="2.0.0",
+            source="pypi"
+        )
+        
+        # Resolve first dependency
+        resolver._resolve_dependency(dep1, DependencyLockFile())
+        
+        # Resolve second (conflicting) dependency
+        lock = DependencyLockFile()
+        resolver._resolve_dependency(dep2, lock)
+        
+        # Conflict should be detected
+        assert len(resolver.conflicts) > 0
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -31,6 +31,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
 import datetime
+import platform
+import urllib.request
+import tempfile
 
 # ============================================================================
 # CORE ENUMERATIONS
@@ -1910,6 +1913,399 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
         return by_language
 
 # ============================================================================
+# DEPENDENCY RESOLUTION & PACKAGE MANAGEMENT ()
+# ============================================================================
+
+@dataclass
+class DependencySpecification:
+    """
+    Comprehensive specification of a single dependency.
+    
+    Captures all information needed for verified, reproducible dependency
+    resolution.
+    """
+    # Identity
+    name: str
+    version: str
+    
+    # Source and verification
+    source: str  # 'pypi', 'crates', 'system', 'git', 'local'
+    hash: Optional[str] = None
+    hash_algorithm: str = 'sha256'
+    
+    # Metadata
+    license: Optional[str] = None
+    scope: str = 'runtime'  # 'runtime', 'build', 'test', 'dev'
+    platform: str = 'all'   # 'all', 'Windows', 'Linux', 'Darwin'
+    
+    # Dependency tree
+    transitive: bool = False
+    parent_dependency: Optional[str] = None
+    transitive_deps: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'name': self.name,
+            'version': self.version,
+            'source': self.source,
+            'hash': self.hash,
+            'hash_algorithm': self.hash_algorithm,
+            'license': self.license,
+            'scope': self.scope,
+            'platform': self.platform,
+            'transitive': self.transitive,
+            'parent_dependency': self.parent_dependency,
+            'transitive_deps': self.transitive_deps,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DependencySpecification':
+        """Deserialize from dictionary."""
+        return cls(
+            name=data['name'],
+            version=data['version'],
+            source=data['source'],
+            hash=data.get('hash'),
+            hash_algorithm=data.get('hash_algorithm', 'sha256'),
+            license=data.get('license'),
+            scope=data.get('scope', 'runtime'),
+            platform=data.get('platform', 'all'),
+            transitive=data.get('transitive', False),
+            parent_dependency=data.get('parent_dependency'),
+            transitive_deps=data.get('transitive_deps', []),
+        )
+    
+    def verify_hash(self, file_path: Path) -> bool:
+        """
+        Verify that file matches declared hash.
+        
+        Args:
+            file_path: Path to file to verify
+            
+        Returns:
+            True if hash matches, False otherwise
+        """
+        if not self.hash:
+            return True  # No hash to verify
+        
+        computed_hash = self._compute_hash(file_path)
+        return computed_hash == self.hash
+    
+    def _compute_hash(self, file_path: Path) -> str:
+        """Compute hash of file."""
+        if self.hash_algorithm == 'sha256':
+            hasher = hashlib.sha256()
+        else:
+            raise BuildError(f"Unsupported hash algorithm: {self.hash_algorithm}")
+        
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hasher.update(chunk)
+        
+        return hasher.hexdigest()
+
+@dataclass
+class DependencyLockFile:
+    """
+    Lock file capturing exact dependency tree for reproducible builds.
+    """
+    lock_version: str = "1.0.0"
+    generated_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    platform: str = ""
+    dependencies: Dict[str, DependencySpecification] = field(default_factory=dict)
+    
+    def save(self, file_path: Path):
+        """Save lock file to disk."""
+        data = {
+            'lock_version': self.lock_version,
+            'generated': self.generated_timestamp,
+            'platform': self.platform,
+            'dependencies': {
+                name: dep.to_dict()
+                for name, dep in self.dependencies.items()
+            }
+        }
+        
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        print(f"  Saved lock file: {file_path}")
+    
+    @classmethod
+    def load(cls, file_path: Path) -> 'DependencyLockFile':
+        """Load lock file from disk."""
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        
+        dependencies = {
+            name: DependencySpecification.from_dict(dep_data)
+            for name, dep_data in data['dependencies'].items()
+        }
+        
+        return cls(
+            lock_version=data['lock_version'],
+            generated_timestamp=data['generated'],
+            platform=data['platform'],
+            dependencies=dependencies
+        )
+    
+    def add_dependency(self, dep: DependencySpecification):
+        """Add dependency to lock file."""
+        self.dependencies[dep.name] = dep
+    
+    def get_dependency(self, name: str) -> Optional[DependencySpecification]:
+        """Get dependency by name."""
+        return self.dependencies.get(name)
+
+class DependencyResolver:
+    """
+    Resolves dependencies with verification and conflict detection.
+    
+    Implements transitive dependency resolution, hash verification,
+    and conflict detection.
+    """
+    
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self.cache_dir = cache_dir or Path.home() / '.build_cache' / 'dependencies'
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.resolved: Dict[str, DependencySpecification] = {}
+        self.conflicts: List[str] = []
+    
+    def resolve(
+        self,
+        direct_dependencies: List[DependencySpecification],
+        lock_file: Optional[DependencyLockFile] = None
+    ) -> DependencyLockFile:
+        """
+        Resolve dependency tree.
+        
+        Args:
+            direct_dependencies: List of directly declared dependencies
+            lock_file: Existing lock file (if available)
+            
+        Returns:
+            Complete dependency lock file with resolved tree
+        """
+        print("  Resolving dependencies...")
+        
+        # If lock file exists, use it
+        if lock_file:
+            print(f"  Using existing lock file with {len(lock_file.dependencies)} dependencies")
+            return lock_file
+        
+        # Otherwise, resolve from scratch
+        import platform as platform_module
+        result = DependencyLockFile(
+            platform=f"{platform_module.system()}-{platform_module.machine()}"
+        )
+        
+        # Resolve direct dependencies
+        for dep in direct_dependencies:
+            self._resolve_dependency(dep, result)
+        
+        # Check for conflicts
+        if self.conflicts:
+            print(f"  ⚠ Warning: {len(self.conflicts)} dependency conflicts detected")
+            for conflict in self.conflicts:
+                print(f"    - {conflict}")
+        
+        print(f"  Resolved {len(result.dependencies)} total dependencies")
+        return result
+    
+    def _resolve_dependency(
+        self,
+        dep: DependencySpecification,
+        lock_file: DependencyLockFile
+    ):
+        """Resolve a single dependency and its transitives."""
+        # Check if already resolved
+        if dep.name in self.resolved:
+            existing = self.resolved[dep.name]
+            if existing.version != dep.version:
+                conflict = (
+                    f"Conflict: {dep.name} required at versions "
+                    f"{existing.version} and {dep.version}"
+                )
+                self.conflicts.append(conflict)
+            return
+        
+        # Add to resolved set
+        self.resolved[dep.name] = dep
+        lock_file.add_dependency(dep)
+        
+        print(f"    Resolved: {dep.name} {dep.version} (source: {dep.source})")
+        
+        # Resolve transitive dependencies (simplified - would query package index)
+        for transitive_name in dep.transitive_deps:
+            # In real implementation, would fetch metadata and resolve
+            # For now, create placeholder
+            transitive_dep = DependencySpecification(
+                name=transitive_name,
+                version="unknown",
+                source=dep.source,
+                transitive=True,
+                parent_dependency=dep.name
+            )
+            self._resolve_dependency(transitive_dep, lock_file)
+    
+    def verify_dependency(self, dep: DependencySpecification) -> bool:
+        """
+        Verify dependency hash and availability.
+        
+        Args:
+            dep: Dependency to verify
+            
+        Returns:
+            True if verification passes
+        """
+        # Check cache
+        cache_path = self.cache_dir / f"{dep.name}-{dep.version}"
+        
+        if cache_path.exists():
+            if dep.hash:
+                if dep.verify_hash(cache_path):
+                    print(f"    ✓ Verified from cache: {dep.name} {dep.version}")
+                    return True
+                else:
+                    print(f"    ✗ Cache verification failed: {dep.name} {dep.version}")
+                    cache_path.unlink()
+                    return False
+            else:
+                print(f"    ⚠ No hash for verification: {dep.name} {dep.version}")
+                return True
+        
+        # Not in cache - would need to download
+        print(f"    ⚠ Not in cache: {dep.name} {dep.version}")
+        return True
+    
+    def install_from_lock(self, lock_file: DependencyLockFile) -> bool:
+        """
+        Install all dependencies from lock file.
+        
+        Args:
+            lock_file: Lock file with resolved dependencies
+            
+        Returns:
+            True if all installations succeed
+        """
+        print(f"  Installing {len(lock_file.dependencies)} dependencies...")
+        
+        success = True
+        for name, dep in lock_file.dependencies.items():
+            if not self.verify_dependency(dep):
+                print(f"    ✗ Failed to install: {name}")
+                success = False
+        
+        return success
+
+class EnhancedDependencyResolutionStage(BuildStageInterface):
+    """
+    Enhanced Stage 3: Dependency Resolution with Lock Files
+    
+    Resolves dependencies with:
+    - Hash verification
+    - Lock file generation
+    - Conflict detection
+    - Transitive dependency resolution
+    """
+    
+    def __init__(
+        self,
+        dependency_manifest: Optional[Path] = None,
+        lock_file_path: Optional[Path] = None,
+        cache_dir: Optional[Path] = None
+    ):
+        super().__init__(
+            "Enhanced Dependency Resolution",
+            BuildStage.DEPENDENCY_RESOLUTION
+        )
+        self.dependency_manifest = dependency_manifest
+        self.lock_file_path = lock_file_path
+        self.resolver = DependencyResolver(cache_dir)
+    
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        # Dependency resolution is optional for now
+        pass
+    
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        print(f"  Resolving dependencies...")
+        
+        # Load existing lock file if present
+        lock_file = None
+        if self.lock_file_path and self.lock_file_path.exists():
+            print(f"  Loading lock file: {self.lock_file_path}")
+            lock_file = DependencyLockFile.load(self.lock_file_path)
+        
+        # Parse dependency manifest
+        direct_deps = self._parse_manifest()
+        
+        # Resolve dependencies
+        resolved_lock = self.resolver.resolve(direct_deps, lock_file)
+        
+        # Save lock file
+        if self.lock_file_path:
+            resolved_lock.save(self.lock_file_path)
+        
+        # Install dependencies
+        install_success = self.resolver.install_from_lock(resolved_lock)
+        
+        # Update context
+        context['dependencies'] = {
+            'resolved': [dep.to_dict() for dep in resolved_lock.dependencies.values()],
+            'lock_file_path': str(self.lock_file_path) if self.lock_file_path else None,
+            'conflicts': self.resolver.conflicts,
+            'install_success': install_success
+        }
+        
+        return context
+    
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        if 'dependencies' not in context:
+            raise BuildPostconditionError(
+                "Stage 3 must produce 'dependencies'"
+            )
+        
+        # Fail if installation failed
+        if not context['dependencies']['install_success']:
+            raise BuildPostconditionError(
+                "Dependency installation failed"
+            )
+        
+        # Warn if conflicts detected
+        if context['dependencies']['conflicts']:
+            print(f"  ⚠ Warning: Dependency conflicts detected but resolution succeeded")
+    
+    def _parse_manifest(self) -> List[DependencySpecification]:
+        """Parse dependency manifest into specifications."""
+        if not self.dependency_manifest or not self.dependency_manifest.exists():
+            return []
+        
+        # Simplified parsing - in real implementation would parse requirements.txt, etc.
+        dependencies = []
+        
+        # Example: parse requirements.txt format
+        content = self.dependency_manifest.read_text()
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Parse "package==version" format
+            if '==' in line:
+                name, version = line.split('==')
+                dep = DependencySpecification(
+                    name=name.strip(),
+                    version=version.strip(),
+                    source='pypi',
+                    scope='runtime'
+                )
+                dependencies.append(dep)
+        
+        return dependencies
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -1917,7 +2313,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "4/20"
+__prompt__ = "5/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")

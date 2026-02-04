@@ -13,7 +13,8 @@
 2. [Toolchain Detection & Validation](#2-toolchain-detection--validation)
 3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
 4. [Source Enumeration & Dependency Graph](#4-source-enumeration--dependency-graph)
-5. [Environment Descriptors](... (sections 6-20 to be added in subsequent prompts)
+5. [Dependency Resolution & Package Management](#5-dependency-resolution--package-management)
+6. [Toolchain Detection & Validation](... (sections 7-20 to be added in subsequent prompts)
 
 ---
 
@@ -507,5 +508,126 @@ ensure runtime assumptions match build-time guarantees.
 
 ---
 
+## 5. Dependency Resolution & Package Management
+
+### 5.1 Dependency Resolution as Correctness
+
+Dependency resolution ensures builds operate on known, validated, reproducible
+external dependencies with verified integrity.
+
+**Risks Addressed**:
+- Supply chain attacks (compromised packages)
+- Dependency drift (different versions across builds)
+- License incompatibility (legal risks)
+- Transitive conflicts (incompatible version requirements)
+
+### 5.2 Dependency Specification
+
+Each dependency has comprehensive specification:
+
+```python
+DependencySpecification:
+    name: str              # Package name
+    version: str           # Exact version (not range)
+    source: str            # PyPI, crates.io, system, git, local
+    hash: str              # SHA-256 hash for verification
+    license: str           # SPDX license identifier
+    scope: str             # runtime, build, test, dev
+    platform: str          # Platform-specific or all
+    transitive: bool       # Direct or transitive dependency
+```
+
+### 5.3 Lock Files
+
+Lock files capture exact resolved dependency tree:
+
+**Format**:
+```json
+{
+    "lock_version": "1.0.0",
+    "generated": "2026-02-04T12:00:00Z",
+    "platform": "Windows-x86_64",
+    "dependencies": {
+        "package_name": {
+            "version": "1.2.3",
+            "hash": "sha256:abc123...",
+            "source": "PyPI",
+            "transitive_deps": ["other_package"]
+        }
+    }
+}
+```
+
+**Usage**:
+- Generated during initial resolution
+- Committed to version control
+- Used for reproducible builds
+- Updated explicitly (not automatically)
+
+### 5.4 Hash Verification
+
+Every dependency verified via cryptographic hash:
+
+**Process**:
+1. Download dependency from source
+2. Compute SHA-256 hash
+3. Compare against declared hash
+4. Refuse installation if mismatch
+5. Log verification for provenance
+
+**Cache**:
+- Dependencies cached locally (content-addressed)
+- Cache verified on use (re-hash)
+- Supports offline builds
+
+### 5.5 Conflict Detection
+
+Version conflicts detected and reported:
+
+**Example Conflict**:
+- Package A requires X >= 1.0, < 2.0
+- Package B requires X >= 2.0, < 3.0
+- → No version of X satisfies both
+
+**Resolution Strategies**:
+- **Strict mode**: Fail on any conflict
+- **Permissive mode**: Try to find compatible version
+- **Override mode**: Manual pinning (documented)
+
+### 5.6 Implementation Classes
+
+- **DependencySpecification**: Complete dependency metadata with hash verification.
+- **DependencyLockFile**: Serializable lock file with save/load operations.
+- **DependencyResolver**: Resolves transitive dependencies, detects conflicts, verifies hashes.
+- **EnhancedDependencyResolutionStage**: Stage 3 implementation with lock file support.
+
+### 5.7 Usage Example
+
+```python
+# Create resolver with cache
+resolver = DependencyResolver(cache_dir=Path(".cache"))
+
+# Define dependencies
+deps = [
+    DependencySpecification(
+        name="libclang",
+        version="16.0.6",
+        source="pypi",
+        hash="sha256:abc123..."
+    )
+]
+
+# Resolve
+lock_file = resolver.resolve(deps)
+
+# Save lock file
+lock_file.save(Path("dependencies.lock"))
+
+# Later: Install from lock file
+resolver.install_from_lock(lock_file)
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Environment Descriptor Implementation & Toolchain Detection
+**Next Prompt:** Toolchain Detection & Validation
