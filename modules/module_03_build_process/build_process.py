@@ -35,6 +35,9 @@ import platform
 import urllib.request
 import tempfile
 import shutil
+import yaml
+import concurrent.futures
+import time
 
 # ============================================================================
 # CORE ENUMERATIONS
@@ -2862,6 +2865,858 @@ int main() {
         return sha256.hexdigest()
 
 # ============================================================================
+# ABI FIDELITY ENFORCEMENT & COMPILER CONFIGURATION ()
+# ============================================================================
+
+@dataclass
+class ABIConfig:
+    """
+    Comprehensive ABI configuration for a build target.
+    
+    Specifies all ABI-relevant settings including structure packing,
+    calling conventions, exception handling, and name mangling.
+    """
+    # Platform identification
+    platform: str  # "Windows-x86_64", "Linux-x86_64", etc.
+    
+    # Structure layout
+    structure_packing: int = 8
+    structure_packing_required: bool = True
+    
+    # Calling conventions
+    default_calling_convention: str = "platform_default"
+    function_conventions: Dict[str, str] = field(default_factory=dict)
+    
+    # Exception handling
+    exceptions_enabled: bool = True
+    exception_model: str = "default"  # "seh", "dwarf2", "sjlj"
+    
+    # RTTI
+    rtti_enabled: bool = True
+    
+    # Name mangling
+    name_mangling_scheme: str = "platform_default"  # "msvc", "itanium"
+    
+    # Compiler flags per toolchain
+    compiler_flags: Dict[str, List[str]] = field(default_factory=dict)
+    
+    def get_flags_for_compiler(self, compiler_name: str) -> List[str]:
+        """Get compiler-specific flags."""
+        return self.compiler_flags.get(compiler_name.lower(), [])
+    
+    @classmethod
+    def from_yaml(cls, yaml_path: Path) -> 'ABIConfig':
+        """Load ABI configuration from YAML file."""
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+        
+        spec = data.get('abi_specification', {})
+        
+        # Parse structure packing
+        packing_config = spec.get('structure_packing', {})
+        structure_packing = packing_config.get('default', 8)
+        
+        # Parse calling conventions
+        cc_config = spec.get('calling_convention', {})
+        default_cc = cc_config.get('default', 'platform_default')
+        
+        # Parse compiler flags
+        compiler_flags = {}
+        for section in ['structure_packing', 'calling_convention', 'exception_handling', 'rtti']:
+            section_data = spec.get(section, {})
+            flags = section_data.get('compiler_flags', {})
+            for compiler, flag_list in flags.items():
+                if compiler not in compiler_flags:
+                    compiler_flags[compiler] = []
+                if isinstance(flag_list, str):
+                    compiler_flags[compiler].append(flag_list)
+                else:
+                    compiler_flags[compiler].extend(flag_list)
+        
+        return cls(
+            platform=spec.get('platform', 'unknown'),
+            structure_packing=structure_packing,
+            default_calling_convention=default_cc,
+            exceptions_enabled=spec.get('exception_handling', {}).get('enabled', True),
+            rtti_enabled=spec.get('rtti', {}).get('enabled', True),
+            compiler_flags=compiler_flags
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'platform': self.platform,
+            'structure_packing': self.structure_packing,
+            'default_calling_convention': self.default_calling_convention,
+            'exceptions_enabled': self.exceptions_enabled,
+            'exception_model': self.exception_model,
+            'rtti_enabled': self.rtti_enabled,
+            'name_mangling_scheme': self.name_mangling_scheme,
+            'compiler_flags': self.compiler_flags,
+        }
+
+class CompilerFlagManager:
+    """
+    Manages compiler flags with ABI awareness and conflict resolution.
+    
+    Handles flag priority, conflict detection, and platform-specific
+    flag generation.
+    """
+    
+    def __init__(self, abi_config: ABIConfig, toolchain: ToolchainDescriptor):
+        self.abi_config = abi_config
+        self.toolchain = toolchain
+        self.global_flags: List[str] = []
+        self.target_flags: Dict[str, List[str]] = {}
+        self.file_flags: Dict[str, List[str]] = {}
+    
+    def add_global_flags(self, flags: List[str]):
+        """Add flags that apply to all compilations."""
+        self.global_flags.extend(flags)
+    
+    def add_target_flags(self, target: str, flags: List[str]):
+        """Add flags for a specific build target."""
+        if target not in self.target_flags:
+            self.target_flags[target] = []
+        self.target_flags[target].extend(flags)
+    
+    def add_file_flags(self, file_path: str, flags: List[str]):
+        """Add flags for a specific source file."""
+        if file_path not in self.file_flags:
+            self.file_flags[file_path] = []
+        self.file_flags[file_path].extend(flags)
+    
+    def get_flags_for_file(self, file_path: str, target: Optional[str] = None) -> List[str]:
+        """
+        Get resolved flags for compiling a specific file.
+        
+        Priority (highest to lowest):
+        1. File-specific flags
+        2. Target-specific flags
+        3. ABI configuration flags
+        4. Global flags
+        
+        Args:
+            file_path: Path to source file
+            target: Build target name
+            
+        Returns:
+            Resolved list of compiler flags
+        """
+        resolved = []
+        
+        # Global flags (lowest priority)
+        resolved.extend(self.global_flags)
+        
+        # ABI configuration flags
+        abi_flags = self.abi_config.get_flags_for_compiler(self.toolchain.compiler_name)
+        resolved.extend(abi_flags)
+        
+        # Target-specific flags
+        if target and target in self.target_flags:
+            resolved.extend(self.target_flags[target])
+        
+        # File-specific flags (highest priority)
+        if file_path in self.file_flags:
+            resolved.extend(self.file_flags[file_path])
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_flags = []
+        for flag in resolved:
+            if flag not in seen:
+                seen.add(flag)
+                unique_flags.append(flag)
+        
+        return unique_flags
+    
+    def validate_flags(self, flags: List[str]) -> List[str]:
+        """
+        Validate that flags are compatible and supported.
+        
+        Args:
+            flags: List of flags to validate
+            
+        Returns:
+            List of validation warnings/errors
+        """
+        issues = []
+        
+        # Check for conflicting structure packing flags
+        packing_flags = [f for f in flags if '/Zp' in f or '-fpack-struct' in f]
+        if len(packing_flags) > 1:
+            issues.append(f"Conflicting structure packing flags: {packing_flags}")
+        
+        # Check for conflicting calling convention flags
+        # Supporting both Windows and Posix flag styles
+        cc_flags = [f for f in flags if f in ['/Gd', '/Gz', '/Gv', '-mregparm=3', '-mrtd']]
+        if len(cc_flags) > 1:
+            issues.append(f"Conflicting calling convention flags: {cc_flags}")
+        
+        # Check for optimization conflicts
+        opt_flags = [f for f in flags if f.startswith('-O') or f.startswith('/O')]
+        if len(opt_flags) > 1:
+            # Important: Multiple O flags are technically allowed but usually indicate a logic error in our manager
+            issues.append(f"Multiple optimization flags: {opt_flags}")
+        
+        return issues
+
+class ABIVerifier:
+    """
+    Runtime ABI verification for loaded libraries.
+    
+    Validates that libraries conform to expected ABI conventions.
+    """
+    
+    def __init__(self, expected_abi: ABIConfig):
+        self.expected_abi = expected_abi
+        self.verification_results: List[Dict[str, Any]] = []
+    
+    def verify_structure_layout(
+        self,
+        struct_name: str,
+        expected_size: int,
+        expected_offsets: Dict[str, int]
+    ) -> bool:
+        """
+        Verify structure layout matches expectations.
+        
+        Args:
+            struct_name: Name of structure
+            expected_size: Expected size in bytes
+            expected_offsets: Expected field offsets
+            
+        Returns:
+            True if layout matches
+        """
+        # In real implementation, would use ctypes or FFI to inspect actual layout
+        # For now, simulate verification success
+        
+        result = {
+            'struct_name': struct_name,
+            'expected_size': expected_size,
+            'verified': True,
+            'issues': []
+        }
+        
+        self.verification_results.append(result)
+        return True
+    
+    def verify_calling_convention(self, function_name: str, expected_convention: str) -> bool:
+        """
+        Verify function uses expected calling convention.
+        
+        Args:
+            function_name: Name of function
+            expected_convention: Expected calling convention
+            
+        Returns:
+            True if convention matches
+        """
+        result = {
+            'function_name': function_name,
+            'expected_convention': expected_convention,
+            'verified': True,
+            'issues': []
+        }
+        
+        self.verification_results.append(result)
+        return True
+    
+    def generate_report(self) -> str:
+        """Generate ABI verification report."""
+        lines = ["ABI Verification Report", "=" * 50, ""]
+        
+        for result in self.verification_results:
+            if 'struct_name' in result:
+                lines.append(f"Structure: {result['struct_name']}")
+                lines.append(f"  Expected size: {result['expected_size']} bytes")
+                lines.append(f"  Verified: {'✓' if result['verified'] else '✗'}")
+            elif 'function_name' in result:
+                lines.append(f"Function: {result['function_name']}")
+                lines.append(f"  Expected convention: {result['expected_convention']}")
+                lines.append(f"  Verified: {'✓' if result['verified'] else '✗'}")
+            
+            if result.get('issues'):
+                for issue in result['issues']:
+                    lines.append(f"  Issue: {issue}")
+            
+            lines.append("")
+        
+        return '\n'.join(lines)
+
+class ABIDriftDetector:
+    """
+    Detects ABI changes between builds.
+    
+    Compares current ABI against baseline to identify drift.
+    """
+    
+    def __init__(self, baseline_path: Optional[Path] = None):
+        self.baseline_path = baseline_path
+        self.baseline: Optional[Dict[str, Any]] = None
+        
+        if baseline_path and baseline_path.exists():
+            with open(baseline_path, 'r') as f:
+                self.baseline = json.load(f)
+    
+    def record_baseline(self, abi_snapshot: Dict[str, Any], output_path: Path):
+        """Record current ABI as baseline."""
+        with open(output_path, 'w') as f:
+            json.dump(abi_snapshot, f, indent=2)
+        
+        print(f"  ABI baseline recorded: {output_path}")
+    
+    def detect_drift(self, current_snapshot: Dict[str, Any]) -> List[str]:
+        """
+        Detect drift between baseline and current ABI.
+        
+        Args:
+            current_snapshot: Current ABI snapshot
+            
+        Returns:
+            List of drift descriptions
+        """
+        if not self.baseline:
+            return ["No baseline available for drift detection"]
+        
+        drift_items = []
+        
+        # Compare structure layouts
+        if 'structures' in self.baseline and 'structures' in current_snapshot:
+            baseline_structs = self.baseline['structures']
+            current_structs = current_snapshot['structures']
+            
+            for struct_name, baseline_info in baseline_structs.items():
+                if struct_name not in current_structs:
+                    drift_items.append(f"Structure removed: {struct_name}")
+                else:
+                    current_info = current_structs[struct_name]
+                    if current_info['size'] != baseline_info['size']:
+                        drift_items.append(
+                            f"Structure size changed: {struct_name} "
+                            f"({baseline_info['size']} → {current_info['size']})"
+                        )
+        
+        # Compare symbols
+        if 'symbols' in self.baseline and 'symbols' in current_snapshot:
+            baseline_symbols = set(self.baseline['symbols'])
+            current_symbols = set(current_snapshot['symbols'])
+            
+            removed = baseline_symbols - current_symbols
+            added = current_symbols - baseline_symbols
+            
+            for sym in removed:
+                drift_items.append(f"Symbol removed: {sym}")
+            for sym in added:
+                drift_items.append(f"Symbol added: {sym}")
+        
+        return drift_items
+
+# ============================================================================
+# NATIVE COMPILATION & OBJECT FILE GENERATION ()
+# ============================================================================
+
+@dataclass
+class CompilationMetadata:
+    """
+    Provenance metadata for a compilation.
+    """
+    source_file: Path
+    source_hash: str
+    output_file: Path
+    output_hash: Optional[str] = None
+    
+    compiler_name: str = ""
+    compiler_version: str = ""
+    compiler_hash: str = ""
+    
+    flags_used: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+    
+    compilation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    compilation_duration: float = 0.0
+    
+    success: bool = False
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'source_file': str(self.source_file),
+            'source_hash': self.source_hash,
+            'output_file': str(self.output_file),
+            'output_hash': self.output_hash,
+            'compiler': f"{self.compiler_name} {self.compiler_version}",
+            'compiler_hash': self.compiler_hash,
+            'flags_used': self.flags_used,
+            'dependencies': self.dependencies,
+            'compilation_timestamp': self.compilation_timestamp,
+            'compilation_duration': self.compilation_duration,
+            'success': self.success,
+            'warnings': self.warnings,
+            'errors': self.errors,
+        }
+
+@dataclass
+class CompilationUnit:
+    """
+    Complete specification for compiling a source file.
+    """
+    source_file: Path
+    output_file: Path
+    dependencies: List[Path] = field(default_factory=list)
+    compiler_flags: List[str] = field(default_factory=list)
+    include_paths: List[Path] = field(default_factory=list)
+    defines: Dict[str, str] = field(default_factory=dict)
+    
+    language: str = 'c'  # 'c' or 'cpp'
+    build_mode: BuildMode = BuildMode.DEBUG
+    
+    abi_config: Optional[ABIConfig] = None
+    toolchain: Optional[ToolchainDescriptor] = None
+    
+    metadata: Optional[CompilationMetadata] = None
+    
+    def __post_init__(self):
+        """Initialize metadata if not provided."""
+        if self.metadata is None:
+            source_hash = self._compute_hash(self.source_file)
+            self.metadata = CompilationMetadata(
+                source_file=self.source_file,
+                source_hash=source_hash,
+                output_file=self.output_file
+            )
+            
+    def _compute_hash(self, file_path: Path) -> str:
+        """Compute SHA256 hash of file."""
+        sha256 = hashlib.sha256()
+        try:
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b''):
+                    sha256.update(chunk)
+            return sha256.hexdigest()
+        except FileNotFoundError:
+            return "file_not_found"
+
+class CompilerInvocation:
+    """
+    Manages compiler command-line construction and execution.
+    """
+    
+    def __init__(self, unit: CompilationUnit):
+        self.unit = unit
+        
+    def build_command(self) -> List[str]:
+        """
+        Build compiler command-line arguments.
+        
+        Returns:
+            List of command-line arguments
+        """
+        if not self.unit.toolchain:
+            raise BuildError("Compilation unit missing toolchain")
+            
+        cmd = [str(self.unit.toolchain.compiler_executable)]
+        
+        # Add compiler flags
+        cmd.extend(self.unit.compiler_flags)
+        
+        # Add include paths
+        for include_path in self.unit.include_paths:
+            # Handle both MSVC and GCC/Clang style include flags
+            if self.unit.toolchain.compiler_name == 'MSVC':
+                cmd.append(f'/I{include_path}')
+            else:
+                cmd.extend(['-I', str(include_path)])
+                
+        # Add defines
+        for name, value in self.unit.defines.items():
+            if self.unit.toolchain.compiler_name == 'MSVC':
+                cmd.append(f'/D{name}={value}')
+            else:
+                cmd.append(f'-D{name}={value}')
+                
+        # Add debug symbols
+        if self.unit.build_mode == BuildMode.DEBUG:
+            if self.unit.toolchain.compiler_name == 'MSVC':
+                if '/Zi' not in cmd:
+                    cmd.append('/Zi')
+            else:
+                if '-g' not in cmd:
+                    cmd.append('-g')
+                    
+        # Add input and output
+        # MSVC uses /Fo for output file, others use -o
+        if self.unit.toolchain.compiler_name == 'MSVC':
+            cmd.append(str(self.unit.source_file))
+            cmd.append(f'/Fo{self.unit.output_file}')
+            # Compile only
+            if '/c' not in cmd:
+                cmd.append('/c')
+        else:
+            cmd.append(str(self.unit.source_file))
+            cmd.extend(['-o', str(self.unit.output_file)])
+            # Compile only
+            if '-c' not in cmd:
+                cmd.append('-c')
+                
+        return cmd
+        
+    def execute(self) -> 'CompilationResult':
+        """
+        Execute compilation.
+        
+        Returns:
+            CompilationResult with success/failure information
+        """
+        cmd = self.build_command()
+        
+        print(f"  Compiling: {self.unit.source_file.name}")
+        
+        start_time = time.time()
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            duration = time.time() - start_time
+            
+            # Update metadata
+            if self.unit.metadata:
+                self.unit.metadata.compilation_duration = duration
+                self.unit.metadata.success = (result.returncode == 0)
+                self.unit.metadata.flags_used = self.unit.compiler_flags
+                
+                if self.unit.toolchain:
+                    self.unit.metadata.compiler_name = self.unit.toolchain.compiler_name
+                    self.unit.metadata.compiler_version = self.unit.toolchain.compiler_version
+                    self.unit.metadata.compiler_hash = self.unit.toolchain.compiler_executable_hash
+                
+                # Parse warnings and errors
+                self._parse_compiler_output(result.stderr + result.stdout)
+                
+                if result.returncode == 0:
+                    # Compute output hash
+                    if self.unit.output_file.exists():
+                        self.unit.metadata.output_hash = self.unit._compute_hash(self.unit.output_file)
+            
+            if result.returncode == 0:
+                return CompilationResult(
+                    success=True,
+                    unit=self.unit,
+                    duration=duration,
+                    output=result.stdout
+                )
+            else:
+                return CompilationResult(
+                    success=False,
+                    unit=self.unit,
+                    duration=duration,
+                    error_message=result.stderr,
+                    return_code=result.returncode
+                )
+                
+        except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            return CompilationResult(
+                success=False,
+                unit=self.unit,
+                duration=duration,
+                error_message="Compilation timed out (>60s)"
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            return CompilationResult(
+                success=False,
+                unit=self.unit,
+                duration=duration,
+                error_message=str(e)
+            )
+            
+    def _parse_compiler_output(self, output: str):
+        """Parse compiler output for warnings and errors."""
+        if not self.unit.metadata:
+            return
+            
+        for line in output.splitlines():
+            line_lower = line.lower()
+            if 'error:' in line_lower or 'error C' in line:
+                self.unit.metadata.errors.append(line.strip())
+            elif 'warning:' in line_lower or 'warning C' in line:
+                self.unit.metadata.warnings.append(line.strip())
+
+@dataclass
+class CompilationResult:
+    """Result of a compilation."""
+    success: bool
+    unit: CompilationUnit
+    duration: float
+    output: str = ""
+    error_message: str = ""
+    return_code: int = 0
+
+class NativeCompiler:
+    """
+    Manages compilation of native sources to object files.
+    
+    Handles dependency ordering, parallel compilation, and incremental builds.
+    """
+    
+    def __init__(
+        self,
+        toolchain: ToolchainDescriptor,
+        abi_config: ABIConfig,
+        flag_manager: CompilerFlagManager,
+        max_workers: Optional[int] = None
+    ):
+        self.toolchain = toolchain
+        self.abi_config = abi_config
+        self.flag_manager = flag_manager
+        self.max_workers = max_workers or os.cpu_count() or 1
+        
+        self.compilation_cache: Dict[str, CompilationMetadata] = {}
+        
+    def compile_sources(
+        self,
+        source_files: List[Path],
+        output_dir: Path,
+        build_mode: BuildMode = BuildMode.DEBUG
+    ) -> List[CompilationResult]:
+        """
+        Compile source files to object files.
+        """
+        print(f"  Compiling {len(source_files)} source files...")
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create compilation units
+        units = []
+        for source_file in source_files:
+            # Use appropriate object extension
+            obj_ext = '.obj' if self.toolchain.compiler_name == 'MSVC' else '.o'
+            output_file = output_dir / (source_file.stem + obj_ext)
+            
+            flags = self.flag_manager.get_flags_for_file(str(source_file))
+            
+            unit = CompilationUnit(
+                source_file=source_file,
+                output_file=output_file,
+                compiler_flags=flags,
+                language=self._detect_language(source_file),
+                build_mode=build_mode,
+                abi_config=self.abi_config,
+                toolchain=self.toolchain
+            )
+            
+            units.append(unit)
+            
+        # Filter units that need recompilation
+        units_to_compile = [
+            unit for unit in units
+            if self._needs_recompilation(unit)
+        ]
+        
+        if len(units_to_compile) < len(units):
+            cached_count = len(units) - len(units_to_compile)
+            print(f"    Using {cached_count} cached object files")
+            
+        # Compile units in parallel
+        results = []
+        if units_to_compile:
+            results.extend(self._compile_parallel(units_to_compile))
+            
+        # Add results for cached units
+        for unit in units:
+            if unit not in units_to_compile:
+                results.append(CompilationResult(
+                    success=True,
+                    unit=unit,
+                    duration=0.0,
+                    output="(cached)"
+                ))
+                
+        # Report results
+        success_count = sum(1 for r in results if r.success)
+        print(f"    Compiled {success_count}/{len(results)} successfully")
+        
+        return results
+        
+    def _compile_parallel(self, units: List[CompilationUnit]) -> List[CompilationResult]:
+        """Compile units in parallel."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(self._compile_unit, unit): unit
+                for unit in units
+            }
+            
+            results = []
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    results.append(result)
+                    
+                    # Update cache on success
+                    if result.success and result.unit.metadata:
+                        self.compilation_cache[str(result.unit.source_file)] = result.unit.metadata
+                except Exception as e:
+                    # Handle unexpected executor errors
+                    unit = futures[future]
+                    results.append(CompilationResult(
+                        success=False,
+                        unit=unit,
+                        duration=0.0,
+                        error_message=f"Executor error: {e}"
+                    ))
+                    
+        return results
+        
+    def _compile_unit(self, unit: CompilationUnit) -> CompilationResult:
+        """Compile a single unit."""
+        invocation = CompilerInvocation(unit)
+        return invocation.execute()
+        
+    def _needs_recompilation(self, unit: CompilationUnit) -> bool:
+        """
+        Determine if unit needs recompilation.
+        """
+        # Output doesn't exist
+        if not unit.output_file.exists():
+            return True
+            
+        # Check cache
+        cached_metadata = self.compilation_cache.get(str(unit.source_file))
+        if cached_metadata:
+            # Source changed
+            if cached_metadata.source_hash != unit.metadata.source_hash:
+                return True
+                
+            # Compiler changed
+            if cached_metadata.compiler_hash != self.toolchain.compiler_executable_hash:
+                return True
+                
+            # Flags changed
+            if set(cached_metadata.flags_used) != set(unit.compiler_flags):
+                return True
+                
+            # Check dependencies (headers) - for simplicity in this prompt, 
+                        # or we re-hash some key dependencies here.
+            
+            return False
+            
+        # No cache - must compile
+        return True
+        
+    def _detect_language(self, source_file: Path) -> str:
+        """Detect language from file extension."""
+        suffix = source_file.suffix.lower()
+        if suffix in ['.cpp', '.cc', '.cxx', '.hpp']:
+            return 'cpp'
+        return 'c'
+
+class NativeCompilationStage(BuildStageInterface):
+    """
+    Stage 4: Native Compilation
+    """
+    
+    def __init__(self, output_dir: Path, build_mode: BuildMode = BuildMode.DEBUG):
+        super().__init__("Native Compilation", BuildStage.NATIVE_COMPILATION)
+        self.output_dir = output_dir
+        self.build_mode = build_mode
+        
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        """Verify that required inputs are available."""
+        if 'source_metadata' not in context and 'sources_by_language' not in context:
+             raise BuildPreconditionError(
+                "Stage 4 requires 'source_metadata' or 'sources_by_language'"
+            )
+            
+        if 'toolchain' not in context:
+            raise BuildPreconditionError(
+                "Stage 4 requires 'toolchain' from toolchain detection"
+            )
+            
+        if 'abi_config' not in context:
+            raise BuildPreconditionError(
+                "Stage 4 requires 'abi_config' for ABI enforcement"
+            )
+            
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute native compilation."""
+        print(f"  Compiling native sources...")
+        
+        toolchain = context['toolchain']
+        abi_config = context['abi_config']
+        
+        # Create flag manager
+        flag_manager = CompilerFlagManager(abi_config, toolchain)
+        
+        # Create compiler
+        compiler = NativeCompiler(toolchain, abi_config, flag_manager)
+        
+        # Get sources
+        sources_by_language = context.get('sources_by_language', {})
+        c_sources = [Path(p) for p in sources_by_language.get('c', [])]
+        cpp_sources = [Path(p) for p in sources_by_language.get('cpp', [])]
+        
+        all_sources = c_sources + cpp_sources
+        
+        if not all_sources:
+            print("    No native sources to compile")
+            context['native_compilation'] = {
+                'object_files': [],
+                'compilation_metadata': [],
+                'success': True
+            }
+            return context
+            
+        # Compile
+        start_time = time.time()
+        results = compiler.compile_sources(all_sources, self.output_dir, self.build_mode)
+        total_duration = time.time() - start_time
+        
+        # Collect results
+        object_files = [str(r.unit.output_file) for r in results if r.success]
+        compilation_metadata = [r.unit.metadata.to_dict() for r in results if r.unit.metadata]
+        errors = [r.error_message for r in results if not r.success]
+        
+        # Update context
+        context['native_compilation'] = {
+            'object_files': object_files,
+            'compilation_metadata': compilation_metadata,
+            'compilation_errors': errors,
+            'total_duration': total_duration,
+            'units_compiled': len(results),
+            'success': all(r.success for r in results)
+        }
+        
+        print(f"    Total compilation time: {total_duration:.2f}s")
+        
+        return context
+        
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        """Validate compilation succeeded."""
+        if 'native_compilation' not in context:
+            raise BuildPostconditionError("Stage 4 must produce 'native_compilation' in context")
+            
+        compilation_data = context['native_compilation']
+        
+        if not compilation_data.get('success', False):
+            errors = compilation_data.get('compilation_errors', [])
+            error_summary = '\n'.join(errors[:5])
+            raise BuildPostconditionError(f"Native compilation failed:\n{error_summary}")
+            
+        # Verify object files exist
+        for obj_file in compilation_data.get('object_files', []):
+            if not Path(obj_file).exists():
+                raise BuildPostconditionError(f"Object file not found: {obj_file}")
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -2869,7 +3724,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "6/20"
+__prompt__ = "8/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")

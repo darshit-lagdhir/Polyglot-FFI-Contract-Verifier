@@ -677,5 +677,378 @@ class TestToolchainValidator:
         assert "14.0.0" in cache_key
         assert "x86_64" in cache_key
 
+class TestABIConfig:
+    """Test ABI configuration model."""
+
+    def test_abi_config_creation(self):
+        """Test creating ABI configuration."""
+        from modules.module_03_build_process.build_process import ABIConfig
+        
+        config = ABIConfig(
+            platform="Windows-x86_64",
+            structure_packing=8,
+            default_calling_convention="microsoft_x64",
+            exceptions_enabled=True,
+            rtti_enabled=True
+        )
+        
+        assert config.platform == "Windows-x86_64"
+        assert config.structure_packing == 8
+        assert config.exceptions_enabled is True
+
+    def test_abi_config_serialization(self):
+        """Test ABI config to_dict."""
+        from modules.module_03_build_process.build_process import ABIConfig
+        
+        config = ABIConfig(
+            platform="Linux-x86_64",
+            structure_packing=1,
+            default_calling_convention="sysv_amd64"
+        )
+        
+        data = config.to_dict()
+        assert data['platform'] == "Linux-x86_64"
+        assert data['structure_packing'] == 1
+
+class TestCompilerFlagManager:
+    """Test compiler flag management."""
+
+    def test_flag_manager_creation(self):
+        """Test creating compiler flag manager."""
+        from modules.module_03_build_process.build_process import (
+            CompilerFlagManager, ABIConfig
+        )
+        
+        abi_config = ABIConfig(platform="Windows-x86_64")
+        toolchain = self._create_test_toolchain()
+        
+        manager = CompilerFlagManager(abi_config, toolchain)
+        assert manager.abi_config == abi_config
+        assert manager.toolchain == toolchain
+
+    def test_flag_priority(self):
+        """Test flag priority resolution."""
+        from modules.module_03_build_process.build_process import (
+            CompilerFlagManager, ABIConfig
+        )
+        
+        abi_config = ABIConfig(
+            platform="Windows-x86_64",
+            compiler_flags={'msvc': ['/Zp8']}
+        )
+        toolchain = self._create_test_toolchain()
+        
+        manager = CompilerFlagManager(abi_config, toolchain)
+        
+        # Add flags at different priorities
+        manager.add_global_flags(['/O2'])
+        manager.add_target_flags('mylib', ['/DNDEBUG'])
+        manager.add_file_flags('src/main.c', ['/W4'])
+        
+        # Get resolved flags for file
+        flags = manager.get_flags_for_file('src/main.c', 'mylib')
+        
+        # Should include all flags
+        assert '/O2' in flags  # Global
+        assert '/Zp8' in flags  # ABI
+        assert '/DNDEBUG' in flags  # Target
+        assert '/W4' in flags  # File-specific
+
+    def test_flag_validation(self):
+        """Test flag conflict detection."""
+        from modules.module_03_build_process.build_process import (
+            CompilerFlagManager, ABIConfig
+        )
+        
+        abi_config = ABIConfig(platform="Windows-x86_64")
+        toolchain = self._create_test_toolchain()
+        
+        manager = CompilerFlagManager(abi_config, toolchain)
+        
+        # Conflicting structure packing flags
+        issues = manager.validate_flags(['/Zp4', '/Zp8'])
+        assert len(issues) > 0
+        assert 'Conflicting' in issues[0]
+
+    def _create_test_toolchain(self):
+        """Create test toolchain descriptor."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="MSVC",
+            compiler_version="19.29",
+            compiler_full_version="19.29.30133",
+            compiler_executable=Path("/usr/bin/cl.exe"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/link.exe"),
+            linker_executable_hash="hash",
+            linker_version="14.29",
+            target_triple="Windows-x86_64-msvc",
+            target_os="Windows",
+            target_architecture="x86_64",
+            target_abi="msvc",
+            default_calling_convention="microsoft_x64",
+            default_structure_packing=8,
+            supports_explicit_packing=True,
+            name_mangling_scheme="msvc",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=False
+        )
+
+class TestABIVerifier:
+    """Test ABI runtime verification."""
+
+    def test_verifier_creation(self):
+        """Test creating ABI verifier."""
+        from modules.module_03_build_process.build_process import (
+            ABIVerifier, ABIConfig
+        )
+        
+        abi_config = ABIConfig(platform="Windows-x86_64")
+        verifier = ABIVerifier(abi_config)
+        
+        assert verifier.expected_abi == abi_config
+        assert len(verifier.verification_results) == 0
+
+    def test_structure_verification(self):
+        """Test structure layout verification."""
+        from modules.module_03_build_process.build_process import (
+            ABIVerifier, ABIConfig
+        )
+        
+        abi_config = ABIConfig(platform="Windows-x86_64")
+        verifier = ABIVerifier(abi_config)
+        
+        result = verifier.verify_structure_layout(
+            "TestStruct",
+            expected_size=12,
+            expected_offsets={"a": 0, "b": 4, "c": 8}
+        )
+        
+        assert result is True
+        assert len(verifier.verification_results) == 1
+
+    def test_report_generation(self):
+        """Test verification report generation."""
+        from modules.module_03_build_process.build_process import (
+            ABIVerifier, ABIConfig
+        )
+        
+        abi_config = ABIConfig(platform="Windows-x86_64")
+        verifier = ABIVerifier(abi_config)
+        
+        verifier.verify_structure_layout("MyStruct", 16, {"x": 0})
+        verifier.verify_calling_convention("my_function", "cdecl")
+        
+        report = verifier.generate_report()
+        assert "MyStruct" in report
+        assert "my_function" in report
+
+class TestABIDriftDetector:
+    """Test ABI drift detection."""
+
+    def test_drift_detector_creation(self):
+        """Test creating drift detector."""
+        from modules.module_03_build_process.build_process import ABIDriftDetector
+        
+        detector = ABIDriftDetector()
+        assert detector.baseline is None
+
+    def test_drift_detection(self):
+        """Test detecting ABI drift."""
+        from modules.module_03_build_process.build_process import ABIDriftDetector
+        
+        detector = ABIDriftDetector()
+        
+        # Set baseline
+        detector.baseline = {
+            'structures': {
+                'MyStruct': {'size': 12, 'fields': {'a': 0, 'b': 4}}
+            },
+            'symbols': ['foo', 'bar']
+        }
+        
+        # Current snapshot with changes
+        current = {
+            'structures': {
+                'MyStruct': {'size': 16, 'fields': {'a': 0, 'b': 4}}  # Size changed
+            },
+            'symbols': ['foo', 'baz']  # 'bar' removed, 'baz' added
+        }
+        
+        drift = detector.detect_drift(current)
+        
+        assert len(drift) > 0
+        assert any('size changed' in d for d in drift)
+        assert any('Symbol removed: bar' in d for d in drift)
+        assert any('Symbol added: baz' in d for d in drift)
+
+class TestCompilationMetadata:
+    """Test compilation metadata."""
+
+    def test_metadata_creation(self):
+        """Test creating compilation metadata."""
+        from modules.module_03_build_process.build_process import CompilationMetadata
+        
+        metadata = CompilationMetadata(
+            source_file=Path("test.c"),
+            source_hash="abc123",
+            output_file=Path("test.o"),
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            success=True
+        )
+        
+        assert metadata.source_file == Path("test.c")
+        assert metadata.compiler_name == "GCC"
+        assert metadata.success is True
+
+    def test_metadata_serialization(self):
+        """Test metadata to_dict."""
+        from modules.module_03_build_process.build_process import CompilationMetadata
+        
+        metadata = CompilationMetadata(
+            source_file=Path("main.c"),
+            source_hash="hash1",
+            output_file=Path("main.o"),
+            flags_used=['-O2', '-g'],
+            warnings=["unused variable"]
+        )
+        
+        data = metadata.to_dict()
+        assert 'source_file' in data
+        assert data['flags_used'] == ['-O2', '-g']
+        assert len(data['warnings']) == 1
+
+class TestCompilationUnit:
+    """Test compilation unit."""
+
+    def test_unit_creation(self, tmp_path):
+        """Test creating compilation unit."""
+        from modules.module_03_build_process.build_process import (
+            CompilationUnit, BuildMode
+        )
+        
+        source = tmp_path / "mod.c"
+        source.write_text("int main() { return 0; }")
+        
+        unit = CompilationUnit(
+            source_file=source,
+            output_file=tmp_path / "mod.o",
+            compiler_flags=['-O2'],
+            language='c',
+            build_mode=BuildMode.RELEASE
+        )
+        
+        assert unit.source_file == source
+        assert unit.language == 'c'
+        assert unit.build_mode == BuildMode.RELEASE
+        assert unit.metadata is not None
+
+class TestCompilerInvocation:
+    """Test compiler invocation."""
+
+    def test_invocation_command_building(self):
+        """Test building compiler command."""
+        from modules.module_03_build_process.build_process import (
+            CompilerInvocation, CompilationUnit, BuildMode
+        )
+        
+        toolchain = self._create_test_toolchain()
+        
+        unit = CompilationUnit(
+            source_file=Path("test.c"),
+            output_file=Path("test.o"),
+            compiler_flags=['-O2'],
+            include_paths=[Path("/usr/include")],
+            defines={'DEBUG': '1'},
+            language='c',
+            build_mode=BuildMode.DEBUG,
+            toolchain=toolchain
+        )
+        
+        invocation = CompilerInvocation(unit)
+        cmd = invocation.build_command()
+        
+        assert str(toolchain.compiler_executable) in cmd
+        assert '-O2' in cmd
+        # GCC style flags
+        assert '-I' in cmd
+        assert str(Path("/usr/include")) in cmd
+        assert '-DDEBUG=1' in cmd
+        assert 'test.c' in cmd
+        assert 'test.o' in cmd
+
+    def _create_test_toolchain(self):
+        """Create test toolchain."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_full_version="11.2.0",
+            compiler_executable=Path("/usr/bin/gcc"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+
+class TestNativeCompiler:
+    """Test native compiler."""
+
+    def test_compiler_creation(self):
+        """Test creating native compiler."""
+        from modules.module_03_build_process.build_process import (
+            NativeCompiler, ABIConfig, CompilerFlagManager
+        )
+        
+        toolchain = self._create_test_toolchain()
+        abi_config = ABIConfig(platform="Linux-x86_64")
+        flag_manager = CompilerFlagManager(abi_config, toolchain)
+        
+        compiler = NativeCompiler(toolchain, abi_config, flag_manager)
+        
+        assert compiler.toolchain == toolchain
+        assert compiler.abi_config == abi_config
+
+    def _create_test_toolchain(self):
+        """Create test toolchain."""
+        from modules.module_03_build_process.build_process import ToolchainDescriptor
+        
+        return ToolchainDescriptor(
+            compiler_name="GCC",
+            compiler_version="11.2.0",
+            compiler_full_version="11.2.0",
+            compiler_executable=Path("/usr/bin/gcc"),
+            compiler_executable_hash="hash",
+            linker_executable=Path("/usr/bin/ld"),
+            linker_executable_hash="hash",
+            linker_version="2.38",
+            target_triple="x86_64-pc-linux-gnu",
+            target_os="Linux",
+            target_architecture="x86_64",
+            target_abi="gnu",
+            default_calling_convention="sysv",
+            default_structure_packing=1,
+            supports_explicit_packing=True,
+            name_mangling_scheme="itanium",
+            supports_debug_symbols=True,
+            supports_optimization=True,
+            deterministic_output=True
+        )
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

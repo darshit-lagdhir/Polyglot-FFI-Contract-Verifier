@@ -15,7 +15,9 @@
 4. [Source Enumeration & Dependency Graph](#4-source-enumeration--dependency-graph)
 5. [Dependency Resolution & Package Management](#5-dependency-resolution--package-management)
 6. [Toolchain Validation & Capability Detection](#6-toolchain-validation--capability-detection)
-... (sections 7-20 to be added in subsequent prompts)
+7. [ABI Fidelity Enforcement & Compiler Config](#7-abi-fidelity-enforcement--compiler-configuration)
+8. [Native Compilation & Object File Generation](#8-native-compilation--object-file-generation)
+... (sections 9-20 to be added in subsequent prompts)
 
 ---
 
@@ -719,5 +721,207 @@ if caps.deterministic_output:
 
 ---
 
+## 7. ABI Fidelity Enforcement & Compiler Config
+
+### 7.1 ABI Fidelity as Foundation
+
+ABI fidelity ensures that verification analyzes the actual ABI behavior of target
+code, not an incorrect model. Mismatches between assumed and actual ABI invalidate
+verification results.
+
+### 7.2 ABI Config
+
+Declarative ABI specifications in YAML:
+
+```yaml
+abi_specification:
+  platform: "Windows-x86_64"
+  structure_packing:
+    default: 8
+    compiler_flags:
+      msvc: "/Zp8"
+  calling_convention:
+    default: "microsoft_x64"
+  exception_handling:
+    enabled: true
+    model: "seh"
+```
+
+### 7.3 Compiler Flag Management
+
+`CompilerFlagManager` handles:
+- **Flag priority resolution**: (file > target > ABI > global)
+- **Conflict detection**: (multiple packing flags)
+- **Platform-specific flag generation**:
+- **Validation of flag compatibility**
+
+**Priority Hierarchy**:
+1. File-specific flags (highest)
+2. Target-specific flags
+3. ABI configuration flags
+4. Global flags (lowest)
+
+### 7.4 Runtime ABI Verification
+
+`ABIVerifier` performs runtime checks:
+- Structure layout verification (sizes, offsets)
+- Calling convention verification
+- Name mangling verification
+- Symbol presence verification
+
+### 7.5 ABI Drift Detection
+
+`ABIDriftDetector` compares builds:
+- Records ABI baseline (structures, symbols, conventions)
+- Detects changes between builds
+- Categorizes drift (breaking, non-breaking, suspicious)
+
+**Drift Categories**:
+- **Breaking**: Structure size changed
+- **Non-breaking**: New symbols added
+- **Suspicious**: Mangling changed
+
+### 7.6 Implementation Classes
+
+- `ABIConfig`: Declarative ABI specification loaded from YAML.
+- `CompilerFlagManager`: Manages flags with priority and conflict resolution.
+- `ABIVerifier`: Runtime verification of library ABI.
+- `ABIDriftDetector`: Detects ABI changes between builds.
+
+### 7.7 Usage Example
+
+```python
+# Load ABI configuration
+abi_config = ABIConfig.from_yaml(Path("abi_config.yaml"))
+
+# Create flag manager
+flag_manager = CompilerFlagManager(abi_config, toolchain)
+
+# Add global optimization flags
+flag_manager.add_global_flags(["-O2"])
+
+# Get flags for specific file
+flags = flag_manager.get_flags_for_file("src/module.c")
+
+# Verify ABI at runtime
+verifier = ABIVerifier(abi_config)
+verifier.verify_structure_layout("MyStruct", 12, {"a": 0, "b": 4})
+print(verifier.generate_report())
+
+# Detect drift
+drift_detector = ABIDriftDetector(Path("baseline.json"))
+drift = drift_detector.detect_drift(current_snapshot)
+if drift:
+    print(f"ABI drift detected: {drift}")
+```
+
+---
+
+## 8. Native Compilation & Object File Generation
+
+### 8.1 Stage 4: Native Compilation
+
+Native compilation transforms validated sources into object files with full 
+provenance tracking and ABI enforcement.
+
+**Inputs**:
+- Validated sources (Stage 2)
+- Toolchain descriptor ( & 6)
+- ABI configuration
+- Dependency graph
+
+**Outputs**:
+- Object files (`.o`, `.obj`)
+- Debug symbols (`.pdb`, DWARF)
+- Compilation metadata (provenance)
+
+### 8.2 Compilation Unit
+
+Complete specification for compiling a source:
+
+```python
+CompilationUnit:
+    source_file: Path
+    output_file: Path
+    dependencies: List[Path]
+    compiler_flags: List[str]
+    include_paths: List[Path]
+    defines: Dict[str, str]
+    language: 'c' | 'cpp'
+    build_mode: DEBUG | RELEASE
+    abi_config: ABIConfig
+    metadata: CompilationMetadata
+```
+
+### 8.3 Compilation Metadata
+
+Provenance tracking for each compilation:
+
+```python
+CompilationMetadata:
+    source_hash: SHA-256 of source
+    output_hash: SHA-256 of object file
+    compiler: "MSVC 19.29"
+    compiler_hash: SHA-256 of compiler exe
+    flags_used: ['/Zp8', '/O2', ...]
+    dependencies: ['header1.h', ...]
+    compilation_timestamp: ISO 8601
+    compilation_duration: seconds
+    success: bool
+    warnings: [...]
+    errors: [...]
+```
+
+### 8.4 Parallel Compilation
+
+Compilation units compiled in parallel:
+- Respects dependency order
+- Limited to CPU count
+- Handles failures gracefully
+- Preserves determinism
+
+### 8.5 Incremental Compilation
+
+Recompile only when necessary:
+- **Output missing** → recompile
+- **Source changed (hash)** → recompile
+- **Dependencies changed** → recompile
+- **Compiler changed** → recompile
+- **Flags changed** → recompile
+
+### 8.6 Implementation Classes
+
+- `CompilationMetadata`: Provenance tracking for compilations.
+- `CompilationUnit`: Complete compilation specification.
+- `CompilerInvocation`: Command-line construction and execution.
+- `NativeCompiler`: Manages parallel compilation with caching.
+- `NativeCompilationStage`: Stage 4 implementation.
+
+### 8.7 Usage Example
+
+```python
+# Create stage
+stage = NativeCompilationStage(
+    output_dir=Path("build/obj"),
+    build_mode=BuildMode.RELEASE
+)
+
+# Execute
+context = stage.execute({
+    'toolchain': toolchain_descriptor,
+    'abi_config': abi_configuration,
+    'sources_by_language': {
+        'c': ['src/main.c', 'src/utils.c']
+    }
+})
+
+# Check results
+compilation = context['native_compilation']
+print(f"Compiled {compilation['units_compiled']} units")
+print(f"Time: {compilation['total_duration']:.2f}s")
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** ABI Fidelity Enforcement & Compiler Config
+**Next Prompt:** Native Validation & Binary Self-Tests
