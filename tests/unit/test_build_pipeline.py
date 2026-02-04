@@ -1266,5 +1266,148 @@ class TestExecutableValidator:
         validator = ExecutableValidator()
         assert validator is not None
 
+class TestAdapterMetadata:
+    """Test adapter metadata."""
+
+    def test_metadata_creation(self):
+        """Test creating adapter metadata."""
+        from modules.module_03_build_process.build_process import AdapterMetadata
+        
+        metadata = AdapterMetadata(
+            contract_name="libmath",
+            contract_version="1.0",
+            contract_hash="abc123",
+            adapter_source_file=Path("adapter.c"),
+            adapter_source_hash="def456"
+        )
+        
+        assert metadata.contract_name == "libmath"
+        assert metadata.validation_passed is False
+
+    def test_metadata_serialization(self):
+        """Test metadata to_dict."""
+        from modules.module_03_build_process.build_process import AdapterMetadata
+        
+        metadata = AdapterMetadata(
+            contract_name="test",
+            contract_version="2.0",
+            contract_hash="hash1",
+            adapter_source_file=Path("test.c"),
+            adapter_source_hash="hash2",
+            validation_passed=True
+        )
+        
+        data = metadata.to_dict()
+        assert data['contract']['name'] == "test"
+        assert data['validation']['passed'] is True
+
+class TestAdapterGenerator:
+    """Test adapter generator."""
+
+    def test_generator_creation(self, tmp_path):
+        """Test creating adapter generator."""
+        from modules.module_03_build_process.build_process import AdapterGenerator
+        
+        generator = AdapterGenerator(tmp_path)
+        assert generator.output_dir == tmp_path
+
+    def test_generate_simple_adapter(self, tmp_path):
+        """Test generating simple adapter."""
+        from modules.module_03_build_process.build_process import AdapterGenerator
+        
+        generator = AdapterGenerator(tmp_path)
+        
+        contract = {
+            'library_name': 'testlib',
+            'contract_version': '1.0',
+            'functions': [
+                {
+                    'name': 'test_func',
+                    'signature': 'int test_func(int x)',
+                    'preconditions': ['x >= 0'],
+                    'postconditions': ['result >= 0']
+                }
+            ]
+        }
+        
+        source_file, metadata = generator.generate_adapter(contract)
+        
+        assert source_file.exists()
+        assert metadata.contract_name == 'testlib'
+        assert 'test_func' in source_file.read_text()
+
+        assert source_file.exists()
+        assert metadata.contract_name == 'testlib'
+        assert 'test_func' in source_file.read_text()
+
+class TestArtifactManifest:
+    """Test artifact manifest."""
+    
+    def test_manifest_creation(self):
+        """Test creating manifest."""
+        from modules.module_03_build_process.build_process import ArtifactManifest
+        
+        manifest = ArtifactManifest(
+            project_name="Test Project",
+            version="1.0",
+            build_timestamp="2023-01-01",
+            executables=["app.exe"],
+            shared_libraries=["lib.dll"],
+            python_bindings=["lib_bindings.py"]
+        )
+        
+        assert manifest.project_name == "Test Project"
+        assert len(manifest.executables) == 1
+        
+    def test_manifest_serialization(self):
+        """Test manifest to_dict."""
+        from modules.module_03_build_process.build_process import ArtifactManifest
+        
+        manifest = ArtifactManifest(
+            project_name="Test",
+            version="1.0",
+            build_timestamp="now"
+        )
+        
+        data = manifest.to_dict()
+        assert data['project_name'] == "Test"
+        assert 'artifacts' in data
+
+class TestPythonCtypesGenerator:
+    """Test Python ctypes generator."""
+    
+    def test_generator_creation(self, tmp_path):
+        """Test creating generator."""
+        from modules.module_03_build_process.build_process import PythonCtypesGenerator
+        
+        generator = PythonCtypesGenerator(tmp_path)
+        assert generator.output_dir == tmp_path
+        
+    def test_binding_generation(self, tmp_path):
+        """Test generating python bindings."""
+        from modules.module_03_build_process.build_process import PythonCtypesGenerator
+        
+        generator = PythonCtypesGenerator(tmp_path)
+        
+        contracts = [{
+            'library_name': 'testlib',
+            'functions': [{
+                'name': 'func1',
+                'signature': 'int func1(int x)'
+            }]
+        }]
+        
+        binding_file = generator.generate_bindings(
+            contracts,
+            "testlib",
+            Path("testlib.dll")
+        )
+        
+        assert binding_file.exists()
+        content = binding_file.read_text()
+        assert "import ctypes" in content
+        assert "class" not in content  # We assumed strict procedural bindings for now
+        assert "func1" in content
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

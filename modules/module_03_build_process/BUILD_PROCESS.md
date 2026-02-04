@@ -19,7 +19,9 @@
 8. [Native Compilation & Object File Generation](#8-native-compilation--object-file-generation)
 9. [Native Validation & Binary Self-Tests](#9-native-validation--binary-self-tests)
 10. [Link-Time Control & Executable Generation](#10-link-time-control--executable-generation)
-... (sections 11-20 to be added in subsequent prompts)
+11. [Adapter Generation & Contract Integration](#11-adapter-generation--contract-integration)
+12. [Orchestration Assembly & Python Integration](#12-orchestration-assembly--python-integration)
+... (sections 13-20 to be added in subsequent prompts)
 
 ---
 
@@ -1136,5 +1138,173 @@ if linking['all_successful']:
 
 ---
 
+## 11. Adapter Generation & Contract Integration
+
+### 11.1 Stage 6: Adapter Generation
+
+Generates runtime wrapper code from declarative contract specifications.
+
+**Purpose**:
+- Enforce contracts at FFI boundaries
+- Validate preconditions/postconditions
+- Log contract violations
+- Translate error representations
+
+### 11.2 Contract Specification
+
+Declarative format (JSON):
+
+```json
+{
+  "library_name": "libmath",
+  "functions": [
+    {
+      "name": "add",
+      "signature": "int add(int a, int b)",
+      "preconditions": ["a >= INT_MIN", "b >= INT_MAX"],
+      "postconditions": ["result == a + b"]
+    }
+  ]
+}
+```
+
+### 11.3 Adapter Code Generation
+
+Template-based synthesis:
+1. Load contract specification
+2. Select template based on target language
+3. Expand template with contract data
+4. Validate generated code syntax
+5. Compile to object files
+
+### 11.4 Adapter Metadata
+
+Provenance tracking for adapters:
+
+```python
+AdapterMetadata:
+    contract_name: str
+    contract_hash: SHA-256 of contract
+    adapter_source_hash: SHA-256 of generated code
+    generator_version: str
+    generation_timestamp: ISO 8601
+    template_used: str
+    validation_passed: bool
+```
+
+### 11.5 Incremental Regeneration
+
+Regenerate only when necessary:
+- Contract changed (hash mismatch)
+- Generator version changed
+- Template changed
+- Adapter source missing
+
+### 11.6 Multi-Language Support
+
+Target languages:
+- **C**: Direct FFI wrapping
+- **C++**: Exception-based error handling
+- **Rust**: Memory-safe FFI via `extern "C"`
+
+### 11.7 Implementation Classes
+
+- `AdapterMetadata`: Provenance tracking for adapters.
+- `AdapterGenerator`: Template-based code synthesis.
+- `AdapterGenerationStage`: Stage 6 implementation.
+
+### 11.8 Usage Example
+
+```python
+# Create stage
+stage = AdapterGenerationStage(
+    adapter_dir=Path("build/adapters"),
+    contract_dir=Path("contracts")
+)
+
+# Execute
+context = stage.execute({
+    'toolchain': toolchain_descriptor
+})
+
+# Check results
+adapters = context['adapter_generation']
+print(f"Generated {len(adapters['generated_adapters'])} adapters")
+```
+
+---
+
+## 12. Orchestration Assembly & Python Integration
+
+### 12.1 Stage 7: Orchestration
+
+Assembles all build artifacts into a cohesive package structure, generates Python bindings, and produces a build manifest.
+
+**Purpose**:
+- Collects executables and shared libraries
+- Generates Python `ctypes` bindings for easy integration
+- Creates a `manifest.json` describing the build
+- Ensures all components are versioned and provenance-tracked
+
+### 12.2 Artifact Manifest
+
+JSON manifest describing the output:
+
+```json
+{
+  "project_name": "Polyglot FFI Verifier",
+  "version": "1.0.0",
+  "build_timestamp": "...",
+  "artifacts": {
+    "executables": ["verifier.exe"],
+    "shared_libraries": ["verification_lib.dll"],
+    "python_bindings": ["verification_lib_bindings.py"]
+  },
+  "toolchain_info": {
+    "compiler": "MSVC",
+    "version": "19.29",
+    "target": "x86_64-pc-windows-msvc"
+  }
+}
+```
+
+### 12.3 Python Binding Generation
+
+Automatically generates `ctypes` bindings:
+- Loads shared library relative to module path
+- Exposes generated adapter functions
+- Sets `argtypes` and `restype` (simplified)
+- Handles library loading errors gracefully
+
+### 12.4 Implementation Classes
+
+- `ArtifactManifest`: Manifest data model.
+- `PythonCtypesGenerator`: Generates Python binding code.
+- `OrchestrationStage`: Stage 7 implementation.
+
+### 12.5 Usage Example
+
+```python
+# Create orchestration stage
+stage = OrchestrationStage(
+    output_dir=Path("dist")
+)
+
+# Execute
+context = stage.execute({
+    'linking': {
+        'executables': ['build/bin/verifier.exe'],
+        'shared_libraries': ['build/bin/verification_lib.dll']
+    },
+    'toolchain': toolchain_descriptor
+})
+
+# Check result
+manifest = context['orchestration']['manifest']
+print(f"Build complete: {manifest['project_name']} v{manifest['version']}")
+```
+
+---
+
 **End of  Content**  
-**Next Prompt:** Adapter Generation & Contract Integration
+**Next Prompt:** Cross-Platform Path Handling

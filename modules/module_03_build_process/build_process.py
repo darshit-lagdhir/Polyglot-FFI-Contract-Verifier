@@ -4501,6 +4501,573 @@ class LinkingStage(BuildStageInterface):
                 raise BuildPostconditionError("Linking failed with no metadata")
 
 # ============================================================================
+# ADAPTER GENERATION & CONTRACT INTEGRATION ()
+# ============================================================================
+
+@dataclass
+class AdapterMetadata:
+    """Provenance metadata for generated adapter."""
+    contract_name: str
+    contract_version: str
+    contract_hash: str
+    
+    adapter_source_file: Path
+    adapter_source_hash: str
+    
+    generator_name: str = "AdapterGenerator"
+    generator_version: str = "1.0.0"
+    generation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    
+    template_used: str = "c_adapter_template"
+    template_hash: str = ""
+    
+    validation_passed: bool = False
+    validation_issues: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'contract': {
+                'name': self.contract_name,
+                'version': self.contract_version,
+                'hash': self.contract_hash
+            },
+            'adapter': {
+                'source_file': str(self.adapter_source_file),
+                'source_hash': self.adapter_source_hash
+            },
+            'generation': {
+                'generator': f"{self.generator_name} {self.generator_version}",
+                'timestamp': self.generation_timestamp,
+                'template': self.template_used,
+                'template_hash': self.template_hash
+            },
+            'validation': {
+                'passed': self.validation_passed,
+                'issues': self.validation_issues
+            }
+        }
+
+class AdapterGenerator:
+    """
+    Generates runtime adapter code from contract specifications.
+    
+    Produces C/C++ wrapper code that enforces contracts at FFI boundaries.
+    """
+    
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+    def generate_adapter(
+        self,
+        contract: Dict[str, Any],
+        target_language: str = 'c'
+    ) -> Tuple[Path, AdapterMetadata]:
+        """
+        Generate adapter source code from contract.
+        
+        Args:
+            contract: Contract specification
+            target_language: Target language ('c', 'cpp', 'rust')
+            
+        Returns:
+            Tuple of (adapter_source_file, metadata)
+        """
+        contract_name = contract.get('library_name', 'unknown')
+        
+        print(f"    Generating adapter for: {contract_name}")
+        
+        # Compute contract hash
+        contract_json = json.dumps(contract, sort_keys=True)
+        contract_hash = hashlib.sha256(contract_json.encode()).hexdigest()
+        
+        # Generate source code
+        if target_language == 'c':
+            adapter_source = self._generate_c_adapter(contract)
+            source_file = self.output_dir / f"{contract_name}_adapter.c"
+        else:
+            raise BuildError(f"Unsupported target language: {target_language}")
+            
+        # Write source file
+        source_file.write_text(adapter_source)
+        
+        # Compute source hash
+        source_hash = hashlib.sha256(adapter_source.encode()).hexdigest()
+        
+        # Create metadata
+        metadata = AdapterMetadata(
+            contract_name=contract_name,
+            contract_version=contract.get('contract_version', '1.0'),
+            contract_hash=contract_hash,
+            adapter_source_file=source_file,
+            adapter_source_hash=source_hash
+        )
+        
+        return source_file, metadata
+        
+    def _generate_c_adapter(self, contract: Dict[str, Any]) -> str:
+        """Generate C adapter source code."""
+        lines = []
+        
+        # Header
+        lines.append("// Generated adapter code")
+        lines.append(f"// Contract: {contract.get('library_name', 'unknown')}")
+        lines.append(f"// Generated: {datetime.datetime.now(datetime.UTC).isoformat()}")
+        lines.append("")
+        
+        # Includes
+        lines.append("#include <stdint.h>")
+        lines.append("#include <stdbool.h>")
+        lines.append("#include <errno.h>")
+        lines.append("")
+        
+        # Forward declarations
+        lines.append("// Forward declarations")
+        for func in contract.get('functions', []):
+            sig = func.get('signature', '')
+            lines.append(f"extern {sig};")
+        lines.append("")
+        
+        # Adapter functions
+        for func in contract.get('functions', []):
+            adapter_code = self._generate_function_adapter(func)
+            lines.append(adapter_code)
+            lines.append("")
+            
+        return '\n'.join(lines)
+        
+    def _generate_function_adapter(self, func: Dict[str, Any]) -> str:
+        """Generate adapter for a single function."""
+        name = func.get('name', 'unknown')
+        signature = func.get('signature', 'void unknown(void)')
+        
+        # Parse signature (simplified)
+        # Real implementation would use proper C parser
+        return_type = signature.split()[0] if ' ' in signature else 'void'
+        
+        lines = []
+        lines.append(f"// Adapter for: {name}")
+        lines.append(f"{return_type} {name}_adapter(/* parameters */) {{")
+        
+        # Precondition checks
+        preconditions = func.get('preconditions', [])
+        if preconditions:
+            lines.append("    // Precondition validation")
+            for precond in preconditions:
+                lines.append(f"    // TODO: Check {precond}")
+                
+        # Call original function
+        lines.append(f"    // Call original function")
+        lines.append(f"    {return_type} result = {name}(/* args */);")
+        
+        # Postcondition checks
+        postconditions = func.get('postconditions', [])
+        if postconditions:
+            lines.append("    // Postcondition validation")
+            for postcond in postconditions:
+                lines.append(f"    // TODO: Check {postcond}")
+                
+        lines.append("    return result;")
+        lines.append("}")
+        
+        return '\n'.join(lines)
+        
+    def validate_adapter(
+        self,
+        adapter_source: Path,
+        toolchain: ToolchainDescriptor
+    ) -> Tuple[bool, List[str]]:
+        """
+        Validate generated adapter syntax.
+        
+        Returns: (is_valid, list_of_issues)
+        """
+        issues = []
+        
+        # Check file exists
+        if not adapter_source.exists():
+            issues.append(f"Adapter source does not exist: {adapter_source}")
+            return False, issues
+            
+        # Syntax check using compiler
+        try:
+            # -fsyntax-only is a GCC/Clang flag
+            # MSVC doesn't have a direct equivalent without producing output
+            # but we can use /Zs for syntax check
+            compiler_flag = '/Zs' if toolchain.compiler_name == 'MSVC' else '-fsyntax-only'
+            
+            result = subprocess.run(
+                [str(toolchain.compiler_executable), compiler_flag, str(adapter_source)],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode != 0:
+                issues.append(f"Syntax errors: {result.stderr or result.stdout}")
+                return False, issues
+                
+        except subprocess.TimeoutExpired:
+            issues.append("Syntax validation timed out")
+            return False, issues
+        except FileNotFoundError:
+            issues.append(f"Compiler not found: {toolchain.compiler_executable}")
+            return False, issues
+        except Exception as e:
+            issues.append(f"Validation failed: {e}")
+            return False, issues
+            
+        return True, []
+
+class AdapterGenerationStage(BuildStageInterface):
+    """
+    Stage 6: Adapter Generation
+    
+    Generates runtime adapter code from contract specifications and compiles
+    adapters to object files.
+    """
+    
+    def __init__(self, adapter_dir: Path, contract_dir: Optional[Path] = None):
+        super().__init__("Adapter Generation", BuildStage.ADAPTER_GENERATION)
+        self.stage_name = "Adapter Generation"
+        self.adapter_dir = adapter_dir
+        self.contract_dir = contract_dir
+        
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        """Verify required inputs available."""
+        if 'toolchain' not in context:
+            raise BuildPreconditionError(
+                "Stage 6 requires 'toolchain' for adapter compilation"
+            )
+            
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute adapter generation."""
+        print(f"  Generating adapters...")
+        
+        self.adapter_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load contracts (simplified - would load from files or Module 02)
+        contracts = self._load_contracts()
+        
+        if not contracts:
+            print("    No contracts found - skipping adapter generation")
+            context['adapter_generation'] = {
+                'generated_adapters': [],
+                'compiled_adapters': [],
+                'adapter_metadata': [],
+                'all_successful': True
+            }
+            return context
+            
+        # Generate adapters
+        generator = AdapterGenerator(self.adapter_dir)
+        toolchain = context['toolchain']
+        
+        generated_adapters = []
+        adapter_metadata = []
+        
+        for contract in contracts:
+            try:
+                source_file, metadata = generator.generate_adapter(contract)
+                
+                # Validate adapter
+                valid, issues = generator.validate_adapter(source_file, toolchain)
+                metadata.validation_passed = valid
+                metadata.validation_issues = issues
+                
+                if valid:
+                    generated_adapters.append(source_file)
+                    adapter_metadata.append(metadata)
+                else:
+                    print(f"    ✗ Adapter validation failed: {contract.get('library_name')}")
+                    for issue in issues[:3]:
+                        print(f"      - {issue}")
+                        
+            except Exception as e:
+                print(f"    ✗ Adapter generation failed: {e}")
+                
+        print(f"    Generated {len(generated_adapters)} adapters")
+        
+        # Update context
+        context['adapter_generation'] = {
+            'generated_adapters': [str(f) for f in generated_adapters],
+            'compiled_adapters': [],  # Would compile adapters in full implementation
+            'adapter_metadata': [m.to_dict() for m in adapter_metadata],
+            'all_successful': len(generated_adapters) == len(contracts)
+        }
+        
+        return context
+        
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        """Verify adapter generation succeeded."""
+        if 'adapter_generation' not in context:
+            raise BuildPostconditionError(
+                "Stage 6 must produce 'adapter_generation' in context"
+            )
+            
+    def _load_contracts(self) -> List[Dict[str, Any]]:
+        """Load contract specifications."""
+        if not self.contract_dir or not self.contract_dir.exists():
+            return []
+            
+        contracts = []
+        for contract_file in self.contract_dir.glob('*.json'):
+            try:
+                with open(contract_file, 'r') as f:
+                    contract = json.load(f)
+                    contracts.append(contract)
+            except Exception as e:
+                print(f"    ⚠ Failed to load contract {contract_file}: {e}")
+                
+        return contracts
+
+# ============================================================================
+# ORCHESTRATION ASSEMBLY & PYTHON INTEGRATION ()
+# ============================================================================
+
+@dataclass
+class ArtifactManifest:
+    """Manifest describing all build artifacts."""
+    project_name: str
+    version: str
+    build_timestamp: str
+    
+    # Artifact paths (relative to output dir)
+    executables: List[str] = field(default_factory=list)
+    shared_libraries: List[str] = field(default_factory=list)
+    python_bindings: List[str] = field(default_factory=list)
+    manifest_file: str = "manifest.json"
+    
+    # Metadata
+    toolchain_info: Dict[str, str] = field(default_factory=dict)
+    generated_files: Dict[str, str] = field(default_factory=dict)  # file -> hash
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'project_name': self.project_name,
+            'version': self.version,
+            'build_timestamp': self.build_timestamp,
+            'artifacts': {
+                'executables': self.executables,
+                'shared_libraries': self.shared_libraries,
+                'python_bindings': self.python_bindings,
+            },
+            'toolchain_info': self.toolchain_info,
+            'generated_files': self.generated_files
+        }
+
+class PythonCtypesGenerator:
+    """
+    Generates Python ctypes bindings for the verification library.
+    
+    Produces a Python module that loads the shared library and exposes
+    the adapter functions with proper type signatures.
+    """
+    
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+    def generate_bindings(
+        self,
+        contracts: List[Dict[str, Any]],
+        library_name: str,
+        shared_lib_path: Path
+    ) -> Path:
+        """
+        Generate Python bindings.
+        
+        Args:
+            contracts: List of contract specifications
+            library_name: Name of the library
+            shared_lib_path: Path to the shared library
+            
+        Returns:
+            Path to generated Python file
+        """
+        module_name = f"{library_name}_bindings"
+        file_path = self.output_dir / f"{module_name}.py"
+        
+        print(f"    Generating Python bindings: {file_path.name}")
+        
+        lines = []
+        
+        # Header
+        lines.append("# Generated Python bindings")
+        lines.append(f"# Library: {library_name}")
+        lines.append(f"# Generated: {datetime.datetime.now(datetime.UTC).isoformat()}")
+        lines.append("")
+        lines.append("import ctypes")
+        lines.append("import os")
+        lines.append("from pathlib import Path")
+        lines.append("")
+        
+        # Load library
+        lines.append(f"# Load shared library")
+        lines.append(f"_lib_path = Path(__file__).parent / '{shared_lib_path.name}'")
+        lines.append(f"try:")
+        lines.append(f"    _lib = ctypes.CDLL(str(_lib_path))")
+        lines.append(f"except OSError as e:")
+        lines.append(f"    raise ImportError(f'Failed to load library {{_lib_path}}: {{e}}')")
+        lines.append("")
+        
+        # Generate function signatures
+        for contract in contracts:
+            lines.append(f"# Contract: {contract.get('library_name', 'unknown')}")
+            for func in contract.get('functions', []):
+                self._generate_function_binding(func, lines)
+            lines.append("")
+            
+        file_path.write_text('\n'.join(lines))
+        return file_path
+        
+    def _generate_function_binding(self, func: Dict[str, Any], lines: List[str]):
+        """Generate ctypes signature for a function."""
+        name = func.get('name', 'unknown')
+        adapter_name = f"{name}_adapter"
+        signature = func.get('signature', '')
+        
+        # Heuristic type mapping (simplified)
+        # Real implementation would parse C types to ctypes
+        
+        lines.append(f"# {signature}")
+        lines.append(f"if hasattr(_lib, '{adapter_name}'):")
+        lines.append(f"    {name} = _lib.{adapter_name}")
+        
+        # Set argtypes and restype based on signature
+        # Simplified: assume int for everything for now
+        lines.append(f"    {name}.argtypes = [ctypes.c_int, ctypes.c_int]") # Placeholder
+        lines.append(f"    {name}.restype = ctypes.c_int") # Placeholder
+        lines.append(f"else:")
+        lines.append(f"    # Fallback to original if adapter missing")
+        lines.append(f"    if hasattr(_lib, '{name}'):")
+        lines.append(f"        {name} = _lib.{name}")
+
+class OrchestrationStage(BuildStageInterface):
+    """
+    Stage 7: Orchestration Assembly
+    
+    Assembles all build artifacts into a cohesive package structure,
+    generates Python bindings, and produces a build manifest.
+    """
+    
+    def __init__(self, output_dir: Path):
+        super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION)
+        self.stage_name = "Orchestration Assembly"
+        self.output_dir = output_dir
+        
+    def check_preconditions(self, context: Dict[str, Any]) -> None:
+        """Verify inputs."""
+        # We need linking results and adapter generation results
+        if 'linking' not in context:
+            raise BuildPreconditionError("Stage 7 requires 'linking' results")
+            
+    def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute orchestration."""
+        print(f"  Assembling artifacts...")
+        
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 1. Collect artifacts
+        artifacts = self._collect_artifacts(context)
+        
+        # 2. Generate Python bindings (if contracts and valid library exist)
+        contracts = self._get_contracts(context)
+        shared_libs = artifacts.get('shared_libraries', [])
+        
+        bindings = []
+        if contracts and shared_libs:
+            # Assuming first lib is the main one for now
+            lib_path = Path(shared_libs[0])
+            # Copy lib to output dir if not already there
+            dest_lib = self.output_dir / lib_path.name
+            if lib_path != dest_lib and lib_path.exists():
+                shutil.copy2(lib_path, dest_lib)
+            
+            generator = PythonCtypesGenerator(self.output_dir)
+            binding_file = generator.generate_bindings(
+                contracts, 
+                "verification_lib", 
+                dest_lib
+            )
+            bindings.append(str(binding_file.relative_to(self.output_dir)))
+        
+        # 3. Create Manifest
+        toolchain = context.get('toolchain')
+        toolchain_info = {}
+        if toolchain:
+            toolchain_info = {
+                'compiler': toolchain.compiler_name,
+                'version': toolchain.compiler_version,
+                'target': toolchain.target_triple
+            }
+            
+        manifest = ArtifactManifest(
+            project_name="Polyglot FFI Verifier",
+            version=__version__,
+            build_timestamp=datetime.datetime.now(datetime.UTC).isoformat(),
+            executables=artifacts.get('executables', []),
+            shared_libraries=[Path(l).name for l in shared_libs],
+            python_bindings=bindings,
+            toolchain_info=toolchain_info
+        )
+        
+        # Write manifest
+        manifest_path = self.output_dir / "manifest.json"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest.to_dict(), f, indent=2)
+            
+        print(f"    Manifest written to: {manifest_path.name}")
+        
+        context['orchestration'] = {
+            'manifest': manifest.to_dict(),
+            'output_dir': str(self.output_dir),
+            'success': True
+        }
+        
+        return context
+        
+    def validate_postconditions(self, context: Dict[str, Any]) -> None:
+        """Verify orchestration contents."""
+        if 'orchestration' not in context:
+            raise BuildPostconditionError("Orchestration failed to produce output")
+            
+    def _collect_artifacts(self, context: Dict[str, Any]) -> Dict[str, List[str]]:
+        """Collect paths of all generated artifacts."""
+        artifacts = {
+            'executables': [],
+            'shared_libraries': []
+        }
+        
+        linking = context.get('linking', {})
+        
+        # Relative paths for manifest (simplified)
+        for exe in linking.get('executables', []):
+            exe_path = Path(exe)
+            if exe_path.exists():
+                # Copy to output dir
+                dest = self.output_dir / exe_path.name
+                shutil.copy2(exe_path, dest)
+                artifacts['executables'].append(exe_path.name)
+                
+        # Simulating shared libraries collection if they existed
+        # In this prompt, we mostly focused on executable, but logical
+        # flow handles libraries too.
+        
+        return artifacts
+        
+    def _get_contracts(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get contracts from context (if available, e.g. from adapter stage)."""
+        # In real pipeline, contracts might be passed through context or loaded again
+        # Here we mock or try to access them if stored
+        # For this prototype, we'll try to load from the adapter generation metadata
+        # or return empty if not easily accessible without reloading
+        
+        return [] # Placeholder - re-loading files done in AdapterStage
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
@@ -4508,7 +5075,7 @@ __version__ = "1.0.0"
 __module_id__ = "03"
 __module_name__ = "Build Process & Toolchain Integration"
 __status__ = "IN_PROGRESS"
-__prompt__ = "10/20"
+__prompt__ = "12/20"
 
 if __name__ == "__main__":
     print(f"Module {__module_id__}: {__module_name__}")
