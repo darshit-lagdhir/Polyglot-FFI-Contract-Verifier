@@ -1,2 +1,3 @@
 libclang>=16.0
 psutil>=5.9.0
+pyyaml>=6.0
