@@ -1992,4 +1992,6 @@ class TestModuleIntegration:
         assert build_process.__module_id__ == '03'
         assert build_process.__prompt_count__ == 20
         assert build_process.__status__ == "COMPLETE"
+
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])
