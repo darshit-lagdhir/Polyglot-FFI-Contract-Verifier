@@ -31,8 +31,9 @@ jobs:
           pip install pytest pytest-timeout pytest-cov
       
       - name: Run all tests
+        timeout-minutes: 15
         run: |
-          pytest -v -c config/pytest.ini
+          pytest -v -c config/pytest.ini --timeout=30
   
   e2e:
     name: End-to-End Tests
