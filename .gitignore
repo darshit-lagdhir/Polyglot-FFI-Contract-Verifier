@@ -1,4 +1,5 @@
 # Polyglot FFI Contract Verifier - Git Ignore File
+# Keep only essential source files and documentation
 
 # ============================================================================
 # TECHNICAL FILES - DO NOT COMMIT
@@ -7,23 +8,87 @@ TECHNICAL FILES/
 TECHNICAL FILES/*
 
 # ============================================================================
-# Python
+# Python Build & Cache
 # ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyd
+*.dll
+*.dylib
 .Python
+*.egg
 *.egg-info/
 dist/
 build/
+.eggs/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
 
 # ============================================================================
-# Artifacts (generated during verification runs)
+# Virtual Environments
+# ============================================================================
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# ============================================================================
+# Testing & Coverage
+# ============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+nosetests.xml
+test-results/
+junit/
+
+# ============================================================================
+# Build Artifacts (Compiled Objects & Libraries)
+# ============================================================================
+*.o
+*.obj
+*.lib
+*.a
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+examples/simple_calculator/*.dll
+examples/simple_calculator/*.obj
+examples/simple_calculator/*.o
+examples/simple_calculator/*.exe
+examples/demo/*.dll
+examples/demo/*.obj
+examples/demo/*.o
+examples/demo/*.exe
+
+# ============================================================================
+# Verification Artifacts (Generated during runs)
 # ============================================================================
 artifacts/
 *.json
-!src/**/*.json
+!config/*.json
+!configs/*.json
+!pyproject.toml
+!package.json
+validation_report.txt
+validation_report.json
+pipeline_status.json
+verification_*.json
 
 # ============================================================================
 # IDE and Editor Files
@@ -33,40 +98,117 @@ artifacts/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
 
 # ============================================================================
 # Operating System Files
 # ============================================================================
 Thumbs.db
 .DS_Store
+*.bak
+*.tmp
+*.temp
+desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100
+.Trashes
 
 # ============================================================================
-# Cleanup artifacts and archives
+# Logs & Temporary Files
+# ============================================================================
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+cleanup_log.txt
+
+# ============================================================================
+# Archives & Backups
 # ============================================================================
 src_old_backup/
 src_old_backup.tar.gz
 polyglot_ffi_verifier_old.py
-cleanup_log.txt
-
-# Archive directory (original modular code - kept locally only)
 _archive_original/
+*.tar.gz
+*.zip
+*.7z
+*.rar
+backup/
+backups/
 
-# Cleanup scripts (temporary)
+# ============================================================================
+# Cleanup Scripts (Temporary)
+# ============================================================================
 cleanup_after_consolidation.py
 cleanup_smart.py
 
-# Build directory
+# ============================================================================
+# Build Directories
+# ============================================================================
 _build/
+.build/
+out/
 
 # ============================================================================
-# Generated Files (Auto-generated, should not be committed)
+# Runtime Cache & Generated Files
 # ============================================================================
-validation_report.txt
-validation_report.json
+.verification_cache/
+.cache/
+*.cache
 docs/API_REFERENCE_AUTO.md
 
 # ============================================================================
-# Runtime Cache
+# Documentation Build Artifacts
 # ============================================================================
-.verification_cache/
-.pytest_cache/
+docs/_build/
+docs/.doctrees/
+site/
+
+# ============================================================================
+# Package Manager
+# ============================================================================
+node_modules/
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+.env
+.env.local
+.env.*.local
+
+# ============================================================================
+# Jupyter Notebooks
+# ============================================================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ============================================================================
+# MyPy
+# ============================================================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ============================================================================
+# Profiling
+# ============================================================================
+*.prof
+*.lprof
+profile_*.txt
+
+# ============================================================================
+# Keep These Files (Exceptions)
+# ============================================================================
+!.gitignore
+!.github/
+!README.md
+!LICENSE
+!requirements.txt
+!pyproject.toml
