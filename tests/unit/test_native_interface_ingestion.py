@@ -35,7 +35,11 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     SourceLocation,
     LIBCLANG_AVAILABLE,
         TypeExtractor,
-    CXTypeKind
+    CXTypeKind,
+        FieldInfo,
+    PaddingInfo,
+    RecordLayout,
+    RecordLayoutExtractor
 )
 
 # ============================================================================
@@ -51,8 +55,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '3/20'
-        assert info['status'] == 'type_extraction'
+        assert info['prompt'] == '4/20'
+        assert info['status'] == 'layout_extraction'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -600,9 +604,204 @@ class TestTypeExtractor:
         assert len(extractor._type_cache) == 0
 
 # ============================================================================
+# TEST: STRUCTURE AND UNION LAYOUT ()
+# ============================================================================
+
+class TestFieldInfo:
+    """Test field information structure."""
+    
+    def test_field_creation(self):
+        """Test creating field info."""
+        field = FieldInfo(
+            name='x',
+            field_type='int',
+            offset_bytes=0,
+            size_bytes=4,
+            alignment_bytes=4
+        )
+        
+        assert field.name == 'x'
+        assert field.offset_bytes == 0
+        assert field.size_bytes == 4
+        assert not field.is_bitfield
+    
+    def test_bitfield_detection(self):
+        """Test bitfield field marking."""
+        field = FieldInfo(
+            name='flag',
+            field_type='unsigned int',
+            offset_bytes=0,
+            size_bytes=4,
+            alignment_bytes=4,
+            is_bitfield=True,
+            bitfield_width=1
+        )
+        
+        assert field.is_bitfield
+        assert field.bitfield_width == 1
+    
+    def test_field_serialization(self):
+        """Test field serialization."""
+        field = FieldInfo(
+            name='data',
+            field_type='float',
+            offset_bytes=4,
+            size_bytes=4,
+            alignment_bytes=4
+        )
+        
+        data = field.to_dict()
+        
+        assert data['name'] == 'data'
+        assert data['field_type'] == 'float'
+        assert data['offset_bytes'] == 4
+
+class TestPaddingInfo:
+    """Test padding information structure."""
+    
+    def test_padding_creation(self):
+        """Test creating padding info."""
+        padding = PaddingInfo(
+            offset_bytes=1,
+            size_bytes=3,
+            reason='inter-field'
+        )
+        
+        assert padding.offset_bytes == 1
+        assert padding.size_bytes == 3
+        assert padding.reason == 'inter-field'
+    
+    def test_trailing_padding(self):
+        """Test trailing padding."""
+        padding = PaddingInfo(
+            offset_bytes=12,
+            size_bytes=4,
+            reason='trailing'
+        )
+        
+        assert padding.reason == 'trailing'
+    
+    def test_padding_serialization(self):
+        """Test padding serialization."""
+        padding = PaddingInfo(
+            offset_bytes=8,
+            size_bytes=4,
+            reason='inter-field'
+        )
+        
+        data = padding.to_dict()
+        
+        assert data['offset_bytes'] == 8
+        assert data['size_bytes'] == 4
+
+class TestRecordLayout:
+    """Test record layout structure."""
+    
+    def test_struct_layout_creation(self):
+        """Test creating struct layout."""
+        layout = RecordLayout(
+            name='Point',
+            kind='struct',
+            size_bytes=8,
+            alignment_bytes=4
+        )
+        
+        assert layout.name == 'Point'
+        assert layout.kind == 'struct'
+        assert layout.size_bytes == 8
+        assert not layout.is_anonymous
+    
+    def test_union_layout_creation(self):
+        """Test creating union layout."""
+        layout = RecordLayout(
+            name='Value',
+            kind='union',
+            size_bytes=8,
+            alignment_bytes=8
+        )
+        
+        assert layout.kind == 'union'
+    
+    def test_layout_with_fields(self):
+        """Test layout with fields."""
+        field1 = FieldInfo('x', 'int', 0, 4, 4)
+        field2 = FieldInfo('y', 'int', 4, 4, 4)
+        
+        layout = RecordLayout(
+            name='Point',
+            kind='struct',
+            size_bytes=8,
+            alignment_bytes=4,
+            fields=[field1, field2]
+        )
+        
+        assert len(layout.fields) == 2
+        assert layout.fields[0].name == 'x'
+        assert layout.fields[1].offset_bytes == 4
+    
+    def test_layout_with_padding(self):
+        """Test layout with padding."""
+        padding = PaddingInfo(1, 3, 'inter-field')
+        
+        layout = RecordLayout(
+            name='Mixed',
+            kind='struct',
+            size_bytes=8,
+            alignment_bytes=4,
+            padding_regions=[padding]
+        )
+        
+        assert len(layout.padding_regions) == 1
+        assert layout.padding_regions[0].size_bytes == 3
+    
+    def test_anonymous_struct(self):
+        """Test anonymous structure."""
+        layout = RecordLayout(
+            name='<anonymous>',
+            kind='struct',
+            size_bytes=4,
+            alignment_bytes=4,
+            is_anonymous=True
+        )
+        
+        assert layout.is_anonymous
+    
+    def test_layout_serialization(self):
+        """Test layout serialization."""
+        field = FieldInfo('member', 'int', 0, 4, 4)
+        padding = PaddingInfo(4, 4, 'trailing')
+        
+        layout = RecordLayout(
+            name='Test',
+            kind='struct',
+            size_bytes=8,
+            alignment_bytes=4,
+            fields=[field],
+            padding_regions=[padding]
+        )
+        
+        data = layout.to_dict()
+        
+        assert data['name'] == 'Test'
+        assert len(data['fields']) == 1
+        assert len(data['padding_regions']) == 1
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestRecordLayoutExtractor:
+    """Test record layout extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating record layout extractor."""
+        type_extractor = TypeExtractor()
+        extractor = RecordLayoutExtractor(type_extractor)
+        
+        assert extractor is not None
+        assert extractor.type_extractor == type_extractor
+
+# ============================================================================
 # MEDIUM LEVEL TESTING: 80-100 TESTS TARGET
-# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) = 38 tests
-# Progress: 38 components minimum for medium level
+# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) = 51 tests
+# Progress: 51 components minimum for medium level
 # ============================================================================
 
 if __name__ == '__main__':

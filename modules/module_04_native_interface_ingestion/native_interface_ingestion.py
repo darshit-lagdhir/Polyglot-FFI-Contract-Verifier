@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "3/20"
-__status__ = "type_extraction"
+__prompt__ = "4/20"
+__status__ = "layout_extraction"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -206,6 +206,8 @@ class TypeInfo:
     # Completeness
     is_incomplete: bool = False
     
+        record_layout: Optional['RecordLayout'] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
         data = {
@@ -244,7 +246,306 @@ class TypeInfo:
                 'restrict': self.is_restrict
             }
         
+        if self.record_layout:
+            data['record_layout'] = self.record_layout.to_dict()
+        
         return data
+
+# ============================================================================
+# FIELD AND RECORD LAYOUT DATA STRUCTURES ()
+# ============================================================================
+
+@dataclass
+class FieldInfo:
+    """
+    Complete information about a structure or union field.
+    
+    Captures field name, type, offset, size, and alignment for ABI verification.
+    """
+    
+    name: str
+    field_type: str  # Type name (e.g., 'int', 'struct Point*')
+    offset_bytes: int  # Byte offset from structure base
+    size_bytes: int
+    alignment_bytes: int
+    
+    # Bitfield properties (basic detection, full handling in later prompts)
+    is_bitfield: bool = False
+    bitfield_width: Optional[int] = None
+    
+    # Complete type information
+    type_info: Optional['TypeInfo'] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize field info."""
+        data = {
+            'name': self.name,
+            'field_type': self.field_type,
+            'offset_bytes': self.offset_bytes,
+            'size_bytes': self.size_bytes,
+            'alignment_bytes': self.alignment_bytes
+        }
+        
+        if self.is_bitfield:
+            data['is_bitfield'] = True
+            data['bitfield_width'] = self.bitfield_width
+        
+        if self.type_info:
+            data['type_info'] = self.type_info.to_dict()
+        
+        return data
+
+@dataclass
+class PaddingInfo:
+    """
+    Represents padding bytes in a structure.
+    
+    Padding occurs between fields (for alignment) or at the end (for array alignment).
+    """
+    
+    offset_bytes: int
+    size_bytes: int
+    reason: str  # 'inter-field', 'trailing', 'explicit'
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize padding info."""
+        return {
+            'offset_bytes': self.offset_bytes,
+            'size_bytes': self.size_bytes,
+            'reason': self.reason
+        }
+
+@dataclass
+class RecordLayout:
+    """
+    Complete layout of a structure or union.
+    
+    Captures all fields, padding, size, and alignment for ABI-sensitive verification.
+    """
+    
+    name: str
+    kind: str  # 'struct', 'union'
+    size_bytes: int
+    alignment_bytes: int
+    
+    fields: List[FieldInfo] = field(default_factory=list)
+    padding_regions: List[PaddingInfo] = field(default_factory=list)
+    
+    # Layout attributes
+    is_packed: bool = False
+    is_anonymous: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize record layout."""
+        return {
+            'name': self.name,
+            'kind': self.kind,
+            'size_bytes': self.size_bytes,
+            'alignment_bytes': self.alignment_bytes,
+            'fields': [f.to_dict() for f in self.fields],
+            'padding_regions': [p.to_dict() for p in self.padding_regions],
+            'is_packed': self.is_packed,
+            'is_anonymous': self.is_anonymous
+        }
+
+# ============================================================================
+# RECORD LAYOUT EXTRACTOR ()
+# ============================================================================
+
+class RecordLayoutExtractor:
+    """
+    Extracts complete structure and union layouts from Clang AST.
+    
+    Handles field enumeration, offset calculation, padding detection,
+    and nested structure resolution.
+    """
+    
+    def __init__(self, type_extractor: 'TypeExtractor'):
+        """
+        Initialize record layout extractor.
+        
+        Args:
+            type_extractor: TypeExtractor for resolving field types
+        """
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        self.type_extractor = type_extractor
+    
+    def extract_record_layout(
+        self,
+        cursor: 'CXIDE',
+        record_type: 'CXType'
+    ) -> RecordLayout:
+        """
+        Extract complete layout of a structure or union.
+        
+        Args:
+            cursor: Record declaration cursor
+            record_type: CXType of the record
+            
+        Returns:
+            Complete RecordLayout
+        """
+        # Get record name
+        name_cxstr = libclang.clang_getIDESpelling(cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        # Detect if anonymous
+        is_anonymous = (not name or name.startswith('(anonymous'))
+        
+        # Get cursor kind to determine struct vs union
+        cursor_kind = libclang.clang_getIDEKind(cursor)
+        kind = 'union' if cursor_kind == CXIDEKind.UNION_DECL else 'struct'
+        
+        # Get size and alignment
+        size = libclang.clang_Type_getSizeOf(record_type)
+        alignment = libclang.clang_Type_getAlignOf(record_type)
+        
+        # Create layout
+        layout = RecordLayout(
+            name=name if name else '<anonymous>',
+            kind=kind,
+            size_bytes=max(0, size),
+            alignment_bytes=max(0, alignment),
+            is_anonymous=is_anonymous
+        )
+        
+        # Extract fields
+        self._extract_fields(cursor, record_type, layout)
+        
+        # Detect padding
+        self._detect_padding(layout)
+        
+        return layout
+    
+    def _extract_fields(
+        self,
+        cursor: 'CXIDE',
+        record_type: 'CXType',
+        layout: RecordLayout
+    ):
+        """
+        Extract all fields from a record.
+        
+        Args:
+            cursor: Record cursor
+            record_type: Record type
+            layout: RecordLayout to populate
+        """
+        fields = []
+        
+        # Visitor to collect field cursors
+        def field_visitor(child_cursor, parent_cursor, client_data):
+            # Only process field declarations (CXIDE_FieldDecl = 9)
+            if libclang.clang_getIDEKind(child_cursor) != 9:
+                return CXChildVisitResult.CONTINUE
+            
+            try:
+                field_info = self._extract_field(child_cursor)
+                fields.append(field_info)
+            except Exception:
+                pass  # Skip problematic fields
+            
+            return CXChildVisitResult.CONTINUE
+        
+        visitor_func = CXIDEVisitor(field_visitor)
+        libclang.clang_visitChildren(cursor, visitor_func, None)
+        
+        layout.fields = fields
+    
+    def _extract_field(self, field_cursor: 'CXIDE') -> FieldInfo:
+        """
+        Extract information for a single field.
+        
+        Args:
+            field_cursor: Field declaration cursor
+            
+        Returns:
+            FieldInfo
+        """
+        # Get field name
+        name_cxstr = libclang.clang_getIDESpelling(field_cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        # Get field type
+        field_type = libclang.clang_getIDEType(field_cursor)
+        type_spelling = self.type_extractor._get_type_spelling(field_type)
+        
+        # Get field offset (in bits, convert to bytes)
+        offset_bits = libclang.clang_IDE_getOffsetOfField(field_cursor)
+        offset_bytes = offset_bits // 8 if offset_bits >= 0 else 0
+        
+        # Get field size and alignment
+        size = libclang.clang_Type_getSizeOf(field_type)
+        alignment = libclang.clang_Type_getAlignOf(field_type)
+        
+        # Detect bitfield (offset not byte-aligned or negative size)
+        is_bitfield = (offset_bits % 8 != 0) or (size < 0)
+        
+        # Create field info
+        field_info = FieldInfo(
+            name=name,
+            field_type=type_spelling,
+            offset_bytes=offset_bytes,
+            size_bytes=max(0, size),
+            alignment_bytes=max(0, alignment),
+            is_bitfield=is_bitfield
+        )
+        
+        # Extract complete type info (recursive)
+        try:
+            field_info.type_info = self.type_extractor.extract_type(field_type)
+        except Exception:
+            pass  # Type extraction may fail for complex types
+        
+        return field_info
+    
+    def _detect_padding(self, layout: RecordLayout):
+        """
+        Detect padding regions in a record.
+        
+        Args:
+            layout: RecordLayout to analyze
+        """
+        if not layout.fields:
+            return
+        
+        # Sort fields by offset (important for structures)
+        # For unions, all fields are at offset 0, so gaps don't really mean padding in the same way
+        if layout.kind == 'union':
+            return
+            
+        sorted_fields = sorted(layout.fields, key=lambda f: f.offset_bytes)
+        
+        # Detect inter-field padding
+        for i in range(len(sorted_fields) - 1):
+            current_field = sorted_fields[i]
+            next_field = sorted_fields[i + 1]
+            
+            current_end = current_field.offset_bytes + current_field.size_bytes
+            gap = next_field.offset_bytes - current_end
+            
+            if gap > 0:
+                padding = PaddingInfo(
+                    offset_bytes=current_end,
+                    size_bytes=gap,
+                    reason='inter-field'
+                )
+                layout.padding_regions.append(padding)
+        
+        # Detect trailing padding
+        if sorted_fields:
+            last_field = sorted_fields[-1]
+            last_end = last_field.offset_bytes + last_field.size_bytes
+            
+            if last_end < layout.size_bytes:
+                padding = PaddingInfo(
+                    offset_bytes=last_end,
+                    size_bytes=layout.size_bytes - last_end,
+                    reason='trailing'
+                )
+                layout.padding_regions.append(padding)
 
 # ============================================================================
 # TYPE EXTRACTOR ()
@@ -265,6 +566,11 @@ class TypeExtractor:
         
         # Cache for extracted types
         self._type_cache: Dict[str, TypeInfo] = {}
+        self._record_extractor: Optional['RecordLayoutExtractor'] = None
+    
+    def set_record_extractor(self, extractor: 'RecordLayoutExtractor'):
+        """Set record layout extractor (avoid circular dependency)."""
+        self._record_extractor = extractor
     
     def extract_type(self, cxtype: 'CXType') -> TypeInfo:
         """
@@ -422,9 +728,17 @@ class TypeExtractor:
         type_info.calling_convention = calling_conv_map.get(calling_conv, 'unknown')
     
     def _extract_record_info(self, cxtype: 'CXType', type_info: TypeInfo):
-        """Extract record (struct/union) type information."""
-        # Determine if struct or union (requires cursor, simplified for now)
-        type_info.record_kind = 'struct'  # TODO: Detect union in later prompts
+        """
+        Extract record (struct/union) type information.
+        
+        Enhanced in  to extract complete layout.
+        """
+        # Detect struct vs union (requires cursor)
+        type_info.record_kind = 'struct'  # Default assumption
+        
+        # Important: Full layout extraction requires cursor, which is not available
+        # from CXType alone. Layout extraction happens when processing cursors
+        # in ClangFrontend. This method sets up basic record info.
     
     def _extract_enum_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """Extract enum type information."""
@@ -890,6 +1204,12 @@ if LIBCLANG_AVAILABLE:
     libclang.clang_isRestrictQualifiedType.argtypes = [CXType]
     libclang.clang_isRestrictQualifiedType.restype = ctypes.c_int
 
+        libclang.clang_IDE_getOffsetOfField.argtypes = [CXIDE]
+    libclang.clang_IDE_getOffsetOfField.restype = ctypes.c_longlong
+    
+        libclang.clang_Type_getNumFields.argtypes = [CXType]
+    libclang.clang_Type_getNumFields.restype = ctypes.c_int
+
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
     """Convert CXString to Python string and dispose."""
@@ -951,7 +1271,10 @@ class ClangFrontend(CompilerFrontend):
         
         self._compiler_name = "clang"
         self._compiler_version = "unknown"  # TODO: Query via clang_getClangVersion
-        self._type_extractor = TypeExtractor()
+        
+                self._type_extractor = TypeExtractor()
+        self._record_extractor = RecordLayoutExtractor(self._type_extractor)
+        self._type_extractor.set_record_extractor(self._record_extractor)
     
     @property
     def compiler_name(self) -> str:
@@ -1170,5 +1493,19 @@ class ClangFrontend(CompilerFrontend):
             linkage='external',
             type_spelling=type_spelling
         )
+        
+                if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL]:
+            try:
+                # Extract basic type info first
+                symbol_type_info = self._type_extractor.extract_type(cursor_type)
+                
+                # Extract detailed layout
+                layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
+                symbol_type_info.record_layout = layoutValue
+                
+                # Update symbol type spelling if needed or add to a type map
+                # For now, we just ensure the layout is available in the type info
+            except Exception:
+                pass
         
         return symbol
