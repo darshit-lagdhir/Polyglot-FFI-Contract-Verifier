@@ -33,7 +33,9 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
         ClangFrontend,
     ClangCompilationUnit,
     SourceLocation,
-    LIBCLANG_AVAILABLE
+    LIBCLANG_AVAILABLE,
+        TypeExtractor,
+    CXTypeKind
 )
 
 # ============================================================================
@@ -49,8 +51,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '2/20'
-        assert info['status'] == 'clang_integration'
+        assert info['prompt'] == '3/20'
+        assert info['status'] == 'type_extraction'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -158,14 +160,14 @@ class TestTypeInfo:
     
     def test_typeinfo_creation(self):
         """Test creating type info."""
-        tinfo = TypeInfo(name='MyStruct', canonical_name='struct MyStruct')
+        tinfo = TypeInfo(name='MyStruct', canonical_name='struct MyStruct', kind='record')
         
         assert tinfo.name == 'MyStruct'
         assert tinfo.canonical_name == 'struct MyStruct'
     
     def test_typeinfo_serialization(self):
         """Test type info serialization."""
-        tinfo = TypeInfo(name='int32_t', canonical_name='int')
+        tinfo = TypeInfo(name='int32_t', canonical_name='int', kind='typedef')
         
         data = tinfo.to_dict()
         
@@ -204,7 +206,7 @@ class TestRawInterfaceArtifact:
         )
         
         symbol = ExternalSymbol(name='foo', kind='function')
-        tinfo = TypeInfo(name='int', canonical_name='int')
+        tinfo = TypeInfo(name='int', canonical_name='int', kind='primitive')
         
         artifact = RawInterfaceArtifact(
             compilation_context=context,
@@ -436,8 +438,171 @@ class TestClangCompilationUnit:
         assert unit.translation_unit is None
 
 # ============================================================================
+# TEST: TYPE INFORMATION ()
+# ============================================================================
+
+class TestTypeInfoEnhanced:
+    """Test enhanced TypeInfo structure."""
+    
+    def test_primitive_type_creation(self):
+        """Test creating primitive type info."""
+        tinfo = TypeInfo(
+            name='int',
+            canonical_name='int',
+            kind='primitive',
+            size_bytes=4,
+            alignment_bytes=4
+        )
+        
+        assert tinfo.kind == 'primitive'
+        assert tinfo.size_bytes == 4
+        assert not tinfo.is_incomplete
+    
+    def test_pointer_type_creation(self):
+        """Test creating pointer type info."""
+        tinfo = TypeInfo(
+            name='int*',
+            canonical_name='int*',
+            kind='pointer',
+            size_bytes=8,
+            alignment_bytes=8,
+            pointee_type='int',
+            pointer_depth=1
+        )
+        
+        assert tinfo.kind == 'pointer'
+        assert tinfo.pointee_type == 'int'
+        assert tinfo.pointer_depth == 1
+    
+    def test_array_type_creation(self):
+        """Test creating array type info."""
+        tinfo = TypeInfo(
+            name='int[10]',
+            canonical_name='int[10]',
+            kind='array',
+            size_bytes=40,
+            alignment_bytes=4,
+            element_type='int',
+            array_size=10
+        )
+        
+        assert tinfo.kind == 'array'
+        assert tinfo.element_type == 'int'
+        assert tinfo.array_size == 10
+    
+    def test_function_type_creation(self):
+        """Test creating function type info."""
+        tinfo = TypeInfo(
+            name='int(int, float)',
+            canonical_name='int(int, float)',
+            kind='function',
+            return_type='int',
+            parameter_types=['int', 'float'],
+            calling_convention='cdecl'
+        )
+        
+        assert tinfo.kind == 'function'
+        assert tinfo.return_type == 'int'
+        assert len(tinfo.parameter_types) == 2
+        assert tinfo.calling_convention == 'cdecl'
+        assert not tinfo.is_variadic
+    
+    def test_type_with_qualifiers(self):
+        """Test type with const/volatile qualifiers."""
+        tinfo = TypeInfo(
+            name='const int*',
+            canonical_name='const int*',
+            kind='pointer',
+            is_const=True
+        )
+        
+        assert tinfo.is_const
+        assert not tinfo.is_volatile
+    
+    def test_incomplete_type(self):
+        """Test incomplete type handling."""
+        tinfo = TypeInfo(
+            name='struct Opaque',
+            canonical_name='struct Opaque',
+            kind='record',
+            size_bytes=0,
+            alignment_bytes=0,
+            is_incomplete=True
+        )
+        
+        assert tinfo.is_incomplete
+        assert tinfo.size_bytes == 0
+    
+    def test_typeinfo_serialization(self):
+        """Test TypeInfo serialization."""
+        tinfo = TypeInfo(
+            name='float*',
+            canonical_name='float*',
+            kind='pointer',
+            size_bytes=8,
+            alignment_bytes=8,
+            pointee_type='float',
+            pointer_depth=1
+        )
+        
+        data = tinfo.to_dict()
+        
+        assert data['name'] == 'float*'
+        assert data['kind'] == 'pointer'
+        assert data['pointee_type'] == 'float'
+        assert data['pointer_depth'] == 1
+    
+    def test_function_type_serialization(self):
+        """Test function type serialization."""
+        tinfo = TypeInfo(
+            name='void(int, ...)',
+            canonical_name='void(int, ...)',
+            kind='function',
+            return_type='void',
+            parameter_types=['int'],
+            is_variadic=True,
+            calling_convention='cdecl'
+        )
+        
+        data = tinfo.to_dict()
+        
+        assert data['return_type'] == 'void'
+        assert data['is_variadic'] is True
+        assert 'cdecl' in str(data)
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestTypeExtractor:
+    """Test type extractor."""
+    
+    def test_type_extractor_creation(self):
+        """Test creating type extractor."""
+        extractor = TypeExtractor()
+        
+        assert extractor is not None
+        assert hasattr(extractor, '_type_cache')
+    
+    def test_type_classification(self):
+        """Test type classification logic."""
+        extractor = TypeExtractor()
+        
+        # Mock CXType for primitive
+        class MockType:
+            kind = CXTypeKind.INT
+        
+        kind = extractor._classify_type(MockType())
+        assert kind == 'primitive'
+    
+    def test_type_cache(self):
+        """Test type caching mechanism."""
+        extractor = TypeExtractor()
+        
+        # Cache should start empty
+        assert len(extractor._type_cache) == 0
+
+# ============================================================================
 # MEDIUM LEVEL TESTING: 80-100 TESTS TARGET
-# Progress: 28 components minimum for medium level
+# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) = 38 tests
+# Progress: 38 components minimum for medium level
 # ============================================================================
 
 if __name__ == '__main__':

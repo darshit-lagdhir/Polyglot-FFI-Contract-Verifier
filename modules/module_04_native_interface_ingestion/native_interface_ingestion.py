@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "2/20"
-__status__ = "clang_integration"
+__prompt__ = "3/20"
+__status__ = "type_extraction"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -164,18 +164,272 @@ class TypeInfo:
     """
     Complete type information extracted from compiler.
     
-    This is a minimal stub for . Full implementation in later prompts.
+    Extended in  with comprehensive ABI-relevant properties.
     """
     
-    name: str
-    canonical_name: str
+    # Identity
+    name: str  # Declared type name
+    canonical_name: str  # Canonical name after typedef resolution
+    
+    # Classification
+    kind: str  # 'primitive', 'pointer', 'array', 'record', 'function', 'enum', 'typedef', 'unknown'
+    
+    # Size and alignment (-1 if incomplete)
+    size_bytes: int = -1
+    alignment_bytes: int = -1
+    
+    # Pointer types
+    pointee_type: Optional[str] = None
+    pointer_depth: int = 0
+    
+    # Array types
+    element_type: Optional[str] = None
+    array_size: Optional[int] = None  # None for incomplete arrays
+    
+    # Function types
+    return_type: Optional[str] = None
+    parameter_types: List[str] = field(default_factory=list)
+    is_variadic: bool = False
+    calling_convention: Optional[str] = None
+    
+    # Record types
+    record_kind: Optional[str] = None  # 'struct', 'union', None
+    
+    # Enum types
+    underlying_type: Optional[str] = None
+    
+    # Qualifiers
+    is_const: bool = False
+    is_volatile: bool = False
+    is_restrict: bool = False
+    
+    # Completeness
+    is_incomplete: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
-        return {
+        data = {
             'name': self.name,
-            'canonical_name': self.canonical_name
+            'canonical_name': self.canonical_name,
+            'kind': self.kind,
+            'size_bytes': self.size_bytes,
+            'alignment_bytes': self.alignment_bytes,
+            'is_incomplete': self.is_incomplete
         }
+        
+        if self.pointee_type:
+            data['pointee_type'] = self.pointee_type
+            data['pointer_depth'] = self.pointer_depth
+        
+        if self.element_type:
+            data['element_type'] = self.element_type
+            data['array_size'] = self.array_size
+        
+        if self.return_type:
+            data['return_type'] = self.return_type
+            data['parameter_types'] = self.parameter_types
+            data['is_variadic'] = self.is_variadic
+            data['calling_convention'] = self.calling_convention
+        
+        if self.record_kind:
+            data['record_kind'] = self.record_kind
+        
+        if self.underlying_type:
+            data['underlying_type'] = self.underlying_type
+        
+        if self.is_const or self.is_volatile or self.is_restrict:
+            data['qualifiers'] = {
+                'const': self.is_const,
+                'volatile': self.is_volatile,
+                'restrict': self.is_restrict
+            }
+        
+        return data
+
+# ============================================================================
+# TYPE EXTRACTOR ()
+# ============================================================================
+
+class TypeExtractor:
+    """
+    Extracts complete type information from Clang AST.
+    
+    Handles type classification, canonicalization, size/alignment queries,
+    and recursive type decomposition.
+    """
+    
+    def __init__(self):
+        """Initialize type extractor."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available for type extraction")
+        
+        # Cache for extracted types
+        self._type_cache: Dict[str, TypeInfo] = {}
+    
+    def extract_type(self, cxtype: 'CXType') -> TypeInfo:
+        """
+        Extract complete type information from CXType.
+        
+        Args:
+            cxtype: Clang CXType
+            
+        Returns:
+            Complete TypeInfo
+        """
+        # Get type spelling
+        type_spelling = self._get_type_spelling(cxtype)
+        
+        # Check cache
+        if type_spelling in self._type_cache:
+            return self._type_cache[type_spelling]
+        
+        # Get canonical type
+        canonical_type = libclang.clang_getCanonicalType(cxtype)
+        canonical_spelling = self._get_type_spelling(canonical_type)
+        
+        # Classify type
+        kind = self._classify_type(cxtype)
+        
+        # Extract size and alignment
+        size = libclang.clang_Type_getSizeOf(cxtype)
+        alignment = libclang.clang_Type_getAlignOf(cxtype)
+        
+        is_incomplete = (size < 0)
+        
+        # Create base type info
+        type_info = TypeInfo(
+            name=type_spelling,
+            canonical_name=canonical_spelling,
+            kind=kind,
+            size_bytes=max(0, size),
+            alignment_bytes=max(0, alignment),
+            is_incomplete=is_incomplete
+        )
+        
+        # Extract qualifiers
+        type_info.is_const = bool(libclang.clang_isConstQualifiedType(cxtype))
+        type_info.is_volatile = bool(libclang.clang_isVolatileQualifiedType(cxtype))
+        type_info.is_restrict = bool(libclang.clang_isRestrictQualifiedType(cxtype))
+        
+        # Extract kind-specific properties
+        if kind == 'pointer':
+            self._extract_pointer_info(cxtype, type_info)
+        elif kind == 'array':
+            self._extract_array_info(cxtype, type_info)
+        elif kind == 'function':
+            self._extract_function_info(cxtype, type_info)
+        elif kind == 'record':
+            self._extract_record_info(cxtype, type_info)
+        elif kind == 'enum':
+            self._extract_enum_info(cxtype, type_info)
+        
+        # Cache and return
+        self._type_cache[type_spelling] = type_info
+        return type_info
+    
+    def _get_type_spelling(self, cxtype: 'CXType') -> str:
+        """Get human-readable type spelling."""
+        spelling_cxstr = libclang.clang_getTypeSpelling(cxtype)
+        return clang_string_to_python(spelling_cxstr)
+    
+    def _classify_type(self, cxtype: 'CXType') -> str:
+        """Classify type into ABI category."""
+        kind = cxtype.kind
+        
+        # Primitive types
+        if kind in [
+            CXTypeKind.VOID, CXTypeKind.BOOL,
+            CXTypeKind.CHAR_U, CXTypeKind.UCHAR, CXTypeKind.CHAR_S, CXTypeKind.SCHAR,
+            CXTypeKind.USHORT, CXTypeKind.UINT, CXTypeKind.ULONG, CXTypeKind.ULONGLONG,
+            CXTypeKind.SHORT, CXTypeKind.INT, CXTypeKind.LONG, CXTypeKind.LONGLONG,
+            CXTypeKind.FLOAT, CXTypeKind.DOUBLE
+        ]:
+            return 'primitive'
+        
+        elif kind == CXTypeKind.POINTER:
+            return 'pointer'
+        
+        elif kind in [CXTypeKind.CONSTANTARRAY, CXTypeKind.INCOMPLETEARRAY]:
+            return 'array'
+        
+        elif kind == CXTypeKind.FUNCTIONPROTO:
+            return 'function'
+        
+        elif kind == CXTypeKind.RECORD:
+            return 'record'
+        
+        elif kind == CXTypeKind.ENUM:
+            return 'enum'
+        
+        elif kind == CXTypeKind.TYPEDEF:
+            return 'typedef'
+        
+        else:
+            return 'unknown'
+    
+    def _extract_pointer_info(self, cxtype: 'CXType', type_info: TypeInfo):
+        """Extract pointer type information."""
+        pointee = libclang.clang_getPointeeType(cxtype)
+        type_info.pointee_type = self._get_type_spelling(pointee)
+        
+        # Calculate pointer depth
+        depth = 1
+        current = pointee
+        while current.kind == CXTypeKind.POINTER:
+            depth += 1
+            current = libclang.clang_getPointeeType(current)
+        
+        type_info.pointer_depth = depth
+    
+    def _extract_array_info(self, cxtype: 'CXType', type_info: TypeInfo):
+        """Extract array type information."""
+        element = libclang.clang_getArrayElementType(cxtype)
+        type_info.element_type = self._get_type_spelling(element)
+        
+        # Get array size if constant
+        if cxtype.kind == CXTypeKind.CONSTANTARRAY:
+            size = libclang.clang_getArraySize(cxtype)
+            type_info.array_size = size if size >= 0 else None
+        else:
+            type_info.array_size = None
+    
+    def _extract_function_info(self, cxtype: 'CXType', type_info: TypeInfo):
+        """Extract function type information."""
+        # Return type
+        return_type = libclang.clang_getResultType(cxtype)
+        type_info.return_type = self._get_type_spelling(return_type)
+        
+        # Parameter types
+        num_params = libclang.clang_getNumArgTypes(cxtype)
+        for i in range(num_params):
+            param_type = libclang.clang_getArgType(cxtype, i)
+            param_spelling = self._get_type_spelling(param_type)
+            type_info.parameter_types.append(param_spelling)
+        
+        # Variadic flag
+        type_info.is_variadic = bool(libclang.clang_isFunctionTypeVariadic(cxtype))
+        
+        # Calling convention
+        calling_conv = libclang.clang_getFunctionTypeCallingConv(cxtype)
+        calling_conv_map = {
+            CXCallingConv.C: 'cdecl',
+            CXCallingConv.X86_STDCALL: 'stdcall',
+            CXCallingConv.X86_FASTCALL: 'fastcall',
+            CXCallingConv.X86_THISCALL: 'thiscall',
+            CXCallingConv.WIN64: 'win64',
+            CXCallingConv.DEFAULT: 'default'
+        }
+        type_info.calling_convention = calling_conv_map.get(calling_conv, 'unknown')
+    
+    def _extract_record_info(self, cxtype: 'CXType', type_info: TypeInfo):
+        """Extract record (struct/union) type information."""
+        # Determine if struct or union (requires cursor, simplified for now)
+        type_info.record_kind = 'struct'  # TODO: Detect union in later prompts
+    
+    def _extract_enum_info(self, cxtype: 'CXType', type_info: TypeInfo):
+        """Extract enum type information."""
+        # Underlying integer type (requires declaration cursor, simplified for now)
+        type_info.underlying_type = 'int'  # Default assumption
 
 # ============================================================================
 # RAW INTERFACE ARTIFACT
@@ -272,7 +526,14 @@ class RawInterfaceArtifact:
         ]
         
                 types = {
-            k: TypeInfo(name=v['name'], canonical_name=v['canonical_name'])
+            k: TypeInfo(
+                name=v['name'],
+                canonical_name=v['canonical_name'],
+                kind=v.get('kind', 'unknown'),
+                size_bytes=v.get('size_bytes', -1),
+                alignment_bytes=v.get('alignment_bytes', -1),
+                is_incomplete=v.get('is_incomplete', False)
+            )
             for k, v in data.get('type_definitions', {}).items()
         }
         
@@ -458,7 +719,49 @@ class CXString(ctypes.Structure):
 class CXSourceLocation(ctypes.Structure):
     _fields_ = [('ptr_data', ctypes.c_void_p * 2), ('int_data', ctypes.c_uint)]
 
+class CXType(ctypes.Structure):
+    _fields_ = [('kind', ctypes.c_int), ('data', ctypes.c_void_p * 2)]
+
 # Enums
+class CXTypeKind(IntEnum):
+    INVALID = 0
+    UNEXPOSED = 1
+    VOID = 2
+    BOOL = 3
+    CHAR_U = 4
+    UCHAR = 5
+    CHAR_S = 6
+    SCHAR = 7
+    USHORT = 8
+    UINT = 9
+    ULONG = 10
+    ULONGLONG = 11
+    SHORT = 13
+    INT = 17
+    LONG = 18
+    LONGLONG = 19
+    FLOAT = 21
+    DOUBLE = 22
+    POINTER = 101
+    CONSTANTARRAY = 112
+    INCOMPLETEARRAY = 114
+    FUNCTIONPROTO = 111
+    RECORD = 105
+    ENUM = 106
+    TYPEDEF = 107
+
+class CXCallingConv(IntEnum):
+    DEFAULT = 0
+    C = 1
+    X86_STDCALL = 2
+    X86_FASTCALL = 3
+    X86_THISCALL = 4
+    X86_PASCAL = 5
+    AAPCS = 6
+    AAPCS_VFP = 7
+    X86_REGCALL = 8
+    WIN64 = 9
+
 class CXIDEKind(IntEnum):
     UNEXPOSED_DECL = 1
     STRUCT_DECL = 2
@@ -539,6 +842,54 @@ if LIBCLANG_AVAILABLE:
     ]
     libclang.clang_visitChildren.restype = ctypes.c_uint
 
+        libclang.clang_getIDEType.argtypes = [CXIDE]
+    libclang.clang_getIDEType.restype = CXType
+    
+    libclang.clang_getCanonicalType.argtypes = [CXType]
+    libclang.clang_getCanonicalType.restype = CXType
+    
+    libclang.clang_getTypeSpelling.argtypes = [CXType]
+    libclang.clang_getTypeSpelling.restype = CXString
+    
+    libclang.clang_Type_getSizeOf.argtypes = [CXType]
+    libclang.clang_Type_getSizeOf.restype = ctypes.c_longlong
+    
+    libclang.clang_Type_getAlignOf.argtypes = [CXType]
+    libclang.clang_Type_getAlignOf.restype = ctypes.c_longlong
+    
+    libclang.clang_getPointeeType.argtypes = [CXType]
+    libclang.clang_getPointeeType.restype = CXType
+    
+    libclang.clang_getArrayElementType.argtypes = [CXType]
+    libclang.clang_getArrayElementType.restype = CXType
+    
+    libclang.clang_getArraySize.argtypes = [CXType]
+    libclang.clang_getArraySize.restype = ctypes.c_longlong
+    
+    libclang.clang_getResultType.argtypes = [CXType]
+    libclang.clang_getResultType.restype = CXType
+    
+    libclang.clang_getNumArgTypes.argtypes = [CXType]
+    libclang.clang_getNumArgTypes.restype = ctypes.c_int
+    
+    libclang.clang_getArgType.argtypes = [CXType, ctypes.c_uint]
+    libclang.clang_getArgType.restype = CXType
+    
+    libclang.clang_isFunctionTypeVariadic.argtypes = [CXType]
+    libclang.clang_isFunctionTypeVariadic.restype = ctypes.c_int
+    
+    libclang.clang_getFunctionTypeCallingConv.argtypes = [CXType]
+    libclang.clang_getFunctionTypeCallingConv.restype = ctypes.c_int
+    
+    libclang.clang_isConstQualifiedType.argtypes = [CXType]
+    libclang.clang_isConstQualifiedType.restype = ctypes.c_int
+    
+    libclang.clang_isVolatileQualifiedType.argtypes = [CXType]
+    libclang.clang_isVolatileQualifiedType.restype = ctypes.c_int
+    
+    libclang.clang_isRestrictQualifiedType.argtypes = [CXType]
+    libclang.clang_isRestrictQualifiedType.restype = ctypes.c_int
+
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
     """Convert CXString to Python string and dispose."""
@@ -586,6 +937,8 @@ class ClangFrontend(CompilerFrontend):
     
     Provides access to Clang's preprocessor, parser, and AST for extracting
     native interface information with compiler-grade fidelity.
+    
+    Enhanced in  with complete type extraction.
     """
     
     def __init__(self):
@@ -598,6 +951,7 @@ class ClangFrontend(CompilerFrontend):
         
         self._compiler_name = "clang"
         self._compiler_version = "unknown"  # TODO: Query via clang_getClangVersion
+        self._type_extractor = TypeExtractor()
     
     @property
     def compiler_name(self) -> str:
@@ -743,15 +1097,29 @@ class ClangFrontend(CompilerFrontend):
         
         return symbols
     
+    def get_type_info(
+        self,
+        unit: CompilationUnit,
+        type_name: str
+    ) -> Optional[TypeInfo]:
+        """
+        Retrieve complete type information.
+        
+        Args:
+            unit: Parsed compilation unit
+            type_name: Name of type to retrieve
+            
+        Returns:
+            TypeInfo if found, None otherwise
+        """
+                # Full implementation in later prompts
+        return None
+    
     def _process_cursor(self, cursor: CXIDE) -> Optional[ExternalSymbol]:
         """
         Process a cursor and extract symbol information if external.
         
-        Args:
-            cursor: Clang cursor
-            
-        Returns:
-            ExternalSymbol if cursor represents external symbol, None otherwise
+        Enhanced in  to extract type information.
         """
         # Get cursor kind
         kind = libclang.clang_getIDEKind(cursor)
@@ -791,28 +1159,16 @@ class ClangFrontend(CompilerFrontend):
         
         symbol_kind = kind_map.get(kind, 'unknown')
         
+        # Extract type information
+        cursor_type = libclang.clang_getIDEType(cursor)
+        type_spelling = self._type_extractor._get_type_spelling(cursor_type)
+        
         # Create symbol
         symbol = ExternalSymbol(
             name=name,
             kind=symbol_kind,
-            linkage='external'
+            linkage='external',
+            type_spelling=type_spelling
         )
         
         return symbol
-    
-    def get_type_info(
-        self,
-        unit: CompilationUnit,
-        type_name: str
-    ) -> Optional[TypeInfo]:
-        """
-        Retrieve complete type information.
-        
-        Args:
-            unit: Parsed compilation unit
-            type_name: Name of type to retrieve
-            
-        Returns:
-            TypeInfo if found, None otherwise
-        """
-                return None
