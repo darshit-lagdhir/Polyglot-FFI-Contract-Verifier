@@ -24,7 +24,11 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     CompilationUnit,
     IngestionError,
     ConfigError,
-    get_module_info
+    get_module_info,
+        ClangFrontend,
+    ClangCompilationUnit,
+    SourceLocation,
+    LIBCLANG_AVAILABLE
 )
 
 # ============================================================================
@@ -40,8 +44,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '1/20'
-        assert info['status'] == 'foundation'
+        assert info['prompt'] == '2/20'
+        assert info['status'] == 'clang_integration'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -284,9 +288,135 @@ class TestIngestionErrors:
         assert "test config error" in str(exc_info.value)
 
 # ============================================================================
-# EASY LEVEL: 20-50 TESTS TARGET
-# Total tests implemented: 21 tests
-# All foundational data structures and contracts tested
+# TEST: CLANG FRONTEND ()
+# ============================================================================
+
+class TestSourceLocation:
+    """Test source location representation."""
+    
+    def test_source_location_creation(self):
+        """Test creating source location."""
+        loc = SourceLocation(file_path='test.h', line=42, column=10)
+        
+        assert loc.file_path == 'test.h'
+        assert loc.line == 42
+        assert loc.column == 10
+    
+    def test_source_location_serialization(self):
+        """Test source location serialization."""
+        loc = SourceLocation(file_path='foo.c', line=100, column=5)
+        
+        data = loc.to_dict()
+        
+        assert data['file'] == 'foo.c'
+        assert data['line'] == 100
+        assert data['column'] == 5
+
+class TestEnhancedExternalSymbol:
+    """Test enhanced external symbol with metadata."""
+    
+    def test_symbol_with_location(self):
+        """Test symbol with source location."""
+        loc = SourceLocation(file_path='api.h', line=10, column=1)
+        symbol = ExternalSymbol(
+            name='my_func',
+            kind='function',
+            source_location=loc,
+            linkage='external'
+        )
+        
+        assert symbol.name == 'my_func'
+        assert symbol.source_location == loc
+        assert symbol.linkage == 'external'
+    
+    def test_symbol_enhanced_serialization(self):
+        """Test serialization with enhanced metadata."""
+        loc = SourceLocation(file_path='types.h', line=50, column=1)
+        symbol = ExternalSymbol(
+            name='MyStruct',
+            kind='struct',
+            source_location=loc,
+            linkage='external',
+            type_spelling='struct MyStruct'
+        )
+        
+        data = symbol.to_dict()
+        
+        assert 'source_location' in data
+        assert data['source_location']['file'] == 'types.h'
+        assert data['linkage'] == 'external'
+        assert data['type_spelling'] == 'struct MyStruct'
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestClangFrontend:
+    """Test Clang frontend integration."""
+    
+    def test_clang_frontend_creation(self):
+        """Test creating Clang frontend."""
+        frontend = ClangFrontend()
+        
+        assert frontend.compiler_name == 'clang'
+        assert frontend.compiler_version is not None
+    
+    def test_clang_args_construction(self):
+        """Test building Clang command-line arguments."""
+        frontend = ClangFrontend()
+        
+        context = CompilationContext(
+            header_files=[Path('test.h')],
+            include_paths=[Path('/usr/include'), Path('/opt/include')],
+            macro_definitions={'DEBUG': '1', 'FEATURE_X': ''},
+            target_triple='x86_64-pc-linux-gnu',
+            language_standard='c11',
+            abi_flags=['-fms-extensions']
+        )
+        
+        args = frontend._build_clang_args(context)
+        
+        assert '-I/usr/include' in args
+        assert '-I/opt/include' in args
+        assert '-DDEBUG=1' in args
+        assert '-DFEATURE_X' in args
+        assert '-target' in args
+        assert 'x86_64-pc-linux-gnu' in args
+        assert '-std=c11' in args
+        assert '-fms-extensions' in args
+    
+    def test_parse_headers_requires_headers(self):
+        """Test parsing fails without headers."""
+        frontend = ClangFrontend()
+        
+        context = CompilationContext(header_files=[])
+        
+        with pytest.raises(ConfigError) as exc_info:
+            frontend.parse_headers(context)
+        
+        assert "No header files" in str(exc_info.value)
+
+class TestClangCompilationUnit:
+    """Test Clang compilation unit wrapper."""
+    
+    def test_compilation_unit_creation(self):
+        """Test creating compilation unit wrapper."""
+        # Create mock pointers (not actual Clang objects)
+        unit = ClangCompilationUnit(index=None, translation_unit=None)
+        
+        assert unit.index is None
+        assert unit.translation_unit is None
+    
+    def test_compilation_unit_disposal(self):
+        """Test disposal doesn't crash with None pointers."""
+        unit = ClangCompilationUnit(index=None, translation_unit=None)
+        
+        # Should not raise
+        unit.dispose()
+        
+        assert unit.index is None
+        assert unit.translation_unit is None
+
+# ============================================================================
+# MEDIUM LEVEL TESTING: 80-100 TESTS TARGET
+# Progress: 28 components minimum for medium level
 # ============================================================================
 
 if __name__ == '__main__':

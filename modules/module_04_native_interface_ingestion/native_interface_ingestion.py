@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "1/20"
-__status__ = "foundation"
+__prompt__ = "2/20"
+__status__ = "clang_integration"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -96,26 +96,64 @@ class CompilationContext:
         return hashlib.sha256(context_json.encode()).hexdigest()
 
 # ============================================================================
-# EXTERNAL SYMBOL (STUB FOR PROMPT 1)
+# SOURCE LOCATION
+# ============================================================================
+
+@dataclass
+class SourceLocation:
+    """Source code location."""
+    
+    file_path: str
+    line: int
+    column: int
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize location."""
+        return {
+            'file': self.file_path,
+            'line': self.line,
+            'column': self.column
+        }
+
+# ============================================================================
+# EXTERNAL SYMBOL (ENHANCED IN PROMPT 2)
 # ============================================================================
 
 @dataclass
 class ExternalSymbol:
     """
-    Represents an externally visible symbol (function, variable, type).
+    Externally visible symbol (function, variable, type).
     
-    This is a minimal stub for . Full implementation in later prompts.
+    Extended in  with metadata from AST traversal.
     """
     
     name: str
-    kind: str  # 'function', 'variable', 'type'
+    kind: str  # 'function', 'variable', 'type', 'struct', 'union', 'enum', 'typedef'
+    
+        source_location: Optional[SourceLocation] = None
+    linkage: Optional[str] = None  # 'external', 'internal', 'unique_external'
+    visibility: Optional[str] = None
+    type_spelling: Optional[str] = None
+    is_definition: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
-        return {
+        data = {
             'name': self.name,
-            'kind': self.kind
+            'kind': self.kind,
+            'is_definition': self.is_definition
         }
+        
+        if self.source_location:
+            data['source_location'] = self.source_location.to_dict()
+        
+        if self.linkage:
+            data['linkage'] = self.linkage
+        
+        if self.type_spelling:
+            data['type_spelling'] = self.type_spelling
+        
+        return data
 
 # ============================================================================
 # TYPE INFO (STUB FOR PROMPT 1)
@@ -374,3 +412,407 @@ def get_module_info() -> Dict[str, str]:
         'status': __status__,
         'name': 'Native Interface Ingestion'
     }
+
+# ============================================================================
+# CLANG FRONTEND INTEGRATION ()
+# ============================================================================
+
+import sys
+import ctypes
+from enum import IntEnum
+
+# ============================================================================
+# LIBCLANG BINDINGS (MINIMAL SUBSET)
+# ============================================================================
+
+# Attempt to load libclang
+try:
+    if sys.platform == 'win32':
+        libclang = ctypes.CDLL('libclang.dll')
+    elif sys.platform == 'darwin':
+        libclang = ctypes.CDLL('libclang.dylib')
+    else:
+        libclang = ctypes.CDLL('libclang.so')
+    LIBCLANG_AVAILABLE = True
+except OSError:
+    LIBCLANG_AVAILABLE = False
+    libclang = None
+
+# Opaque types
+class CXIndex(ctypes.Structure):
+    pass
+
+class CXTranslationUnit(ctypes.Structure):
+    pass
+
+class CXIDE(ctypes.Structure):
+    _fields_ = [
+        ('kind', ctypes.c_int),
+        ('xdata', ctypes.c_int),
+        ('data', ctypes.c_void_p * 3)
+    ]
+
+class CXString(ctypes.Structure):
+    _fields_ = [('data', ctypes.c_void_p), ('private_flags', ctypes.c_uint)]
+
+class CXSourceLocation(ctypes.Structure):
+    _fields_ = [('ptr_data', ctypes.c_void_p * 2), ('int_data', ctypes.c_uint)]
+
+# Enums
+class CXIDEKind(IntEnum):
+    UNEXPOSED_DECL = 1
+    STRUCT_DECL = 2
+    UNION_DECL = 3
+    ENUM_DECL = 5
+    FUNCTION_DECL = 8
+    VAR_DECL = 9
+    TYPEDEF_DECL = 20
+
+class CXLinkageKind(IntEnum):
+    INVALID = 0
+    NO_LINKAGE = 1
+    INTERNAL = 2
+    UNIQUE_EXTERNAL = 3
+    EXTERNAL = 4
+
+class CXChildVisitResult(IntEnum):
+    BREAK = 0
+    CONTINUE = 1
+    RECURSE = 2
+
+# Function prototypes
+if LIBCLANG_AVAILABLE:
+    # Index management
+    libclang.clang_createIndex.argtypes = [ctypes.c_int, ctypes.c_int]
+    libclang.clang_createIndex.restype = ctypes.POINTER(CXIndex)
+    
+    libclang.clang_disposeIndex.argtypes = [ctypes.POINTER(CXIndex)]
+    libclang.clang_disposeIndex.restype = None
+    
+    # Translation unit parsing
+    libclang.clang_parseTranslationUnit.argtypes = [
+        ctypes.POINTER(CXIndex),
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_char_p),
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.c_uint
+    ]
+    libclang.clang_parseTranslationUnit.restype = ctypes.POINTER(CXTranslationUnit)
+    
+    libclang.clang_disposeTranslationUnit.argtypes = [ctypes.POINTER(CXTranslationUnit)]
+    libclang.clang_disposeTranslationUnit.restype = None
+    
+    # IDE operations
+    libclang.clang_getTranslationUnitIDE.argtypes = [ctypes.POINTER(CXTranslationUnit)]
+    libclang.clang_getTranslationUnitIDE.restype = CXIDE
+    
+    libclang.clang_getIDEKind.argtypes = [CXIDE]
+    libclang.clang_getIDEKind.restype = ctypes.c_int
+    
+    libclang.clang_getIDESpelling.argtypes = [CXIDE]
+    libclang.clang_getIDESpelling.restype = CXString
+    
+    libclang.clang_getIDELinkage.argtypes = [CXIDE]
+    libclang.clang_getIDELinkage.restype = ctypes.c_int
+    
+    # String operations
+    libclang.clang_getCString.argtypes = [CXString]
+    libclang.clang_getCString.restype = ctypes.c_char_p
+    
+    libclang.clang_disposeString.argtypes = [CXString]
+    libclang.clang_disposeString.restype = None
+    
+    # Visitor
+    CXIDEVisitor = ctypes.CFUNCTYPE(
+        ctypes.c_int,
+        CXIDE,
+        CXIDE,
+        ctypes.c_void_p
+    )
+    
+    libclang.clang_visitChildren.argtypes = [
+        CXIDE,
+        CXIDEVisitor,
+        ctypes.c_void_p
+    ]
+    libclang.clang_visitChildren.restype = ctypes.c_uint
+
+# Helper functions
+def clang_string_to_python(cxstring: CXString) -> str:
+    """Convert CXString to Python string and dispose."""
+    if not LIBCLANG_AVAILABLE:
+        return ""
+    
+    c_str = libclang.clang_getCString(cxstring)
+    py_str = c_str.decode('utf-8') if c_str else ""
+    libclang.clang_disposeString(cxstring)
+    return py_str
+
+# ============================================================================
+# CLANG COMPILATION UNIT
+# ============================================================================
+
+class ClangCompilationUnit(CompilationUnit):
+    """Clang-specific compilation unit wrapping CXTranslationUnit."""
+    
+    def __init__(
+        self,
+        index: ctypes.POINTER(CXIndex),
+        translation_unit: ctypes.POINTER(CXTranslationUnit)
+    ):
+        super().__init__(internal_repr=translation_unit)
+        self.index = index
+        self.translation_unit = translation_unit
+    
+    def dispose(self):
+        """Release Clang resources."""
+        if LIBCLANG_AVAILABLE and self.translation_unit:
+            libclang.clang_disposeTranslationUnit(self.translation_unit)
+            self.translation_unit = None
+        
+        if LIBCLANG_AVAILABLE and self.index:
+            libclang.clang_disposeIndex(self.index)
+            self.index = None
+
+# ============================================================================
+# CLANG FRONTEND
+# ============================================================================
+
+class ClangFrontend(CompilerFrontend):
+    """
+    Clang compiler frontend integration via libclang.
+    
+    Provides access to Clang's preprocessor, parser, and AST for extracting
+    native interface information with compiler-grade fidelity.
+    """
+    
+    def __init__(self):
+        """Initialize Clang frontend."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError(
+                "libclang not available. Install LLVM/Clang and ensure "
+                "libclang library is in system path."
+            )
+        
+        self._compiler_name = "clang"
+        self._compiler_version = "unknown"  # TODO: Query via clang_getClangVersion
+    
+    @property
+    def compiler_name(self) -> str:
+        """Get compiler name."""
+        return self._compiler_name
+    
+    @property
+    def compiler_version(self) -> str:
+        """Get compiler version."""
+        return self._compiler_version
+    
+    def parse_headers(
+        self,
+        context: CompilationContext
+    ) -> CompilationUnit:
+        """
+        Parse headers using Clang frontend.
+        
+        Args:
+            context: Complete compilation environment
+            
+        Returns:
+            ClangCompilationUnit with parsed AST
+            
+        Raises:
+            ConfigError: Invalid compilation context
+            ToolchainError: Clang invocation failed
+        """
+        if not context.header_files:
+            raise ConfigError("No header files specified in compilation context")
+        
+        # Create index
+        index = libclang.clang_createIndex(0, 1)  # excludePCH=0, displayDiagnostics=1
+        if not index:
+            raise ToolchainError("Failed to create Clang index")
+        
+        # Build command-line arguments
+        args = self._build_clang_args(context)
+        
+        # Convert to C argument array
+        c_args = (ctypes.c_char_p * len(args))()
+        for i, arg in enumerate(args):
+            c_args[i] = arg.encode('utf-8')
+        
+        # Parse first header file
+        # TODO: Support multiple headers via virtual header
+        header_path = str(context.header_files[0])
+        
+        translation_unit = libclang.clang_parseTranslationUnit(
+            index,
+            header_path.encode('utf-8'),
+            c_args,
+            len(args),
+            None,  # unsaved_files
+            0,     # num_unsaved_files
+            0      # options (use defaults)
+        )
+        
+        if not translation_unit:
+            libclang.clang_disposeIndex(index)
+            raise ToolchainError(f"Failed to parse header: {header_path}")
+        
+        return ClangCompilationUnit(index, translation_unit)
+    
+    def _build_clang_args(self, context: CompilationContext) -> List[str]:
+        """
+        Build Clang command-line arguments from compilation context.
+        
+        Args:
+            context: Compilation context
+            
+        Returns:
+            List of command-line arguments
+        """
+        args = []
+        
+        # Include paths
+        for include_path in context.include_paths:
+            args.append(f'-I{include_path}')
+        
+        # Macro definitions
+        for name, value in context.macro_definitions.items():
+            if value:
+                args.append(f'-D{name}={value}')
+            else:
+                args.append(f'-D{name}')
+        
+        # Target triple
+        if context.target_triple:
+            args.append('-target')
+            args.append(context.target_triple)
+        
+        # Language standard
+        if context.language_standard:
+            args.append(f'-std={context.language_standard}')
+        
+        # ABI flags
+        args.extend(context.abi_flags)
+        
+        return args
+    
+    def extract_symbols(
+        self,
+        unit: CompilationUnit
+    ) -> List[ExternalSymbol]:
+        """
+        Extract externally visible symbols from compilation unit.
+        
+        Args:
+            unit: Parsed compilation unit (must be ClangCompilationUnit)
+            
+        Returns:
+            List of external symbols
+            
+        Raises:
+            ExtractionError: Symbol extraction failed
+        """
+        if not isinstance(unit, ClangCompilationUnit):
+            raise ExtractionError("Expected ClangCompilationUnit")
+        
+        symbols = []
+        
+        # Get root cursor
+        cursor = libclang.clang_getTranslationUnitIDE(unit.translation_unit)
+        
+        # Visitor callback
+        def visitor(child_cursor, parent_cursor, client_data):
+            try:
+                symbol = self._process_cursor(child_cursor)
+                if symbol:
+                    symbols.append(symbol)
+            except Exception:
+                # Log but continue traversal
+                pass
+            
+            return CXChildVisitResult.RECURSE
+        
+        # Create CFUNCTYPE callback
+        visitor_func = CXIDEVisitor(visitor)
+        
+        # Traverse AST
+        libclang.clang_visitChildren(cursor, visitor_func, None)
+        
+        return symbols
+    
+    def _process_cursor(self, cursor: CXIDE) -> Optional[ExternalSymbol]:
+        """
+        Process a cursor and extract symbol information if external.
+        
+        Args:
+            cursor: Clang cursor
+            
+        Returns:
+            ExternalSymbol if cursor represents external symbol, None otherwise
+        """
+        # Get cursor kind
+        kind = libclang.clang_getIDEKind(cursor)
+        
+        # Only process declarations
+        if kind not in [
+            CXIDEKind.FUNCTION_DECL,
+            CXIDEKind.VAR_DECL,
+            CXIDEKind.STRUCT_DECL,
+            CXIDEKind.UNION_DECL,
+            CXIDEKind.ENUM_DECL,
+            CXIDEKind.TYPEDEF_DECL
+        ]:
+            return None
+        
+        # Check linkage
+        linkage = libclang.clang_getIDELinkage(cursor)
+        if linkage != CXLinkageKind.EXTERNAL:
+            return None
+        
+        # Get symbol name
+        name_cxstr = libclang.clang_getIDESpelling(cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        if not name:
+            return None
+        
+        # Map cursor kind to symbol kind
+        kind_map = {
+            CXIDEKind.FUNCTION_DECL: 'function',
+            CXIDEKind.VAR_DECL: 'variable',
+            CXIDEKind.STRUCT_DECL: 'struct',
+            CXIDEKind.UNION_DECL: 'union',
+            CXIDEKind.ENUM_DECL: 'enum',
+            CXIDEKind.TYPEDEF_DECL: 'typedef'
+        }
+        
+        symbol_kind = kind_map.get(kind, 'unknown')
+        
+        # Create symbol
+        symbol = ExternalSymbol(
+            name=name,
+            kind=symbol_kind,
+            linkage='external'
+        )
+        
+        return symbol
+    
+    def get_type_info(
+        self,
+        unit: CompilationUnit,
+        type_name: str
+    ) -> Optional[TypeInfo]:
+        """
+        Retrieve complete type information.
+        
+        Args:
+            unit: Parsed compilation unit
+            type_name: Name of type to retrieve
+            
+        Returns:
+            TypeInfo if found, None otherwise
+        """
+                return None
