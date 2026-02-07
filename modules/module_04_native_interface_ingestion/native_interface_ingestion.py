@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 15/20
-Status: artifact_validation
+Prompt: 16/20
+Status: ingestion_orchestrator
 """
 
 import json
@@ -35,8 +35,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "15/20"
-__status__ = "artifact_validation"
+__prompt__ = "16/20"
+__status__ = "ingestion_orchestrator"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -4744,3 +4744,365 @@ class ArtifactValidator:
                 ))
         
         return diagnostics
+
+# ============================================================================
+# INGESTION ORCHESTRATOR ()
+# ============================================================================
+import argparse
+import sys
+
+# ============================================================================
+# INGESTION CONFIGURATION
+# ============================================================================
+
+@dataclass
+class IngestionConfig:
+    """
+    Config for ingestion process.
+    
+    High-level configuration accepted by orchestrator.
+    """
+    
+    # Required inputs
+    header_files: List[Path]
+    
+    # Compilation settings
+    include_paths: List[Path] = field(default_factory=list)
+    macro_definitions: Dict[str, str] = field(default_factory=dict)
+    target_triple: str = ""
+    abi_flags: List[str] = field(default_factory=list)
+    language_standard: str = "c11"
+    
+    # Compiler settings
+    compiler_name: str = "clang"
+    compiler_version: str = ""
+    
+    # Caching
+    enable_cache: bool = True
+    cache_dir: Optional[Path] = None
+    force_full_ingestion: bool = False
+    
+    # Validation
+    enable_validation: bool = True
+    fail_on_validation_errors: bool = False
+    
+    # Output
+    output_path: Optional[Path] = None
+    output_format: str = "json"
+    
+    # Diagnostics
+    verbose: bool = False
+    max_diagnostics: int = 100
+    
+    def to_compilation_context(self) -> CompilationContext:
+        """Convert to CompilationContext."""
+        return CompilationContext(
+            header_files=self.header_files,
+            include_paths=self.include_paths,
+            macro_definitions=self.macro_definitions,
+            target_triple=self.target_triple,
+            abi_flags=self.abi_flags,
+            language_standard=self.language_standard,
+            compiler_name=self.compiler_name,
+            compiler_version=self.compiler_version
+        )
+
+# ============================================================================
+# INGESTION STATE
+# ============================================================================
+
+class IngestionState:
+    """Tracks ingestion progress and state."""
+    
+    def __init__(self):
+        self.current_stage: str = "not_started"
+        self.stage_start_time: float = 0.0
+        self.total_headers: int = 0
+        self.processed_headers: int = 0
+        self.extracted_symbols: int = 0
+        
+        self.stages_completed: List[str] = []
+        self.errors_occurred: bool = False
+    
+    def enter_stage(self, stage_name: str):
+        """Enter a new stage."""
+        self.current_stage = stage_name
+        self.stage_start_time = time.time()
+    
+    def exit_stage(self):
+        """Exit current stage."""
+        if self.current_stage not in self.stages_completed:
+            self.stages_completed.append(self.current_stage)
+    
+    def progress_percentage(self) -> float:
+        """Compute overall progress percentage."""
+        total_stages = 8
+        return (len(self.stages_completed) / total_stages) * 100
+
+# ============================================================================
+# INGESTION ORCHESTRATOR
+# ============================================================================
+
+class IngestionOrchestrator:
+    """
+    Main ingestion orchestrator.
+    
+    Coordinates all ingestion stages and provides unified interface.
+    """
+    
+    def __init__(
+        self,
+        frontend: Optional[CompilerFrontend] = None,
+        cache: Optional[IngestionCache] = None,
+        validator: Optional[ArtifactValidator] = None,
+        diagnostic_collector: Optional[DiagnosticCollector] = None
+    ):
+        """
+        Initialize orchestrator.
+        
+        Args:
+            frontend: Compiler frontend (defaults to ClangFrontend)
+            cache: Cache instance (created if not provided)
+            validator: Artifact validator (defaults to ArtifactValidator)
+            diagnostic_collector: Diagnostic collector (created if not provided)
+        """
+        self.frontend = frontend or (ClangFrontend() if LIBCLANG_AVAILABLE else None)
+        self.cache = cache
+        self.validator = validator or ArtifactValidator()
+        self.diagnostic_collector = diagnostic_collector or DiagnosticCollector()
+        
+        self.state = IngestionState()
+    
+    def ingest(self, config: IngestionConfig) -> RawInterfaceArtifact:
+        """
+        Execute complete ingestion pipeline.
+        
+        Args:
+            config: Ingestion configuration
+            
+        Returns:
+            Final artifact
+            
+        Raises:
+            IngestionError: If fatal error occurs
+        """
+        try:
+            # Stage 1: Initialization
+            self._initialize(config)
+            
+            # Build compilation context
+            context = config.to_compilation_context()
+            
+            # Stage 2: Parsing
+            self.state.enter_stage("parsing")
+            
+            if not self.frontend:
+                raise ToolchainError("Compiler frontend not available")
+            
+            compilation_unit = self.frontend.parse_headers(context)
+            
+            self.state.exit_stage()
+            
+            # Stage 3: Extraction
+            self.state.enter_stage("extraction")
+            
+            symbols = self.frontend.extract_symbols(compilation_unit)
+            self.state.extracted_symbols = len(symbols)
+            
+            self.state.exit_stage()
+            
+            # Stage 4: Build artifact
+            self.state.enter_stage("artifact_generation")
+            
+            artifact = RawInterfaceArtifact(
+                artifact_version=__version__,
+                generation_timestamp=datetime.now(timezone.utc).isoformat(),
+                compilation_context=context,
+                external_symbols=symbols,
+                type_definitions=self.frontend._type_extractor._type_cache if hasattr(self.frontend, '_type_extractor') else {}
+            )
+            
+            self.state.exit_stage()
+            
+            # Stage 5: Validation
+            if config.enable_validation:
+                self.state.enter_stage("validation")
+                
+                validation_report = self.validator.validate(artifact)
+                artifact.validation_passed = validation_report.passed
+                artifact.validation_errors = [
+                    d.message for d in validation_report.all_diagnostics()
+                    if d.severity in ['error', 'fatal']
+                ]
+                
+                # Add validation diagnostics to collector
+                for diag in validation_report.all_diagnostics():
+                    self.diagnostic_collector.report.add_diagnostic(diag)
+                
+                self.state.exit_stage()
+                
+                if not validation_report.passed and config.fail_on_validation_errors:
+                    raise ValidationError("Artifact validation failed")
+            
+            # Stage 6: Output
+            if config.output_path:
+                self.state.enter_stage("output")
+                artifact.save(config.output_path)
+                self.state.exit_stage()
+            
+            # Update report statistics
+            self.diagnostic_collector.report.symbols_extracted = len(symbols)
+            
+            return artifact
+            
+        except Exception as e:
+            self.state.errors_occurred = True
+            
+            if isinstance(e, (IngestionError, ValidationError)):
+                raise
+            
+            # Wrap unexpected errors
+            raise IngestionError(f"Unexpected error during ingestion: {e}") from e
+    
+    def _initialize(self, config: IngestionConfig):
+        """Initialize ingestion."""
+        self.state.enter_stage("initialization")
+        
+        # Validate configuration
+        errors = self._validate_config(config)
+        if errors:
+            for error in errors:
+                self.diagnostic_collector.add_fatal(error, category='configuration')
+            raise ConfigError(f"Invalid configuration: {errors[0]}")
+        
+        # Initialize cache if enabled
+        if config.enable_cache and config.cache_dir:
+            self.cache = IngestionCache(config.cache_dir)
+        
+        self.state.total_headers = len(config.header_files)
+        self.state.exit_stage()
+    
+    def _validate_config(self, config: IngestionConfig) -> List[str]:
+        """Validate ingestion configuration."""
+        errors = []
+        
+        if not config.header_files:
+            errors.append("No header files specified")
+        
+        for header in config.header_files:
+            if not header.exists():
+                errors.append(f"Header not found: {header}")
+        
+        return errors
+    
+    def get_report(self) -> IngestionReport:
+        """Get final ingestion report."""
+        return self.diagnostic_collector.get_report()
+
+# ============================================================================
+# CLI INTERFACE
+# ============================================================================
+
+def main():
+    """CLI entry point for standalone ingestion."""
+    parser = argparse.ArgumentParser(
+        description='Native Interface Ingestion Tool (PFCV Module 04)',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        'headers',
+        nargs='+',
+        type=Path,
+        help='Header files to ingest'
+    )
+    
+    parser.add_argument(
+        '-I', '--include',
+        dest='include_paths',
+        action='append',
+        type=Path,
+        default=[],
+        help='Include search paths'
+    )
+    
+    parser.add_argument(
+        '-D', '--define',
+        dest='macros',
+        action='append',
+        default=[],
+        help='Preprocessor definitions (NAME or NAME=VALUE)'
+    )
+    
+    parser.add_argument(
+        '--target',
+        dest='target_triple',
+        default='',
+        help='Target triple (e.g., x86_64-pc-linux-gnu)'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        type=Path,
+        help='Output file for artifact'
+    )
+    
+    parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='Disable caching'
+    )
+    
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Verbose output'
+    )
+    
+    args = parser.parse_args()
+    
+    # Parse macro definitions
+    macro_defs = {}
+    for macro in args.macros:
+        if '=' in macro:
+            name, value = macro.split('=', 1)
+            macro_defs[name] = value
+        else:
+            macro_defs[macro] = ''
+    
+    # Build configuration
+    config = IngestionConfig(
+        header_files=args.headers,
+        include_paths=args.include_paths,
+        macro_definitions=macro_defs,
+        target_triple=args.target_triple,
+        enable_cache=not args.no_cache,
+        output_path=args.output,
+        verbose=args.verbose
+    )
+    
+    # Execute ingestion
+    orchestrator = IngestionOrchestrator()
+    
+    try:
+        artifact = orchestrator.ingest(config)
+        
+        print(f"✓ Ingestion successful")
+        print(f"  Symbols extracted: {len(artifact.external_symbols)}")
+        
+        if config.output_path:
+            print(f"  Artifact saved: {config.output_path}")
+        
+        # Print summary
+        report = orchestrator.get_report()
+        if report.warning_count() > 0:
+            print(f"  Warnings: {report.warning_count()}")
+        
+        sys.exit(0)
+        
+    except IngestionError as e:
+        print(f"✗ Ingestion failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
