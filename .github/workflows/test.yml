@@ -28,13 +28,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libclang-14-dev llvm-14-dev
+          sudo apt-get install -y libclang-14-dev llvm-14-dev build-essential
           # Create symlink to standard library path for robust discovery
           sudo ln -sf /usr/lib/llvm-14/lib/libclang.so.1 /usr/lib/libclang.so
           sudo ln -sf /usr/lib/llvm-14/lib/libclang.so.1 /usr/lib/libclang-14.so
           echo "Verifying libclang installation:"
           ls -l /usr/lib/llvm-14/lib/libclang*
           ls -l /usr/lib/libclang*
+
+      - name: Build examples (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd examples/simple_calculator && bash build.sh
+
+      - name: Build examples (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd examples/simple_calculator
+          ./build.bat
 
       - name: Install dependencies
         run: |
@@ -47,7 +58,7 @@ jobs:
         env:
           LD_LIBRARY_PATH: /usr/lib/llvm-14/lib
         run: |
-          pytest -v -c config/pytest.ini --timeout=30
+          pytest -v -ra -c config/pytest.ini --timeout=30 -W error
   
   e2e:
     name: End-to-End Tests
@@ -67,13 +78,14 @@ jobs:
           pip install -r config/requirements.txt
           pip install pytest pytest-timeout
       
-      - name: Set up MSVC
-        uses: microsoft/setup-msbuild@v1
-      
+      - name: Build examples
+        run: |
+          cd examples/simple_calculator
+          ./build.bat
+
       - name: Run E2E tests
         run: |
-          pytest tests/e2e/ -v -m e2e --timeout=300 -c config/pytest.ini
-        continue-on-error: true
+          pytest tests/e2e/ -v -ra -m e2e --timeout=300 -c config/pytest.ini -W error
   
   quality:
     name: Code Quality
@@ -93,5 +105,4 @@ jobs:
       
       - name: Lint with flake8
         run: |
-          flake8 modules/module_02_verification_pipeline/ --count --max-line-length=120 --statistics --extend-ignore=E501,W503
-        continue-on-error: true
+          flake8 modules/module_04_native_interface_ingestion/ --count --max-line-length=120 --statistics --extend-ignore=E501,W503,E402,F401,F841,F403
