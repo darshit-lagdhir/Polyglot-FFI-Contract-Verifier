@@ -28,7 +28,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libclang-dev llvm-dev
+          sudo apt-get install -y libclang-14-dev llvm-14-dev
 
       - name: Install dependencies
         run: |

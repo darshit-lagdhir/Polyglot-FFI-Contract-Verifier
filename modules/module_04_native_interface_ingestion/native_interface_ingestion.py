@@ -2992,26 +2992,42 @@ from enum import IntEnum
 # LIBCLANG BINDINGS (MINIMAL SUBSET)
 # ============================================================================
 
+import ctypes.util
+import glob
+
 # Attempt to load libclang
 def _load_libclang():
-    """Attempt to load libclang library with fallback search paths."""
+    """Attempt to load libclang library with robust fallback."""
+    # 1. Try ctypes.util.find_library
+    try:
+        name = ctypes.util.find_library('clang')
+        if name:
+            try:
+                return ctypes.CDLL(name)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+    # 2. Platform specific candidates
+    names = []
     if sys.platform == 'win32':
-        names = ['libclang.dll']
+        names = ['libclang.dll', 'libclang-13.dll', 'libclang-14.dll']
     elif sys.platform == 'darwin':
         names = ['libclang.dylib']
+        names.extend(glob.glob('/opt/homebrew/opt/llvm*/lib/libclang.dylib'))
+        names.extend(glob.glob('/usr/local/opt/llvm*/lib/libclang.dylib'))
     else:
         names = ['libclang.so', 'libclang.so.1']
         
         # Enhanced CI search paths for Linux
         if sys.platform.startswith('linux'):
-            # Common Ubuntu/Debian LLVM paths
-            for ver in range(10, 19):
-                names.append(f'/usr/lib/llvm-{ver}/lib/libclang.so.1')
-            
-            names.append('/usr/lib/x86_64-linux-gnu/libclang-14.so.1')
-            names.append('/usr/lib/x86_64-linux-gnu/libclang.so.1')
-    
-    # Try standard loading first
+            # Look in common system library paths
+            names.extend(glob.glob('/usr/lib/x86_64-linux-gnu/libclang-*.so*'))
+            names.extend(glob.glob('/usr/lib/llvm-*/lib/libclang.so*'))
+            names.extend(glob.glob('/usr/lib/libclang.so*'))
+
+    # 3. Try loading all candidates
     for name in names:
         try:
             return ctypes.CDLL(name)
