@@ -49,7 +49,9 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     GlobalVariableExtractor,
         TypedefInfo,
     TypedefResolver,
-    CircularTypedefError
+    CircularTypedefError,
+        MacroInfo,
+    MacroExtractor
 )
 
 # ============================================================================
@@ -65,8 +67,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '9/20'
-        assert info['status'] == 'typedef_resolution'
+        assert info['prompt'] == '10/20'
+        assert info['status'] == 'macro_extraction'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -225,14 +227,14 @@ class TestTypeInfo:
 
     def test_typeinfo_equality(self):
         """Test type info equality."""
-        t1 = TypeInfo(name='int', kind='primitive')
-        t2 = TypeInfo(name='int', kind='primitive')
+        t1 = TypeInfo(name='int', canonical_name='int', kind='primitive')
+        t2 = TypeInfo(name='int', canonical_name='int', kind='primitive')
         
         assert t1 == t2
 
     def test_typeinfo_repr(self):
         """Test type info representation."""
-        t = TypeInfo(name='int', kind='primitive')
+        t = TypeInfo(name='int', canonical_name='int', kind='primitive')
         assert "int" in repr(t)
 
 # ============================================================================
@@ -408,7 +410,7 @@ class TestSourceLocation:
     def test_location_repr(self):
         """Test source location representation."""
         l = SourceLocation('a.h', 42, 10)
-        assert "a.h:42:10" in repr(l)
+        assert repr(l) == "a.h:42:10"
 
 class TestEnhancedExternalSymbol:
     """Test enhanced external symbol with metadata."""
@@ -1559,9 +1561,147 @@ class TestTypeInfoWithTypedef:
         assert tinfo.typedef_info.typedef_name == 'MyType'
 
 # ============================================================================
+# TEST: MACRO EXTRACTION ()
+# ============================================================================
+
+class TestMacroInfo:
+    """Test macro information structure."""
+    
+    def test_object_like_macro(self):
+        """Test object-like macro."""
+        macro = MacroInfo(
+            macro_name='MAX_SIZE',
+            macro_value='1024',
+            macro_type='integer'
+        )
+        
+        assert macro.macro_name == 'MAX_SIZE'
+        assert macro.macro_value == '1024'
+        assert not macro.is_function_like
+
+    def test_function_like_macro(self):
+        """Test function-like macro."""
+        macro = MacroInfo(
+            macro_name='MIN',
+            macro_body='((a) < (b)  (a) : (b))',
+            is_function_like=True,
+            parameters=['a', 'b']
+        )
+        
+        assert macro.is_function_like
+        assert len(macro.parameters) == 2
+        assert 'a' in macro.parameters
+
+    def test_predefined_macro(self):
+        """Test predefined macro."""
+        macro = MacroInfo(
+            macro_name='__LINE__',
+            is_predefined=True,
+            is_builtin=True
+        )
+        
+        assert macro.is_predefined
+        assert macro.is_builtin
+
+    def test_platform_specific_macro(self):
+        """Test platform-specific macro."""
+        macro = MacroInfo(
+            macro_name='_WIN32',
+            is_platform_specific=True
+        )
+        
+        assert macro.is_platform_specific
+
+    def test_macro_with_conditional_context(self):
+        """Test macro with conditional context."""
+        macro = MacroInfo(
+            macro_name='FEATURE_ENABLED',
+            conditional_context=['PLATFORM_LINUX', 'ENABLE_FEATURES']
+        )
+        
+        assert len(macro.conditional_context) == 2
+        assert 'PLATFORM_LINUX' in macro.conditional_context
+
+    def test_macro_classification(self):
+        """Test macro type classification."""
+        macro_int = MacroInfo(macro_name='COUNT', macro_type='integer')
+        macro_str = MacroInfo(macro_name='VERSION', macro_type='string')
+        macro_expr = MacroInfo(macro_name='SIZE', macro_type='expression')
+        
+        assert macro_int.macro_type == 'integer'
+        assert macro_str.macro_type == 'string'
+        assert macro_expr.macro_type == 'expression'
+
+    def test_macro_serialization(self):
+        """Test macro serialization."""
+        macro = MacroInfo(
+            macro_name='TIMEOUT',
+            macro_value='30',
+            macro_type='integer',
+            source_file='config.h',
+            line_number=42
+        )
+        
+        data = macro.to_dict()
+        
+        assert data['macro_name'] == 'TIMEOUT'
+        assert data['macro_value'] == '30'
+        assert data['source_file'] == 'config.h'
+
+    def test_macro_equality(self):
+        """Test macro equality."""
+        m1 = MacroInfo('M', '1')
+        m2 = MacroInfo('M', '1')
+        assert m1 == m2
+
+    def test_macro_repr(self):
+        """Test macro representation."""
+        m = MacroInfo('M', '1')
+        assert 'M' in repr(m)
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestMacroExtractor:
+    """Test macro extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating macro extractor."""
+        extractor = MacroExtractor()
+        
+        assert extractor is not None
+
+    def test_platform_macro_detection(self):
+        """Test platform macro detection."""
+        extractor = MacroExtractor()
+        
+        assert extractor.is_platform_macro('_WIN32')
+        assert extractor.is_platform_macro('__linux__')
+        assert extractor.is_platform_macro('__APPLE__')
+        assert not extractor.is_platform_macro('MY_CUSTOM_MACRO')
+
+class TestExternalSymbolWithMacro:
+    """Test ExternalSymbol with macro info."""
+    
+    def test_symbol_with_macro_info(self):
+        """Test symbol with macro info."""
+        macro_info = MacroInfo(
+            macro_name='DEBUG',
+            macro_value='1'
+        )
+        
+        symbol = ExternalSymbol(
+            name='DEBUG',
+            kind='macro',
+            macro_info=macro_info
+        )
+        
+        assert symbol.kind == 'macro'
+        assert symbol.macro_info is not None
+        assert symbol.macro_info.macro_name == 'DEBUG'
+
+# ============================================================================
 # HARD LEVEL TESTING!
-# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) + 13 (P7) + 10 (P8) + 11 (P9) = 113 tests
-# Progress: 113 components = 113% (DEEP INTO HARD LEVEL!)
+# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) + 13 (P7) + 10 (P8) + 11 (P9) + 11 (P10) = 124 tests
+# Progress: 124 components = 124% (STRONGLY IN HARD LEVEL!)
 # ============================================================================
 
 if __name__ == '__main__':

@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 9/20
-Status: typedef_resolution
+Prompt: 11/20
+Status: attribute_extraction
 """
 
 import json
@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "9/20"
-__status__ = "typedef_resolution"
+__prompt__ = "11/20"
+__status__ = "attribute_extraction"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -95,6 +95,10 @@ class CompilationContext:
         context_json = json.dumps(self.to_dict(), sort_keys=True)
         return hashlib.sha256(context_json.encode()).hexdigest()
 
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"CompilationContext(headers={len(self.header_files)})"
+
 # ============================================================================
 # SOURCE LOCATION
 # ============================================================================
@@ -115,6 +119,10 @@ class SourceLocation:
             'column': self.column
         }
 
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"{self.file_path}:{self.line}:{self.column}"
+
 # ============================================================================
 # EXTERNAL SYMBOL (ENHANCED IN PROMPT 2)
 # ============================================================================
@@ -128,7 +136,7 @@ class ExternalSymbol:
     """
     
     name: str
-    kind: str  # 'function', 'variable', 'type', 'struct', 'union', 'enum', 'typedef'
+    kind: str  # 'function', 'variable', 'type', 'struct', 'union', 'enum', 'typedef', 'macro'
     
         source_location: Optional[SourceLocation] = None
     linkage: Optional[str] = None  # 'external', 'internal', 'unique_external'
@@ -139,6 +147,8 @@ class ExternalSymbol:
         function_signature: Optional['FunctionSignature'] = None
     
         global_variable_info: Optional['GlobalVariableInfo'] = None
+    
+        macro_info: Optional['MacroInfo'] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
@@ -160,14 +170,81 @@ class ExternalSymbol:
         if self.function_signature:
             data['function_signature'] = self.function_signature.to_dict()
             
-        if self.global_variable_info:
-            data['global_variable_info'] = self.global_variable_info.to_dict()
+        if self.macro_info:
+            data['macro_info'] = self.macro_info.to_dict()
         
         return data
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"ExternalSymbol(name='{self.name}', kind='{self.kind}')"
 
 # ============================================================================
 # TYPE INFO (STUB FOR PROMPT 1)
 # ============================================================================
+
+@dataclass
+class MacroInfo:
+    """
+    Information about a preprocessor macro.
+    
+    Captures macro name, value, parameters, and provenance.
+    """
+    
+    macro_name: str
+    macro_value: Optional[str] = None  # Expanded constant value
+    macro_body: str = ""  # Raw token sequence
+    
+    # Function-like macros
+    is_function_like: bool = False
+    parameters: List[str] = field(default_factory=list)
+    
+    # Classification
+    macro_type: str = "unknown"  # 'integer', 'string', 'float', 'expression', 'empty'
+    
+    # Provenance
+    source_file: Optional[str] = None
+    line_number: Optional[int] = None
+    is_predefined: bool = False
+    is_builtin: bool = False
+    is_platform_specific: bool = False
+    
+    # Conditional context
+    conditional_context: List[str] = field(default_factory=list)  # Stack of active #ifdef conditions
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize macro info."""
+        data = {
+            'macro_name': self.macro_name,
+            'macro_body': self.macro_body,
+            'macro_type': self.macro_type,
+            'is_function_like': self.is_function_like
+        }
+        
+        if self.macro_value is not None:
+            data['macro_value'] = self.macro_value
+        
+        if self.parameters:
+            data['parameters'] = self.parameters
+        
+        if self.source_file:
+            data['source_file'] = self.source_file
+            data['line_number'] = self.line_number
+        
+        if self.is_predefined:
+            data['is_predefined'] = True
+        
+        if self.is_platform_specific:
+            data['is_platform_specific'] = True
+        
+        if self.conditional_context:
+            data['conditional_context'] = self.conditional_context
+        
+        return data
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"MacroInfo(name='{self.macro_name}', type='{self.macro_type}')"
 
 @dataclass
 class ParameterInfo:
@@ -472,6 +549,10 @@ class TypeInfo:
         
         return data
 
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"TypeInfo(name='{self.name}', kind='{self.kind}')"
+
 # ============================================================================
 # FIELD AND RECORD LAYOUT DATA STRUCTURES ()
 # ============================================================================
@@ -516,6 +597,10 @@ class FieldInfo:
             data['type_info'] = self.type_info.to_dict()
         
         return data
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"FieldInfo(name='{self.name}', type='{self.field_type}')"
 
 @dataclass
 class PaddingInfo:
@@ -569,6 +654,10 @@ class RecordLayout:
             'is_packed': self.is_packed,
             'is_anonymous': self.is_anonymous
         }
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"RecordLayout(name='{self.name}', kind='{self.kind}')"
 
 # ============================================================================
 # GLOBAL VARIABLE EXTRACTOR ()
@@ -1469,6 +1558,125 @@ class TypedefResolver:
         return cxtype.kind == CXTypeKind.TYPEDEF
 
 # ============================================================================
+# MACRO EXTRACTOR ()
+# ============================================================================
+
+class MacroExtractor:
+    """
+    Extracts preprocessor macro definitions from Clang AST.
+    
+    Handles object-like macros, function-like macros, and conditional
+    compilation analysis.
+    """
+    
+    def __init__(self):
+        """Initialize macro extractor."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        # Track platform-specific macro names
+        self._platform_macros = {
+            '_WIN32', '_WIN64', '__WIN32__', '__WINDOWS__',
+            '__linux__', '__unix__', '__APPLE__', '__MACH__',
+            '__x86_64__', '__amd64__', '__aarch64__', '__arm__',
+            '_MSC_VER', '__GNUC__', '__clang__'
+        }
+
+    def extract_macro(self, macro_cursor: 'CXIDE') -> MacroInfo:
+        """
+        Extract complete macro information.
+        
+        Args:
+            macro_cursor: Macro definition cursor
+            
+        Returns:
+            Complete MacroInfo
+        """
+        # Get macro name
+        name_cxstr = libclang.clang_getIDESpelling(macro_cursor)
+        macro_name = clang_string_to_python(name_cxstr)
+        
+        # Check if function-like
+        is_function_like = bool(libclang.clang_IDE_isMacroFunctionLike(macro_cursor))
+        
+        # Check if builtin/predefined
+        is_builtin = bool(libclang.clang_IDE_isMacroBuiltin(macro_cursor))
+        
+        # Get source location
+        location = libclang.clang_getIDELocation(macro_cursor)
+        source_file = None
+        line_number = None
+        
+        # Extract full location
+        if LIBCLANG_AVAILABLE:
+            cxfile = ctypes.c_void_p()
+            line = ctypes.c_uint()
+            column = ctypes.c_uint()
+            offset = ctypes.c_uint()
+            
+            libclang.clang_getSpellingLocation(
+                location,
+                ctypes.byref(cxfile),
+                ctypes.byref(line),
+                ctypes.byref(column),
+                ctypes.byref(offset)
+            )
+            
+            if cxfile.value:
+                file_cxstr = libclang.clang_getFileName(cxfile)
+                source_file = clang_string_to_python(file_cxstr)
+                line_number = int(line.value)
+        
+        # Detect platform-specific
+        is_platform_specific = macro_name in self._platform_macros
+        
+        # Create macro info
+        macro_info = MacroInfo(
+            macro_name=macro_name,
+            is_function_like=is_function_like,
+            is_builtin=is_builtin,
+            is_predefined=is_builtin,
+            is_platform_specific=is_platform_specific,
+            source_file=source_file,
+            line_number=line_number
+        )
+        
+        # Classify macro type (simplified - full implementation would parse tokens)
+        macro_info.macro_type = self._classify_macro(macro_name)
+        
+        return macro_info
+
+    def _classify_macro(self, macro_name: str) -> str:
+        """
+        Classify macro by name patterns.
+        
+        Args:
+            macro_name: Macro name
+            
+        Returns:
+            Macro type classification
+        """
+        # Simple heuristics based on naming conventions
+        if macro_name.startswith('__'):
+            return 'builtin'
+        elif macro_name.isupper():
+            return 'constant'  # Likely integer or string constant
+        else:
+            return 'unknown'
+
+    def is_platform_macro(self, macro_name: str) -> bool:
+        """
+        Check if macro is platform-specific.
+        
+        Args:
+            macro_name: Macro name
+            
+        Returns:
+            True if platform-specific
+        """
+        return macro_name in self._platform_macros
+
+# ============================================================================
 # TYPE EXTRACTOR ()
 # ============================================================================
 
@@ -2062,7 +2270,9 @@ class CXIDEKind(IntEnum):
     ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
     TYPE_ALIAS_DECL = 301
-    NO_DECL_FOUND = 501
+    MACRO_DEFINITION = 501
+    MACRO_EXPANSION = 502
+    NO_DECL_FOUND = 700 
 
 class CXLinkageKind(IntEnum):
     INVALID = 0
@@ -2133,6 +2343,17 @@ if LIBCLANG_AVAILABLE:
     bind('clang_getCString', [CXString], ctypes.c_char_p)
     bind('clang_disposeString', [CXString], None)
     
+    # Location operations
+    bind('clang_getIDELocation', [CXIDE], CXSourceLocation)
+    bind('clang_getSpellingLocation', [
+        CXSourceLocation,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_uint),
+        ctypes.POINTER(ctypes.c_uint),
+        ctypes.POINTER(ctypes.c_uint)
+    ], None)
+    bind('clang_getFileName', [ctypes.c_void_p], CXString)
+    
     # Visitor
     CXIDEVisitor = ctypes.CFUNCTYPE(
         ctypes.c_int,
@@ -2176,6 +2397,9 @@ if LIBCLANG_AVAILABLE:
         bind('clang_getTypeDeclaration', [CXType], CXIDE)
     bind('clang_getTypedefDeclUnderlyingType', [CXIDE], CXType)
     bind('clang_getTypedefName', [CXType], CXString)
+    
+        bind('clang_IDE_isMacroFunctionLike', [CXIDE], ctypes.c_int)
+    bind('clang_IDE_isMacroBuiltin', [CXIDE], ctypes.c_int)
 
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
@@ -2245,6 +2469,7 @@ class ClangFrontend(CompilerFrontend):
         self._function_extractor = FunctionSignatureExtractor(self._type_extractor)
         self._variable_extractor = GlobalVariableExtractor(self._type_extractor)
         self._typedef_resolver = TypedefResolver(self._type_extractor)
+        self._macro_extractor = MacroExtractor()
         
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
@@ -2297,6 +2522,9 @@ class ClangFrontend(CompilerFrontend):
         # TODO: Support multiple headers via virtual header
         header_path = str(context.header_files[0])
         
+        # Parse with detailed preprocessing record to capture macros
+        options = 0x01  # CXTranslationUnit_DetailedPreprocessingRecord
+        
         translation_unit = libclang.clang_parseTranslationUnit(
             index,
             header_path.encode('utf-8'),
@@ -2304,7 +2532,7 @@ class ClangFrontend(CompilerFrontend):
             len(args),
             None,  # unsaved_files
             0,     # num_unsaved_files
-            0      # options (use defaults)
+            options
         )
         
         if not translation_unit:
@@ -2416,10 +2644,34 @@ class ClangFrontend(CompilerFrontend):
         """
         Process a cursor and extract symbol information if external.
         
-        Enhanced in  to extract type information.
+        Enhanced in 0 to extract macros.
         """
         # Get cursor kind
         kind = libclang.clang_getIDEKind(cursor)
+        
+                if kind == CXIDEKind.MACRO_DEFINITION:
+            try:
+                macro_info = self._macro_extractor.extract_macro(cursor)
+                
+                # Create symbol for macro
+                symbol = ExternalSymbol(
+                    name=macro_info.macro_name,
+                    kind='macro',
+                    linkage='none',
+                    macro_info=macro_info
+                )
+                
+                # Add location to symbol if available
+                if macro_info.source_file:
+                    symbol.source_location = SourceLocation(
+                        file_path=macro_info.source_file,
+                        line=macro_info.line_number or 0,
+                        column=0
+                    )
+                
+                return symbol
+            except Exception:
+                return None
         
         # Only process declarations
         if kind not in [
@@ -2433,10 +2685,53 @@ class ClangFrontend(CompilerFrontend):
         ]:
             return None
         
+        # Extract location
+        location_raw = libclang.clang_getIDELocation(cursor)
+        cxfile = ctypes.c_void_p()
+        line = ctypes.c_uint()
+        column = ctypes.c_uint()
+        offset = ctypes.c_uint()
+        
+        libclang.clang_getSpellingLocation(
+            location_raw,
+            ctypes.byref(cxfile),
+            ctypes.byref(line),
+            ctypes.byref(column),
+            ctypes.byref(offset)
+        )
+        
+        source_location = None
+        if cxfile.value:
+            file_cxstr = libclang.clang_getFileName(cxfile)
+            file_path = clang_string_to_python(file_cxstr)
+            source_location = SourceLocation(
+                file_path=file_path,
+                line=int(line.value),
+                column=int(column.value)
+            )
+
         # Check linkage
-        linkage = libclang.clang_getIDELinkage(cursor)
-        if linkage != CXLinkageKind.EXTERNAL:
+        linkage_kind = libclang.clang_getIDELinkage(cursor)
+        # Linkage can be external or none (for types/macros)
+        is_external = (linkage_kind == CXLinkageKind.EXTERNAL)
+        is_type_decl = kind in [
+            CXIDEKind.STRUCT_DECL, 
+            CXIDEKind.UNION_DECL, 
+            CXIDEKind.ENUM_DECL,
+            CXIDEKind.TYPEDEF_DECL,
+            CXIDEKind.TYPE_ALIAS_DECL
+        ]
+        
+        if not is_external and not is_type_decl:
             return None
+        
+        linkage_map = {
+            CXLinkageKind.EXTERNAL: 'external',
+            CXLinkageKind.INTERNAL: 'internal',
+            CXLinkageKind.UNIQUE_EXTERNAL: 'unique_external',
+            CXLinkageKind.NO_LINKAGE: 'none'
+        }
+        linkage_str = linkage_map.get(linkage_kind, 'none')
         
         # Get symbol name
         name_cxstr = libclang.clang_getIDESpelling(cursor)
@@ -2466,8 +2761,9 @@ class ClangFrontend(CompilerFrontend):
         symbol = ExternalSymbol(
             name=name,
             kind=symbol_kind,
-            linkage='external',
-            type_spelling=type_spelling
+            linkage=linkage_str,
+            type_spelling=type_spelling,
+            source_location=source_location
         )
         
                 if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL]:
