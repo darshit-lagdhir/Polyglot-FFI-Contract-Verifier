@@ -2990,18 +2990,35 @@ import ctypes
 import ctypes.util
 import glob
 from enum import IntEnum
+from pathlib import Path
+import subprocess
 
 # ============================================================================
 # LIBCLANG BINDINGS (MINIMAL SUBSET)
 # ============================================================================
 
-import ctypes.util
-import glob
-
 # Attempt to load libclang
 def _load_libclang():
-    """Attempt to load libclang library with robust fallback."""
-    # 1. Try ctypes.util.find_library
+    """Attempt to load libclang library with robust fallback strategies."""
+    
+    # Strategy 1: subprocess llvm-config (Most reliable for installed LLVM)
+    for cmd in ['llvm-config', 'llvm-config-14', 'llvm-config-13', 'llvm-config-15', 'llvm-config-12']:
+        try:
+            # Try finding llvm-config to get the library directory
+            output = subprocess.check_output([cmd, '--libdir'], text=True, stderr=subprocess.DEVNULL).strip()
+            if output:
+                lib_dir = Path(output)
+                # Try to find libclang in this directory
+                candidates = list(lib_dir.glob('libclang.so*')) + list(lib_dir.glob('libclang.dylib'))
+                for candidate in candidates:
+                    try:
+                        return ctypes.CDLL(str(candidate))
+                    except OSError:
+                        pass
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+    # Strategy 2: ctypes.util.find_library (System default)
     try:
         name = ctypes.util.find_library('clang')
         if name:
@@ -3012,7 +3029,7 @@ def _load_libclang():
     except Exception:
         pass
 
-    # 2. Platform specific candidates
+    # Strategy 3: Platform specific candidates & globs
     names = []
     if sys.platform == 'win32':
         names = ['libclang.dll', 'libclang-13.dll', 'libclang-14.dll']
@@ -3020,63 +3037,56 @@ def _load_libclang():
         names = ['libclang.dylib']
         names.extend(glob.glob('/opt/homebrew/opt/llvm*/lib/libclang.dylib'))
         names.extend(glob.glob('/usr/local/opt/llvm*/lib/libclang.dylib'))
-    else:
-        names = ['libclang.so', 'libclang.so.1']
+    elif sys.platform.startswith('linux'):
+        names = ['libclang.so', 'libclang.so.1', 'libclang-14.so.1']
         
-        # Enhanced CI search paths for Linux
-        if sys.platform.startswith('linux'):
-            # Look in common system library paths
-            names.extend(glob.glob('/usr/lib/x86_64-linux-gnu/libclang-*.so*'))
-            names.extend(glob.glob('/usr/lib/llvm-*/lib/libclang.so*'))
-            names.extend(glob.glob('/usr/lib/libclang.so*'))
+        # Explicitly check versioned llvm directories
+        for ver in range(10, 19):
+             names.extend(glob.glob(f'/usr/lib/llvm-{ver}/lib/libclang.so*'))
+        
+        # Common system paths
+        names.extend(glob.glob('/usr/lib/x86_64-linux-gnu/libclang-*.so*'))
+        names.extend(glob.glob('/usr/lib/libclang.so*'))
 
-    # 2.5 platform specific via LD_LIBRARY_PATH (Linux)
+    # Strategy 4: LD_LIBRARY_PATH (Linux specific)
     if sys.platform.startswith('linux'):
         ld_path = os.environ.get('LD_LIBRARY_PATH', '')
         for path in ld_path.split(':'):
             if not path: continue
-            for lib in ['libclang.so', 'libclang.so.1', 'libclang-14.so.1']:
-                full_path = Path(path) / lib
-                if full_path.exists():
-                     try:
-                         return ctypes.CDLL(str(full_path))
-                     except OSError:
-                         pass
+            path_obj = Path(path)
+            if path_obj.exists():
+                 names.extend([str(p) for p in path_obj.glob('libclang.so*')])
 
-    # 3. Try to find via python 'clang' package (if installed)
-    # This is often the most reliable way if the pip package bundles binaries
-    try:
-        import clang.native
-        if hasattr(clang.native, '__file__'):
-            base_path = Path(clang.native.__file__).parent
-            # Check for common binary names
-            for bin_name in ['libclang.dll', 'libclang.dylib', 'libclang.so', 'libclang.so.1']:
-                lib_path = base_path / bin_name
-                if lib_path.exists():
-                    try:
-                        return ctypes.CDLL(str(lib_path))
-                    except OSError:
-                        pass
-    except (ImportError, AttributeError, OSError):
-        pass
+    # Strategy 5: Python bindings package
+    modules_to_try = ['clang.native', 'libclang', 'clang']
+    for mod_name in modules_to_try:
+        try:
+            mod = __import__(mod_name, fromlist=['*'])
+            if hasattr(mod, '__file__'):
+                base_path = Path(mod.__file__).parent
+                for bin_name in ['libclang.dll', 'libclang.dylib', 'libclang.so', 'libclang.so.1']:
+                    lib_paths = [base_path / bin_name, base_path / 'native' / bin_name]
+                    for lib_path in lib_paths:
+                        if lib_path.exists():
+                             names.insert(0, str(lib_path)) # Prioritize bundled if found
+        except (ImportError, AttributeError, OSError):
+            continue
 
-    # 4. Try loading all candidates
+    # Final Attempt: Load all gathered candidates
+    seen = set()
+    errors = []
     for name in names:
+        if name in seen: continue
+        seen.add(name)
         try:
             return ctypes.CDLL(name)
-        except OSError:
+        except OSError as e:
+            errors.append(f"{name}: {e}")
             continue
             
-    # Fallback for Windows: check if libclang python package is installed
-    if sys.platform == 'win32':
-        try:
-            import clang.native
-            base_path = Path(clang.native.__file__).parent
-            lib_path = base_path / 'libclang.dll'
-            if lib_path.exists():
-                return ctypes.CDLL(str(lib_path))
-        except (ImportError, AttributeError, OSError):
-            pass
+    if names:
+        # Only print diagnostics if we actually had candidates but all failed
+        print(f"DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
             
     return None
 
