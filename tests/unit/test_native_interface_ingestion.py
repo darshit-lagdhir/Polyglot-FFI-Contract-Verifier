@@ -79,12 +79,15 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     SymbolRegistry,
     VirtualHeaderGenerator,
         Profiler,
+    Profiler as PerformanceProfiler,
     ProfileSection,
     PerformanceMetrics,
         StructuredDocumentation,
     parse_doxygen_comment,
     MarkdownGenerator,
-    DocumentationOrchestrator
+    DocumentationOrchestrator,
+    # Additional required
+    InputHasher
 )
 
 @pytest.fixture
@@ -114,8 +117,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '15/20'
-        assert info['status'] == 'cpp_support'
+        assert info['prompt'] == '20/20'
+        assert info['status'] == 'complete'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================

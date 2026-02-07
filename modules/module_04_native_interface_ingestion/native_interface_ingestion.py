@@ -3782,57 +3782,6 @@ class IncrementalIngestionOrchestrator:
 # PERFORMANCE PROFILER ()
 # ============================================================================
 
-class PerformanceProfiler:
-    """
-    Tracks execution time of ingestion phases.
-    
-    Provides hierarchical timing data for performance analysis.
-    """
-    
-    def __init__(self):
-        """Initialize profiler."""
-        self.timings: Dict[str, float] = {}
-        self.start_times: Dict[str, float] = {}
-        self.active_phases: List[str] = []
-    
-    def start_phase(self, phase_name: str):
-        """Start timing a phase."""
-        self.start_times[phase_name] = time.time()
-        self.active_phases.append(phase_name)
-    
-    def end_phase(self, phase_name: str) -> float:
-        """End timing a phase and record duration."""
-        if phase_name not in self.start_times:
-            return 0.0
-            
-        duration = time.time() - self.start_times[phase_name]
-        self.timings[phase_name] = duration
-        
-        if self.active_phases and self.active_phases[-1] == phase_name:
-            self.active_phases.pop()
-            
-        return duration
-    
-    def get_timings(self) -> Dict[str, float]:
-        """Get all recorded timings."""
-        return self.timings.copy()
-    
-    def measure(self, phase_name: str):
-        """Context manager for measuring a phase."""
-        return self._MeasureContext(self, phase_name)
-    
-    class _MeasureContext:
-        def __init__(self, profiler, phase_name):
-            self.profiler = profiler
-            self.phase_name = phase_name
-            
-        def __enter__(self):
-            self.profiler.start_phase(self.phase_name)
-            return self
-            
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            self.profiler.end_phase(self.phase_name)
-
 # ============================================================================
 # INPUT HASHER ()
 # ============================================================================
@@ -3892,142 +3841,9 @@ class InputHasher:
 # INGESTION CACHE ()
 # ============================================================================
 
-class IngestionCache:
-    """
-    Manages cached ingestion artifacts.
-    
-    Stores and retrieves artifacts based on input hash.
-    """
-    
-    def __init__(self, cache_dir: Optional[Path] = None):
-        """Initialize cache manager."""
-        self.cache_dir = cache_dir or Path(".pfcv_cache")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
-    def get_artifact(self, context_hash: str) -> Optional[RawInterfaceArtifact]:
-        """
-        Retrieve cached artifact if exists.
-        
-        Args:
-            context_hash: Hash of input context
-            
-        Returns:
-            Cached artifact or None if not found/invalid
-        """
-        cache_path = self.cache_dir / f"{context_hash}.json"
-        
-        if not cache_path.exists():
-            return None
-            
-        try:
-            return RawInterfaceArtifact.load(cache_path)
-        except Exception:
-            # If load fails, treat as cache miss
-            return None
-            
-    def store_artifact(self, context_hash: str, artifact: RawInterfaceArtifact):
-        """
-        Store artifact in cache.
-        
-        Args:
-            context_hash: Hash of input context
-            artifact: Artifact to store
-        """
-        cache_path = self.cache_dir / f"{context_hash}.json"
-        try:
-            artifact.save(cache_path)
-        except Exception:
-            pass  # Fail silently on cache write error
-
 # ============================================================================
 # INCREMENTAL INGESTOR ()
 # ============================================================================
-
-class IncrementalIngestor:
-    """
-    Orchestrates ingestion with caching and profiling.
-    
-    Wraps ClangFrontend to provide incremental build capabilities.
-    """
-    
-    def __init__(self, cache_dir: Optional[Path] = None):
-        """Initialize incremental ingestor."""
-        self.cache = IngestionCache(cache_dir)
-        self.profiler = PerformanceProfiler()
-        self.frontend = ClangFrontend() # Will be initialized properly in ingest
-        
-    def ingest(
-        self,
-        context: CompilationContext,
-        force_rebuild: bool = False
-    ) -> RawInterfaceArtifact:
-        """
-        Perform incremental ingestion.
-        
-        Args:
-            context: Compilation context
-            force_rebuild: If True, ignore cache
-            
-        Returns:
-            Ingested artifact (from cache or fresh)
-        """
-        with self.profiler.measure('total_ingestion_time'):
-            # 1. Compute input hash
-            with self.profiler.measure('hash_computation'):
-                input_hash = InputHasher.compute_context_hash(context)
-            
-            # 2. Check cache
-            if not force_rebuild:
-                with self.profiler.measure('cache_lookup'):
-                    cached_artifact = self.cache.get_artifact(input_hash)
-                    if cached_artifact:
-                        return cached_artifact
-            
-            # 3. Perform fresh ingestion
-            with self.profiler.measure('compilation_setup'):
-                unit = self.frontend.parse_context(context)
-                
-            with self.profiler.measure('symbol_extraction'):
-                symbols = self.frontend.extract_symbols(unit)
-                
-            # 4. Create artifact
-            with self.profiler.measure('artifact_creation'):
-                # Important: This is a simplified reconstruction. In a real scenario,
-                # we would need to gather all the type definitions and validation status
-                # from the frontend/extractors.
-                # For this prompt, we'll assume the frontend has state we can access 
-                # or we simply create a basic artifact.
-                # Since ClangFrontend currently stores state in its extractors,
-                # we need to gather it.
-                
-                # Gather types from TypeExtractor
-                type_defs = self.frontend._type_extractor.cache
-                
-                # Validation status would realistically come from a validator
-                # For now, default to passed
-                
-                artifact = RawInterfaceArtifact(
-                    artifact_version=__version__,
-                    generation_timestamp=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                    compilation_context=context,
-                    external_symbols=symbols,
-                    type_definitions=type_defs,
-                    validation_passed=True # Default for now
-                )
-                
-                # Attach diagnostic report if available
-                if hasattr(self.frontend, 'diagnostic_collector'):
-                    artifact.report = self.frontend.diagnostic_collector.get_report()
-            
-            # 5. Cache result
-            with self.profiler.measure('cache_store'):
-                self.cache.store_artifact(input_hash, artifact)
-                
-            return artifact
-    
-    def get_timings(self) -> Dict[str, float]:
-        """Get profiling data."""
-        return self.profiler.get_timings()
 
 # ============================================================================
 # DIAGNOSTIC COLLECTOR ()
@@ -5102,6 +4918,32 @@ class Profiler:
         self.sections: Dict[str, ProfileSection] = {}
         self.stack: List[Tuple[str, float]] = []
     
+    def start_phase(self, phase_name: str):
+        """Start timing a phase (alias for compat)."""
+        if not self.enabled: return
+        start = time.time()
+        self.stack.append((phase_name, start))
+
+    def end_phase(self, phase_name: str) -> float:
+        """End timing a phase (alias for compat)."""
+        if not self.enabled or not self.stack: return 0.0
+        end = time.time()
+        section_name, section_start = self.stack.pop()
+        duration = end - section_start
+        if section_name in self.sections:
+            self.sections[section_name].duration += duration
+        else:
+            self.sections[section_name] = ProfileSection(name=section_name, start_time=section_start, end_time=end, duration=duration)
+        return duration
+
+    def get_timings(self) -> Dict[str, float]:
+        """Get timings as flat dict (alias for compat)."""
+        return {name: s.duration for name, s in self.sections.items()}
+
+    def measure(self, name: str):
+        """Context manager alias (alias for compat)."""
+        return self.section(name)
+
     @contextlib.contextmanager
     def section(self, name: str):
         """
