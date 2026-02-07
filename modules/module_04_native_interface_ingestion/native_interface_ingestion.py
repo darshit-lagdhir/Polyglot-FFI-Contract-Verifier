@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "6/20"
-__status__ = "enum_extraction"
+__prompt__ = "7/20"
+__status__ = "function_extraction"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -136,6 +136,8 @@ class ExternalSymbol:
     type_spelling: Optional[str] = None
     is_definition: bool = False
     
+        function_signature: Optional['FunctionSignature'] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
         data = {
@@ -152,12 +154,87 @@ class ExternalSymbol:
         
         if self.type_spelling:
             data['type_spelling'] = self.type_spelling
+            
+        if self.function_signature:
+            data['function_signature'] = self.function_signature.to_dict()
         
         return data
 
 # ============================================================================
 # TYPE INFO (STUB FOR PROMPT 1)
 # ============================================================================
+
+@dataclass
+class ParameterInfo:
+    """
+    Information about a function parameter.
+    
+    Captures parameter name, type, qualifiers, and type metadata.
+    """
+    
+    name: str
+    param_type: str  # Type spelling
+    type_info: Optional['TypeInfo'] = None
+    
+    # Qualifiers
+    is_const: bool = False
+    is_volatile: bool = False
+    is_restrict: bool = False
+    
+    # Metadata
+    is_synthetic_name: bool = False  # Generated placeholder name
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize parameter info."""
+        data = {
+            'name': self.name,
+            'param_type': self.param_type,
+            'is_const': self.is_const,
+            'is_synthetic_name': self.is_synthetic_name
+        }
+        
+        if self.type_info:
+            data['type_info'] = self.type_info.to_dict()
+        
+        return data
+
+@dataclass
+class FunctionSignature:
+    """
+    Complete function signature including parameters, return type, and calling convention.
+    """
+    
+    return_type: str
+    return_type_info: Optional['TypeInfo'] = None
+    
+    parameters: List[ParameterInfo] = field(default_factory=list)
+    
+    calling_convention: str = "cdecl"
+    is_variadic: bool = False
+    
+    # Language and linkage
+    language_linkage: str = "C"  # 'C' or 'C++'
+    
+    # Exception handling (C++ only)
+    is_noexcept: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize function signature."""
+        data = {
+            'return_type': self.return_type,
+            'parameters': [p.to_dict() for p in self.parameters],
+            'calling_convention': self.calling_convention,
+            'is_variadic': self.is_variadic,
+            'language_linkage': self.language_linkage
+        }
+        
+        if self.return_type_info:
+            data['return_type_info'] = self.return_type_info.to_dict()
+        
+        if self.is_noexcept:
+            data['is_noexcept'] = True
+        
+        return data
 
 @dataclass
 class EnumeratorInfo:
@@ -387,6 +464,217 @@ class RecordLayout:
             'is_packed': self.is_packed,
             'is_anonymous': self.is_anonymous
         }
+
+# ============================================================================
+# FUNCTION SIGNATURE EXTRACTOR ()
+# ============================================================================
+
+class FunctionSignatureExtractor:
+    """
+    Extracts complete function signatures from Clang AST.
+    
+    Handles parameter extraction, calling convention detection,
+    variadic function handling, and return type analysis.
+    """
+    
+    def __init__(self, type_extractor: 'TypeExtractor'):
+        """
+        Initialize function signature extractor.
+        
+        Args:
+            type_extractor: TypeExtractor for parameter and return types
+        """
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        self.type_extractor = type_extractor
+    
+    def extract_function_signature(
+        self,
+        function_cursor: 'CXIDE'
+    ) -> FunctionSignature:
+        """
+        Extract complete function signature.
+        
+        Args:
+            function_cursor: Function declaration cursor
+            
+        Returns:
+            Complete FunctionSignature
+        """
+        # Get function type
+        func_type = libclang.clang_getIDEType(function_cursor)
+        
+        # Extract return type
+        return_type_cx = libclang.clang_getResultType(func_type)
+        return_type_spelling = self.type_extractor._get_type_spelling(return_type_cx)
+        
+        # Extract parameters
+        parameters = self._extract_parameters(function_cursor, func_type)
+        
+        # Detect calling convention
+        calling_conv = self._get_calling_convention(func_type)
+        
+        # Detect variadic
+        is_variadic = bool(libclang.clang_isFunctionTypeVariadic(func_type))
+        
+        # Detect language linkage
+        language = self._get_language_linkage(function_cursor)
+        
+        # Create signature
+        signature = FunctionSignature(
+            return_type=return_type_spelling,
+            parameters=parameters,
+            calling_convention=calling_conv,
+            is_variadic=is_variadic,
+            language_linkage=language
+        )
+        
+        # Extract complete return type info
+        try:
+            signature.return_type_info = self.type_extractor.extract_type(return_type_cx)
+        except Exception:
+            pass
+        
+        return signature
+    
+    def _extract_parameters(
+        self,
+        function_cursor: 'CXIDE',
+        func_type: 'CXType'
+    ) -> List[ParameterInfo]:
+        """
+        Extract all parameters from a function.
+        
+        Args:
+            function_cursor: Function cursor
+            func_type: Function type
+            
+        Returns:
+            List of ParameterInfo
+        """
+        parameters = []
+        param_index = 0
+        
+        # Visitor to collect parameter cursors
+        def param_visitor(child_cursor, parent_cursor, client_data):
+            nonlocal param_index
+            
+            if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.PARM_DECL:
+                return CXChildVisitResult.CONTINUE
+            
+            try:
+                param = self._extract_parameter(child_cursor, param_index)
+                parameters.append(param)
+                param_index += 1
+            except Exception:
+                pass
+            
+            return CXChildVisitResult.CONTINUE
+        
+        visitor_func = CXIDEVisitor(param_visitor)
+        libclang.clang_visitChildren(function_cursor, visitor_func, None)
+        
+        return parameters
+    
+    def _extract_parameter(
+        self,
+        param_cursor: 'CXIDE',
+        index: int
+    ) -> ParameterInfo:
+        """
+        Extract a single parameter.
+        
+        Args:
+            param_cursor: Parameter cursor
+            index: Parameter index (for synthetic names)
+            
+        Returns:
+            ParameterInfo
+        """
+        # Get parameter name
+        name_cxstr = libclang.clang_getIDESpelling(param_cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        # Generate synthetic name if missing
+        is_synthetic = False
+        if not name:
+            name = f"param{index}"
+            is_synthetic = True
+        
+        # Get parameter type
+        param_type = libclang.clang_getIDEType(param_cursor)
+        type_spelling = self.type_extractor._get_type_spelling(param_type)
+        
+        # Detect qualifiers
+        is_const = bool(libclang.clang_isConstQualifiedType(param_type))
+        is_volatile = bool(libclang.clang_isVolatileQualifiedType(param_type))
+        is_restrict = bool(libclang.clang_isRestrictQualifiedType(param_type))
+        
+        # Create parameter info
+        param_info = ParameterInfo(
+            name=name,
+            param_type=type_spelling,
+            is_const=is_const,
+            is_volatile=is_volatile,
+            is_restrict=is_restrict,
+            is_synthetic_name=is_synthetic
+        )
+        
+        # Extract complete type info
+        try:
+            param_info.type_info = self.type_extractor.extract_type(param_type)
+        except Exception:
+            pass
+        
+        return param_info
+    
+    def _get_calling_convention(self, func_type: 'CXType') -> str:
+        """
+        Determine function calling convention.
+        
+        Args:
+            func_type: Function type
+            
+        Returns:
+            Calling convention name
+        """
+        calling_conv = libclang.clang_getFunctionTypeCallingConv(func_type)
+        
+        # Map Clang calling convention to string
+        conv_map = {
+            CXCallingConv.C: 'cdecl',
+            CXCallingConv.X86_STDCALL: 'stdcall',
+            CXCallingConv.X86_FASTCALL: 'fastcall',
+            CXCallingConv.X86_THISCALL: 'thiscall',
+            CXCallingConv.X86_PASCAL: 'pascal',
+            CXCallingConv.AAPCS: 'aapcs',
+            CXCallingConv.AAPCS_VFP: 'aapcs_vfp',
+            CXCallingConv.X86_REGCALL: 'regcall',
+            CXCallingConv.WIN64: 'win64',
+            CXCallingConv.DEFAULT: 'default'
+        }
+        
+        return conv_map.get(calling_conv, 'unknown')
+    
+    def _get_language_linkage(self, cursor: 'CXIDE') -> str:
+        """
+        Determine language linkage (C vs C++).
+        
+        Args:
+            cursor: Function cursor
+            
+        Returns:
+            'C' or 'C++'
+        """
+        language = libclang.clang_getIDELanguage(cursor)
+        
+        if language == CXLanguageKind.C:
+            return 'C'
+        elif language == CXLanguageKind.C_PLUS_PLUS:
+            return 'C++'
+        else:
+            return 'unknown'
 
 # ============================================================================
 # ENUM EXTRACTOR ()
@@ -1354,6 +1642,7 @@ class CXIDEKind(IntEnum):
     ENUM_DECL = 5
     FUNCTION_DECL = 8
     VAR_DECL = 9
+    PARM_DECL = 10
     ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
 
@@ -1368,6 +1657,12 @@ class CXChildVisitResult(IntEnum):
     BREAK = 0
     CONTINUE = 1
     RECURSE = 2
+
+# Language linkage
+class CXLanguageKind(IntEnum):
+    INVALID = 0
+    C = 1
+    C_PLUS_PLUS = 2
 
 # Function prototypes
 if LIBCLANG_AVAILABLE:
@@ -1406,6 +1701,9 @@ if LIBCLANG_AVAILABLE:
     libclang.clang_getIDELinkage.argtypes = [CXIDE]
     libclang.clang_getIDELinkage.restype = ctypes.c_int
     
+    libclang.clang_getIDELanguage.argtypes = [CXIDE]
+    libclang.clang_getIDELanguage.restype = ctypes.c_int
+    
     # String operations
     libclang.clang_getCString.argtypes = [CXString]
     libclang.clang_getCString.restype = ctypes.c_char_p
@@ -1442,6 +1740,24 @@ if LIBCLANG_AVAILABLE:
     
     libclang.clang_Type_getAlignOf.argtypes = [CXType]
     libclang.clang_Type_getAlignOf.restype = ctypes.c_longlong
+
+    libclang.clang_getResultType.argtypes = [CXType]
+    libclang.clang_getResultType.restype = CXType
+    
+    libclang.clang_isFunctionTypeVariadic.argtypes = [CXType]
+    libclang.clang_isFunctionTypeVariadic.restype = ctypes.c_uint
+    
+    libclang.clang_getFunctionTypeCallingConv.argtypes = [CXType]
+    libclang.clang_getFunctionTypeCallingConv.restype = ctypes.c_int
+    
+    libclang.clang_isConstQualifiedType.argtypes = [CXType]
+    libclang.clang_isConstQualifiedType.restype = ctypes.c_int
+    
+    libclang.clang_isVolatileQualifiedType.argtypes = [CXType]
+    libclang.clang_isVolatileQualifiedType.restype = ctypes.c_int
+    
+    libclang.clang_isRestrictQualifiedType.argtypes = [CXType]
+    libclang.clang_isRestrictQualifiedType.restype = ctypes.c_int
     
     libclang.clang_getPointeeType.argtypes = [CXType]
     libclang.clang_getPointeeType.restype = CXType
@@ -1556,6 +1872,7 @@ class ClangFrontend(CompilerFrontend):
                 self._type_extractor = TypeExtractor()
         self._record_extractor = RecordLayoutExtractor(self._type_extractor)
         self._enum_extractor = EnumExtractor(self._type_extractor)
+        self._function_extractor = FunctionSignatureExtractor(self._type_extractor)
         
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
@@ -1805,6 +2122,13 @@ class ClangFrontend(CompilerFrontend):
                 symbol_type_info.enum_max_value = enum_meta['max_value']
                 symbol_type_info.enum_is_bitmask = enum_meta['is_bitmask']
                 symbol_type_info.enum_is_sequential = enum_meta['is_sequential']
+            except Exception:
+                pass
+        
+                if symbol_kind == 'function':
+            try:
+                signature = self._function_extractor.extract_function_signature(cursor)
+                symbol.function_signature = signature
             except Exception:
                 pass
         
