@@ -15,13 +15,14 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 14/20
-Status: incremental_ingestion
+Prompt: 15/20
+Status: cpp_support
 """
 
 import json
 import hashlib
 import time
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from enum import Enum, IntEnum
@@ -34,8 +35,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "14/20"
-__status__ = "incremental_ingestion"
+__prompt__ = "15/20"
+__status__ = "cpp_support"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -493,6 +494,12 @@ class ExternalSymbol:
     
         provenance: Optional[ProvenanceInfo] = None
     
+        namespaces: List[str] = field(default_factory=list)
+    mangled_name: Optional[str] = None
+    is_template_instantiation: bool = False
+    template_kind: Optional[str] = None  # 'function', 'class', 'struct'
+    template_arguments: List[str] = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
         data = {
@@ -507,11 +514,17 @@ class ExternalSymbol:
         if self.linkage:
             data['linkage'] = self.linkage
         
+        if self.visibility:
+            data['visibility'] = self.visibility
+        
         if self.type_spelling:
             data['type_spelling'] = self.type_spelling
             
         if self.function_signature:
             data['function_signature'] = self.function_signature.to_dict()
+            
+        if self.global_variable_info:
+            data['global_variable_info'] = self.global_variable_info.to_dict()
             
         if self.macro_info:
             data['macro_info'] = self.macro_info.to_dict()
@@ -526,6 +539,18 @@ class ExternalSymbol:
         
         if self.provenance:
             data['provenance'] = self.provenance.to_dict()
+            
+        if self.namespaces:
+            data['namespaces'] = self.namespaces
+            
+        if self.mangled_name:
+            data['mangled_name'] = self.mangled_name
+            
+        if self.is_template_instantiation:
+            data['is_template_instantiation'] = True
+            if self.template_kind:
+                data['template_kind'] = self.template_kind
+            data['template_arguments'] = self.template_arguments
         
         return data
 
@@ -841,6 +866,11 @@ class TypeInfo:
     
     # Simplified typedef chain (for quick access)
     typedef_chain: List[str] = field(default_factory=list)
+    
+        namespaces: List[str] = field(default_factory=list)
+    is_template_instantiation: bool = False
+    template_name: Optional[str] = None # Base template name
+    template_arguments: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
@@ -2330,6 +2360,114 @@ class AttributeExtractor:
         }
 
 # ============================================================================
+# C++ EXTRACTOR ()
+# ============================================================================
+
+class CppExtractor:
+    """
+    Extracts C++ specific features.
+    
+    Handles namespaces, templates, mangling, and other C++ constructs.
+    """
+    
+    def __init__(self):
+        """Initialize C++ extractor."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+            
+    def extract_namespaces(self, cursor: 'CXIDE') -> List[str]:
+        """
+        Extract namespace hierarchy for a cursor.
+        
+        Args:
+            cursor: IDE to analyze
+            
+        Returns:
+            List of namespace names (outer to inner)
+        """
+        namespaces = []
+        parent = libclang.clang_getIDESemanticParent(cursor)
+        
+        while parent and libclang.clang_getIDEKind(parent) != CXIDEKind.TRANSLATION_UNIT:
+            kind = libclang.clang_getIDEKind(parent)
+            if kind == CXIDEKind.NAMESPACE:
+                name_cx = libclang.clang_getIDESpelling(parent)
+                name = clang_string_to_python(name_cx)
+                if name:
+                    namespaces.insert(0, name) # Prepend to keep outer-to-inner order
+                else:
+                    namespaces.insert(0, "(anonymous)")
+            
+            # Continue traversal up
+            parent = libclang.clang_getIDESemanticParent(parent)
+            
+        return namespaces
+
+    def extract_template_info(self, cursor: 'CXIDE', type_info: Optional[TypeInfo] = None) -> Dict[str, Any]:
+        """
+        Extract template instantiation information.
+        
+        Args:
+            cursor: IDE to analyze
+            type_info: Optional TypeInfo to update directly
+            
+        Returns:
+            Dictionary with template metadata
+        """
+        info = {}
+        
+        kind = libclang.clang_getIDEKind(cursor)
+        is_template = False
+        template_kind = None
+        
+        # Check if it's a template instantiation or specialization
+        if kind in [CXIDEKind.CLASS_TEMPLATE, CXIDEKind.FUNCTION_TEMPLATE, 
+                   CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION, CXIDEKind.TYPE_ALIAS_TEMPLATE_DECL]:
+            # These are definitions, not instantiations (though they use template syntax)
+            # Typically dealing with instantiations found in code use
+            pass
+            
+        # Get number of template arguments
+        num_args = libclang.clang_IDE_getNumTemplateArguments(cursor)
+        
+        if num_args > 0:
+            is_template = True
+            args = []
+            
+            for i in range(num_args):
+                arg_kind = libclang.clang_IDE_getTemplateArgumentKind(cursor, i)
+                
+                # Check different argument kinds
+                if arg_kind == CXTemplateArgumentKind.TYPE:
+                    arg_type = libclang.clang_IDE_getTemplateArgumentType(cursor, i)
+                    type_spelling_cx = libclang.clang_getTypeSpelling(arg_type)
+                    args.append(clang_string_to_python(type_spelling_cx))
+                elif arg_kind == CXTemplateArgumentKind.INTEGRAL:
+                    val = libclang.clang_IDE_getTemplateArgumentValue(cursor, i)
+                    args.append(str(val))
+                else:
+                    args.append("") # Placeholder for complex args
+            
+            info['arguments'] = args
+
+        if is_template:
+            info['is_template'] = True
+            
+            if kind == CXIDEKind.ClassDecl or kind == CXIDEKind.StructDecl:
+                 info['kind'] = 'class'
+            elif kind == CXIDEKind.FunctionDecl:
+                 info['kind'] = 'function'
+                 
+        return info
+
+    def get_mangled_name(self, cursor: 'CXIDE') -> Optional[str]:
+        """Get mangled name if available."""
+        if hasattr(libclang, 'clang_IDE_getMangling'):
+             cxstr = libclang.clang_IDE_getMangling(cursor)
+             return clang_string_to_python(cxstr)
+        return None
+
+# ============================================================================
 # TYPE EXTRACTOR ()
 # ============================================================================
 
@@ -2351,6 +2489,7 @@ class TypeExtractor:
         self._record_extractor: Optional['RecordLayoutExtractor'] = None
         self._enum_extractor: Optional['EnumExtractor'] = None
         self._typedef_resolver: Optional['TypedefResolver'] = None
+        self._cpp_extractor: Optional['CppExtractor'] = None
     
     def set_record_extractor(self, extractor: 'RecordLayoutExtractor'):
         """Set record layout extractor (avoid circular dependency)."""
@@ -2408,6 +2547,24 @@ class TypeExtractor:
         type_info.is_const = bool(libclang.clang_isConstQualifiedType(cxtype))
         type_info.is_volatile = bool(libclang.clang_isVolatileQualifiedType(cxtype))
         type_info.is_restrict = bool(libclang.clang_isRestrictQualifiedType(cxtype))
+        
+                if self._cpp_extractor:
+             # Try to find declaration cursor for this type to get namespaces/templates
+             decl_cursor = libclang.clang_getTypeDeclaration(cxtype)
+             if decl_cursor:
+                 type_info.namespaces = self._cpp_extractor.extract_namespaces(decl_cursor)
+                 
+                 # Template info
+                 # Check if type spelling suggests template (heuristic fallback + cursor check)
+                 if '<' in type_spelling and '>' in type_spelling:
+                     type_info.is_template_instantiation = True
+                     # Attempt detailed extraction
+                     tpl_info = self._cpp_extractor.extract_template_info(decl_cursor)
+                     if 'arguments' in tpl_info:
+                         type_info.template_arguments = tpl_info['arguments']
+                     
+                     # Base template name detection (simple splitting for now)
+                     type_info.template_name = type_spelling.split('<')[0]
         
         # Extract kind-specific properties
         if kind == 'pointer':
@@ -2932,9 +3089,26 @@ class CXIDEKind(IntEnum):
     ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
     TYPE_ALIAS_DECL = 301
+    FUNCTION_TEMPLATE = 405
+    CLASS_TEMPLATE = 406
+    CLASS_TEMPLATE_PARTIAL_SPECIALIZATION = 407
+    NAMESPACE = 409
+    TYPE_ALIAS_TEMPLATE_DECL = 413
     MACRO_DEFINITION = 501
     MACRO_EXPANSION = 502
     NO_DECL_FOUND = 700 
+
+class CXTemplateArgumentKind(IntEnum):
+    NULL = 0
+    TYPE = 1
+    DECLARATION = 2
+    NULLPTR = 3
+    INTEGRAL = 4
+    TEMPLATE = 5
+    TEMPLATE_EXPANSION = 6
+    EXPRESSION = 7
+    PACK = 8
+    INVALID = 9
 
 class CXLinkageKind(IntEnum):
     INVALID = 0
@@ -3082,6 +3256,18 @@ if LIBCLANG_AVAILABLE:
     bind('clang_getDiagnosticSeverity', [ctypes.c_void_p], ctypes.c_int)
     bind('clang_getDiagnosticSpelling', [ctypes.c_void_p], CXString)
     bind('clang_disposeDiagnostic', [ctypes.c_void_p], None)
+
+        bind('clang_getIDESemanticParent', [CXIDE], CXIDE)
+    bind('clang_getIDELexicalParent', [CXIDE], CXIDE)
+    bind('clang_IDE_getNumTemplateArguments', [CXIDE], ctypes.c_int)
+    bind('clang_IDE_getTemplateArgumentKind', [CXIDE, ctypes.c_uint], ctypes.c_int)
+    bind('clang_IDE_getTemplateArgumentType', [CXIDE, ctypes.c_uint], CXType)
+    bind('clang_IDE_getTemplateArgumentValue', [CXIDE, ctypes.c_uint], ctypes.c_longlong)
+    bind('clang_IDE_getTemplateArgumentUnsignedValue', [CXIDE, ctypes.c_uint], ctypes.c_ulonglong)
+    # Mangling might not be available in all liblclang versions, wrap in try/except if needed, 
+    # but here we use simple bind. If symbol missing, it will be None/fail at runtime if called.
+    # We will check availability before calling.
+    bind('clang_IDE_getMangling', [CXIDE], CXString)
 
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
@@ -3530,10 +3716,16 @@ class ClangFrontend(CompilerFrontend):
         self._macro_extractor = MacroExtractor()
         self._attribute_extractor = AttributeExtractor()
         self._location_extractor = LocationExtractor()
+        self._cpp_extractor = CppExtractor()         self._diagnostic_collector = DiagnosticCollector()
         
+        # Wiring
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
         self._type_extractor.set_typedef_resolver(self._typedef_resolver)
+        self._type_extractor._typedef_resolver = self._typedef_resolver
+        self._type_extractor._cpp_extractor = self._cpp_extractor         self._enum_extractor.type_extractor = self._type_extractor
+        self._variable_extractor.type_extractor = self._type_extractor
+        self._typedef_resolver.type_extractor = self._type_extractor
     
     @property
     def compiler_name(self) -> str:
@@ -3770,7 +3962,12 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.UNION_DECL,
             CXIDEKind.ENUM_DECL,
             CXIDEKind.TYPEDEF_DECL,
-            CXIDEKind.TYPE_ALIAS_DECL
+            CXIDEKind.TYPE_ALIAS_DECL,
+            CXIDEKind.CLASS_DECL, # C++
+            CXIDEKind.CLASS_TEMPLATE, # C++
+            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION, # C++
+            CXIDEKind.FUNCTION_TEMPLATE, # C++
+            CXIDEKind.NAMESPACE # C++
         ]:
             return None
         
@@ -3783,10 +3980,13 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.UNION_DECL, 
             CXIDEKind.ENUM_DECL,
             CXIDEKind.TYPEDEF_DECL,
-            CXIDEKind.TYPE_ALIAS_DECL
+            CXIDEKind.TYPE_ALIAS_DECL,
+            CXIDEKind.CLASS_DECL, # C++
+            CXIDEKind.CLASS_TEMPLATE, # C++
+            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION # C++
         ]
         
-        if not is_external and not is_type_decl:
+        if not is_external and not is_type_decl and kind != CXIDEKind.NAMESPACE:
             return None
         
         linkage_map = {
@@ -3811,7 +4011,12 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.UNION_DECL: 'union',
             CXIDEKind.ENUM_DECL: 'enum',
             CXIDEKind.TYPEDEF_DECL: 'typedef',
-            CXIDEKind.TYPE_ALIAS_DECL: 'typedef'
+            CXIDEKind.TYPE_ALIAS_DECL: 'typedef',
+            CXIDEKind.CLASS_DECL: 'class', # C++
+            CXIDEKind.CLASS_TEMPLATE: 'class_template', # C++
+            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION: 'class_template_partial_specialization', # C++
+            CXIDEKind.FUNCTION_TEMPLATE: 'function_template', # C++
+            CXIDEKind.NAMESPACE: 'namespace' # C++
         }
         
         symbol_kind = kind_map.get(kind, 'unknown')
@@ -3820,17 +4025,34 @@ class ClangFrontend(CompilerFrontend):
         # cursor_type already extracted
         # type_spelling already extracted
         
+        # Helper to create symbol
+        def create_symbol(kind_str, **kwargs):
+            sym = ExternalSymbol(
+                name=name,
+                kind=kind_str,
+                linkage=linkage_str,
+                type_spelling=type_spelling,
+                source_location=source_location,
+                provenance=provenance,
+                **kwargs
+            )
+            
+                        if self._cpp_extractor:
+                sym.namespaces = self._cpp_extractor.extract_namespaces(cursor)
+                sym.mangled_name = self._cpp_extractor.get_mangled_name(cursor)
+                
+                tpl = self._cpp_extractor.extract_template_info(cursor)
+                if tpl.get('is_template'):
+                    sym.is_template_instantiation = True
+                    sym.template_kind = tpl.get('kind')
+                    sym.template_arguments = tpl.get('arguments', [])
+            
+            return sym
+
         # Create symbol
-        symbol = ExternalSymbol(
-            name=name,
-            kind=symbol_kind,
-            linkage=linkage_str,
-            type_spelling=type_spelling,
-            source_location=source_location,
-            provenance=provenance
-        )
+        symbol = create_symbol(symbol_kind)
         
-                if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL]:
+                if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL, CXIDEKind.CLASS_DECL, CXIDEKind.CLASS_TEMPLATE, CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION]:
             try:
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)

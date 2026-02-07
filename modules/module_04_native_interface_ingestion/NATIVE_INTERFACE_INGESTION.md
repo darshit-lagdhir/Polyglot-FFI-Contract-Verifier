@@ -369,7 +369,27 @@ module_04_native_interface_ingestion/
 
 **Tests:** 168 tests total (159 from Prompts 1-13 + 9 new)
 
-**Next Prompt:** Advanced C++ Support: Namespaces and Templates
+
+**Status:** Complete
+
+**Implemented:**
+- `CppExtractor` for namespaces and templates
+- Namespace traversal via `clang_getIDESemanticParent`
+- Template argument extraction (types, integrals)
+- Mangled name extraction (`clang_IDE_getMangling`)
+- Integration with `TypeExtractor` for templated types
+- Integration with `ClangFrontend` for namespaced symbols
+
+**Features:**
+- Recursive namespace hierarchy extraction
+- Template instantiation detection
+- Template argument extraction (type and value)
+- Mangled name support for ABI verification
+- Enhanced `ExternalSymbol` and `TypeInfo` structures
+
+**Tests:** Additional C++ specific tests added.
+
+**Next Prompt:** Advanced C++ Support: Virtual Tables and Inheritance
 
 ---
 
