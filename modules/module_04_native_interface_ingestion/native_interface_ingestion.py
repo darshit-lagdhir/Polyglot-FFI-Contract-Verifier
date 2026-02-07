@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 17/20
-Status: multi_header_orchestration
+Prompt: 18/20
+Status: performance_profiling
 """
 
 import json
@@ -25,6 +25,9 @@ import time
 import tempfile
 import shutil
 from datetime import datetime, timezone
+import contextlib
+from concurrent.futures import ThreadPoolExecutor
+import tracemalloc
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from enum import Enum, IntEnum
@@ -37,8 +40,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "17/20"
-__status__ = "multi_header_orchestration"
+__prompt__ = "18/20"
+__status__ = "performance_profiling"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -4991,6 +4994,148 @@ class VirtualHeaderGenerator:
             shutil.rmtree(self.temp_dir)
 
 # ============================================================================
+# PERFORMANCE OPTIMIZATION AND PROFILING ()
+# ============================================================================
+
+# ============================================================================
+# PROFILING FRAMEWORK
+# ============================================================================
+
+@dataclass
+class ProfileSection:
+    """Profiling data for a code section."""
+    
+    name: str
+    start_time: float
+    end_time: float
+    duration: float
+    call_count: int = 1
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize profile section."""
+        return {
+            'name': self.name,
+            'duration': self.duration,
+            'call_count': self.call_count,
+            'avg_duration': self.duration / self.call_count if self.call_count > 0 else 0
+        }
+
+class Profiler:
+    """Performance profiler for ingestion."""
+    
+    def __init__(self, enabled: bool = True):
+        """
+        Initialize profiler.
+        
+        Args:
+            enabled: Whether profiling is enabled
+        """
+        self.enabled = enabled
+        self.sections: Dict[str, ProfileSection] = {}
+        self.stack: List[Tuple[str, float]] = []
+    
+    @contextlib.contextmanager
+    def section(self, name: str):
+        """
+        Profile a code section.
+        
+        Args:
+            name: Section name
+        """
+        if not self.enabled:
+            yield
+            return
+        
+        start = time.time()
+        self.stack.append((name, start))
+        
+        try:
+            yield
+        finally:
+            end = time.time()
+            section_name, section_start = self.stack.pop()
+            duration = end - section_start
+            
+            if section_name in self.sections:
+                existing = self.sections[section_name]
+                existing.duration += duration
+                existing.call_count += 1
+                existing.end_time = end
+            else:
+                self.sections[section_name] = ProfileSection(
+                    name=section_name,
+                    start_time=section_start,
+                    end_time=end,
+                    duration=duration
+                )
+    
+    def get_report(self) -> Dict[str, Any]:
+        """Generate profiling report."""
+        total_time = sum(s.duration for s in self.sections.values())
+        
+        sorted_sections = sorted(
+            self.sections.values(),
+            key=lambda s: s.duration,
+            reverse=True
+        )
+        
+        return {
+            'total_time': total_time,
+            'sections': [s.to_dict() for s in sorted_sections],
+            'section_percentages': {
+                s.name: (s.duration / total_time * 100) if total_time > 0 else 0
+                for s in sorted_sections
+            }
+        }
+
+    def print_report(self):
+        """Print formatted profiling report."""
+        report = self.get_report()
+        
+        print(f"\nProfiling Report:")
+        print(f"  Total Time: {report['total_time']:.3f}s")
+        print(f"\n  Breakdown:")
+        
+        for section in report['sections']:
+            percentage = report['section_percentages'][section['name']]
+            print(f"    {section['name']:20s}: {section['duration']:.3f}s ({percentage:5.1f}%)")
+
+# ============================================================================
+# PERFORMANCE METRICS
+# ============================================================================
+
+@dataclass
+class PerformanceMetrics:
+    """Performance metrics for ingestion run."""
+    
+    total_duration: float
+    parsing_duration: float
+    extraction_duration: float
+    validation_duration: float
+    
+    memory_peak_mb: float
+    symbols_extracted: int
+    
+    cache_hit_rate: float = 0.0
+    
+    def throughput(self) -> float:
+        """Calculate symbols per second."""
+        return self.symbols_extracted / self.total_duration if self.total_duration > 0 else 0
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize metrics."""
+        return {
+            'total_duration': self.total_duration,
+            'parsing_duration': self.parsing_duration,
+            'extraction_duration': self.extraction_duration,
+            'validation_duration': self.validation_duration,
+            'memory_peak_mb': self.memory_peak_mb,
+            'symbols_extracted': self.symbols_extracted,
+            'throughput': self.throughput(),
+            'cache_hit_rate': self.cache_hit_rate
+        }
+
+# ============================================================================
 # INGESTION ORCHESTRATOR ()
 # ============================================================================
 import argparse
@@ -5100,16 +5245,14 @@ class IngestionOrchestrator:
         frontend: Optional[CompilerFrontend] = None,
         cache: Optional[IngestionCache] = None,
         validator: Optional[ArtifactValidator] = None,
-        diagnostic_collector: Optional[DiagnosticCollector] = None
+        diagnostic_collector: Optional[DiagnosticCollector] = None,
+        enable_profiling: bool = False
     ):
         """
-        Initialize orchestrator.
+        Initialize orchestrator with profiling.
         
         Args:
-            frontend: Compiler frontend (defaults to ClangFrontend)
-            cache: Cache instance (created if not provided)
-            validator: Artifact validator (defaults to ArtifactValidator)
-            diagnostic_collector: Diagnostic collector (created if not provided)
+            enable_profiling: Enable performance profiling
         """
         self.frontend = frontend or (ClangFrontend() if LIBCLANG_AVAILABLE else None)
         self.cache = cache
@@ -5119,25 +5262,43 @@ class IngestionOrchestrator:
         self.state = IngestionState()
         self.virtual_header_gen = VirtualHeaderGenerator()
         self.symbol_registry = SymbolRegistry()
+        self.profiler = Profiler(enabled=enable_profiling)
+        
+        # Performance tracking
+        self._memory_tracking_enabled = False
+        self._start_memory: int = 0
     
     def ingest(self, config: IngestionConfig) -> RawInterfaceArtifact:
         """
-        Execute complete ingestion pipeline.
+        Execute complete ingestion pipeline with profiling.
         
         Args:
             config: Ingestion configuration
             
         Returns:
             Final artifact
-            
-        Raises:
-            IngestionError: If fatal error occurs
         """
+        # Start memory tracking
+        if self.profiler.enabled:
+            tracemalloc.start()
+            self._memory_tracking_enabled = True
+        
         try:
-            # Stage 1: Initialization
-            self._initialize(config)
+            with self.profiler.section('total_ingestion'):
+                artifact = self._ingest_internal(config)
             
-            # Build compilation context
+            return artifact
+            
+        finally:
+            if self._memory_tracking_enabled:
+                tracemalloc.stop()
+
+    def _ingest_internal(self, config: IngestionConfig) -> RawInterfaceArtifact:
+        """Internal ingestion with profiling sections."""
+        try:
+            with self.profiler.section('initialization'):
+                self._initialize(config)
+            
             context = config.to_compilation_context()
             
                         dependency_graph = IncludeDependencyGraph()
@@ -5148,7 +5309,6 @@ class IngestionOrchestrator:
                 self._build_dependency_graph(header, config.include_paths, dependency_graph)
                 header_classifications[str(header)] = classify_header(header)
             
-            # Generate virtual header if multiple headers
             virtual_header_path = None
             if len(config.header_files) > 1:
                 try:
@@ -5156,7 +5316,6 @@ class IngestionOrchestrator:
                         config.header_files, 
                         config.include_paths
                     )
-                    # Use virtual header for parsing
                     context.header_files = [virtual_header_path]
                 except Exception as e:
                     self.diagnostic_collector.add_warning(
@@ -5164,77 +5323,68 @@ class IngestionOrchestrator:
                         category='configuration'
                     )
             
-            # Stage 2: Parsing
-            self.state.enter_stage("parsing")
+            with self.profiler.section('parsing'):
+                self.state.enter_stage("parsing")
+                if not self.frontend:
+                    raise ToolchainError("Compiler frontend not available")
+                
+                compilation_unit = self.frontend.parse_headers(context)
+                self.state.exit_stage()
             
-            if not self.frontend:
-                raise ToolchainError("Compiler frontend not available")
+            with self.profiler.section('extraction'):
+                self.state.enter_stage("extraction")
+                raw_symbols = self.frontend.extract_symbols(compilation_unit)
+                
+                                extracted_symbols = self._deduplicate_symbols(raw_symbols)
+                
+                self.state.extracted_symbols = len(extracted_symbols)
+                self.state.exit_stage()
             
-            compilation_unit = self.frontend.parse_headers(context)
-            
-            self.state.exit_stage()
-            
-            # Stage 3: Extraction
-            self.state.enter_stage("extraction")
-            
-            raw_symbols = self.frontend.extract_symbols(compilation_unit)
-            
-                        extracted_symbols = self._deduplicate_symbols(raw_symbols)
-            
-            self.state.extracted_symbols = len(extracted_symbols)
-            
-            self.state.exit_stage()
-            
-            # Stage 4: Build artifact
-            self.state.enter_stage("artifact_generation")
-            
-            artifact = RawInterfaceArtifact(
-                artifact_version=__version__,
-                generation_timestamp=datetime.now(timezone.utc).isoformat(),
-                compilation_context=context,
-                external_symbols=extracted_symbols,
-                type_definitions=self.frontend._type_extractor._type_cache if hasattr(self.frontend, '_type_extractor') else {},
-                dependency_graph=dependency_graph,
-                header_classifications=header_classifications
-            )
-            
-            self.state.exit_stage()
+            with self.profiler.section('artifact_generation'):
+                self.state.enter_stage("artifact_generation")
+                artifact = RawInterfaceArtifact(
+                    artifact_version=__version__,
+                    generation_timestamp=datetime.now(timezone.utc).isoformat(),
+                    compilation_context=context,
+                    external_symbols=extracted_symbols,
+                    type_definitions=self.frontend._type_extractor._type_cache if hasattr(self.frontend, '_type_extractor') else {},
+                    dependency_graph=dependency_graph,
+                    header_classifications=header_classifications
+                )
+                self.state.exit_stage()
             
             # Clean up virtual header
             if virtual_header_path:
                 self.virtual_header_gen.cleanup()
             
-            # Stage 5: Validation
             if config.enable_validation:
-                self.state.enter_stage("validation")
-                
-                validation_report = self.validator.validate(artifact)
-                artifact.validation_passed = validation_report.passed
-                artifact.validation_errors = [
-                    d.message for d in validation_report.all_diagnostics()
-                    if d.severity in ['error', 'fatal']
-                ]
-                
-                # Add validation diagnostics to collector
-                for diag in validation_report.all_diagnostics():
-                    self.diagnostic_collector.report.add_diagnostic(diag)
-                
-                self.state.exit_stage()
-                
-                if not validation_report.passed and config.fail_on_validation_errors:
-                    raise ValidationError("Artifact validation failed")
+                with self.profiler.section('validation'):
+                    self.state.enter_stage("validation")
+                    validation_report = self.validator.validate(artifact)
+                    artifact.validation_passed = validation_report.passed
+                    artifact.validation_errors = [
+                        d.message for d in validation_report.all_diagnostics()
+                        if d.severity in ['error', 'fatal']
+                    ]
+                    
+                    for diag in validation_report.all_diagnostics():
+                        self.diagnostic_collector.report.add_diagnostic(diag)
+                    
+                    self.state.exit_stage()
+                    
+                    if not validation_report.passed and config.fail_on_validation_errors:
+                        raise ValidationError("Artifact validation failed")
             
-            # Stage 6: Output
             if config.output_path:
-                self.state.enter_stage("output")
-                artifact.save(config.output_path)
-                self.state.exit_stage()
+                with self.profiler.section('serialization'):
+                    self.state.enter_stage("output")
+                    artifact.save(config.output_path)
+                    self.state.exit_stage()
             
-            # Update report statistics
             self.diagnostic_collector.report.symbols_extracted = len(extracted_symbols)
             
             return artifact
-            
+
         except Exception as e:
             self.state.errors_occurred = True
             
@@ -5243,6 +5393,35 @@ class IngestionOrchestrator:
             
             # Wrap unexpected errors
             raise IngestionError(f"Unexpected error during ingestion: {e}") from e
+
+    def get_performance_metrics(self) -> PerformanceMetrics:
+        """Get performance metrics for last ingestion."""
+        report = self.profiler.get_report()
+        
+        # Extract memory usage
+        memory_peak_mb = 0.0
+        if self._memory_tracking_enabled:
+            current, peak = tracemalloc.get_traced_memory()
+            memory_peak_mb = peak / 1024 / 1024
+        
+        # Build metrics
+        metrics = PerformanceMetrics(
+            total_duration=report['total_time'],
+            parsing_duration=self._get_section_duration(report, 'parsing'),
+            extraction_duration=self._get_section_duration(report, 'extraction'),
+            validation_duration=self._get_section_duration(report, 'validation'),
+            memory_peak_mb=memory_peak_mb,
+            symbols_extracted=self.state.extracted_symbols
+        )
+        
+        return metrics
+
+    def _get_section_duration(self, report: Dict[str, Any], section_name: str) -> float:
+        """Get duration of a specific section."""
+        for section in report['sections']:
+            if section['name'] == section_name:
+                return section['duration']
+        return 0.0
     
     def _initialize(self, config: IngestionConfig):
         """Initialize ingestion."""
