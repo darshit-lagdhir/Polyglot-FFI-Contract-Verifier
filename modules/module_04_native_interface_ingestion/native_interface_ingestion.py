@@ -57,33 +57,33 @@ __status__ = "complete"
 class CompilationContext:
     """
     Complete compilation environment for ingestion fidelity.
-    
+
     Captures all parameters that influence compiler behavior and ABI decisions.
     This context must be explicit and complete for reproducible ingestion.
     """
-    
+
     # Source inputs
     header_files: List[Path]
-    
+
     # Include search paths (order-sensitive)
     include_paths: List[Path] = field(default_factory=list)
-    
+
     # Preprocessor macro definitions
     macro_definitions: Dict[str, str] = field(default_factory=dict)
-    
+
     # Target configuration (architecture-os-abi)
     target_triple: str = ""
-    
+
     # ABI-affecting compiler flags
     abi_flags: List[str] = field(default_factory=list)
-    
+
     # Language standard
     language_standard: str = "c11"
-    
+
     # Compiler identification
     compiler_name: str = "clang"
     compiler_version: str = ""
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize context for storage and reproducibility."""
         return {
@@ -98,11 +98,11 @@ class CompilationContext:
                 'version': self.compiler_version
             }
         }
-    
+
     def compute_hash(self) -> str:
         """
         Compute deterministic hash of compilation context.
-        
+
         Used for cache invalidation and reproducibility tracking.
         """
         context_json = json.dumps(self.to_dict(), sort_keys=True)
@@ -120,21 +120,21 @@ class CompilationContext:
 class SourceLocation:
     """
     Complete source location information.
-    
+
     Captures file, line, column, and location context.
     """
-    
+
     file_path: str
     line: int
     column: int
-    
+
     # Location type
     is_spelling: bool = True  # True for spelling, False for expansion
     is_in_system_header: bool = False
-    
+
     # Additional context
     offset: int = 0  # Byte offset in file
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize location."""
         data = {
@@ -142,13 +142,13 @@ class SourceLocation:
             'line': self.line,
             'column': self.column
         }
-        
+
         if self.is_in_system_header:
             data['is_system_header'] = True
-        
+
         if self.offset > 0:
             data['offset'] = self.offset
-        
+
         return data
 
     def __repr__(self) -> str:
@@ -163,13 +163,13 @@ class SourceLocation:
 class SourceRange:
     """
     Source range spanning start and end locations.
-    
+
     Represents multi-line declarations or code spans.
     """
-    
+
     start: SourceLocation
     end: SourceLocation
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize range."""
         return {
@@ -185,29 +185,29 @@ class SourceRange:
 class ProvenanceInfo:
     """
     Provenance metadata for declarations.
-    
+
     Captures location, include chain, header classification,
     and modification tracking.
     """
-    
+
     # Primary location
     location: SourceLocation
     extent: Optional[SourceRange] = None
-    
+
     # Include chain (list of header files leading to this declaration)
     include_chain: List[str] = field(default_factory=list)
     include_depth: int = 0
-    
+
     # Header classification
     is_public_header: bool = True
     is_system_header: bool = False
-    
+
     # Expansion context (for macro-generated declarations)
     expansion_location: Optional[SourceLocation] = None
-    
+
     # Modification tracking
     file_modification_time: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize provenance."""
         data = {
@@ -215,19 +215,19 @@ class ProvenanceInfo:
             'include_depth': self.include_depth,
             'is_public_header': self.is_public_header
         }
-        
+
         if self.extent:
             data['extent'] = self.extent.to_dict()
-        
+
         if self.include_chain:
             data['include_chain'] = self.include_chain
-        
+
         if self.expansion_location:
             data['expansion_location'] = self.expansion_location.to_dict()
-        
+
         if self.file_modification_time:
             data['file_modification_time'] = self.file_modification_time
-        
+
         return data
 
 # ============================================================================
@@ -237,51 +237,51 @@ class ProvenanceInfo:
 class Diagnostic:
     """
     Single diagnostic message.
-    
+
     Represents an error, warning, info, or note with location and context.
     """
-    
+
     severity: str  # 'fatal', 'error', 'warning', 'info', 'note'
     message: str
     location: Optional[SourceLocation] = None
-    
+
     # Additional context
     analysis: Optional[str] = None
     impact: Optional[str] = None
     suggestion: Optional[str] = None
-    
+
     # Related information
     related_locations: List[SourceLocation] = field(default_factory=list)
     category: Optional[str] = None  # 'configuration', 'parsing', 'extraction', 'validation', 'ffi_hazard'
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize diagnostic."""
         data = {
             'severity': self.severity,
             'message': self.message
         }
-        
+
         if self.location:
             data['location'] = self.location.to_dict()
-        
+
         if self.analysis:
             data['explanation'] = self.explanation
-        
+
         if self.impact:
             data['impact'] = self.impact
-        
+
         if self.suggestion:
             data['suggestion'] = self.suggestion
-        
+
         if self.category:
             data['category'] = self.category
-        
+
         return data
 
     def format_console(self) -> str:
         """Format diagnostic for console output."""
         lines = []
-        
+
         # Severity and message
         severity_marker = {
             'fatal': 'FATAL',
@@ -290,62 +290,62 @@ class Diagnostic:
             'info': 'INFO',
             'note': 'NOTE'
         }
-        
+
         marker = severity_marker.get(self.severity, 'DIAGNOSTIC')
         lines.append(f"{marker}: {self.message}")
-        
+
         # Location
         if self.location:
             lines.append(f"  Location: {self.location.file_path}:{self.location.line}:{self.location.column}")
-        
+
         # Explanation
         if self.analysis:
             lines.append(f"  Explanation: {self.explanation}")
-        
+
         # Impact
         if self.impact:
             lines.append(f"  Impact: {self.impact}")
-        
+
         # Suggestion
         if self.suggestion:
             lines.append(f"  Suggestion: {self.suggestion}")
-        
+
         return '\n'.join(lines)
 
 @dataclass
 class IngestionReport:
     """
     Complete ingestion diagnostic report.
-    
+
     Aggregates all diagnostics and provides summary statistics.
     """
-    
+
     success: bool = True
-    
+
     # Diagnostic counts
     fatal_count: int = 0
     error_count: int = 0
     warning_count: int = 0
     info_count: int = 0
     note_count: int = 0
-    
+
     # All diagnostics
     diagnostics: List[Diagnostic] = field(default_factory=list)
-    
+
     # Summary statistics
     symbols_extracted: int = 0
     types_extracted: int = 0
     functions_extracted: int = 0
     variables_extracted: int = 0
     macros_extracted: int = 0
-    
+
     incomplete_types: int = 0
     skipped_symbols: int = 0
-    
+
     def add_diagnostic(self, diagnostic: Diagnostic):
         """Add diagnostic and update counts."""
         self.diagnostics.append(diagnostic)
-        
+
         if diagnostic.severity == 'fatal':
             self.fatal_count += 1
             self.success = False
@@ -358,11 +358,11 @@ class IngestionReport:
             self.info_count += 1
         elif diagnostic.severity == 'note':
             self.note_count += 1
-    
+
     def has_errors(self) -> bool:
         """Check if any errors occurred."""
         return self.fatal_count > 0 or self.error_count > 0
-    
+
     def format_summary(self) -> str:
         """Format summary for console output."""
         lines = [
@@ -370,12 +370,12 @@ class IngestionReport:
             "INGESTION SUMMARY",
             "=" * 60
         ]
-        
+
         # Status
         status = "SUCCESS" if self.success else "FAILED"
         lines.append(f"Status: {status}")
         lines.append("")
-        
+
         # Extracted symbols
         lines.append("Extracted Symbols:")
         lines.append(f"  Functions: {self.functions_extracted}")
@@ -384,7 +384,7 @@ class IngestionReport:
         lines.append(f"  Macros: {self.macros_extracted}")
         lines.append(f"  Total: {self.symbols_extracted}")
         lines.append("")
-        
+
         # Issues
         if self.incomplete_types > 0 or self.skipped_symbols > 0:
             lines.append("Issues:")
@@ -393,7 +393,7 @@ class IngestionReport:
             if self.skipped_symbols > 0:
                 lines.append(f"  Skipped symbols: {self.skipped_symbols}")
             lines.append("")
-        
+
         # Diagnostics
         lines.append("Diagnostics:")
         lines.append(f"  Fatal: {self.fatal_count}")
@@ -401,11 +401,11 @@ class IngestionReport:
         lines.append(f"  Warnings: {self.warning_count}")
         lines.append(f"  Info: {self.info_count}")
         lines.append("")
-        
+
         lines.append("=" * 60)
-        
+
         return '\n'.join(lines)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize report."""
         return {
@@ -434,24 +434,24 @@ class IngestionReport:
 class AttributeInfo:
     """
     Information about a compiler attribute.
-    
+
     Captures attribute kind, syntax, arguments, and ABI impact.
     """
-    
+
     attribute_kind: str  # 'aligned', 'packed', 'visibility', 'deprecated', 'calling_conv', etc.
     attribute_syntax: str  # '__attribute__', '__declspec', '[[...]]', 'pragma'
-    
+
     # Attribute arguments
     arguments: List[str] = field(default_factory=list)
-    
+
     # Impact classification
     affects_abi: bool = False  # Changes structure layout, alignment, or calling convention
     affects_visibility: bool = False  # Changes symbol export/import
     affects_semantics: bool = False  # Changes behavior (noreturn, const, etc.)
-    
+
     # Additional metadata
     platform_specific: bool = False  # Attribute is platform-specific
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize attribute info."""
         data = {
@@ -460,13 +460,13 @@ class AttributeInfo:
             'affects_abi': self.affects_abi,
             'affects_visibility': self.affects_visibility
         }
-        
+
         if self.arguments:
             data['arguments'] = self.arguments
-        
+
         if self.platform_specific:
             data['platform_specific'] = True
-        
+
         return data
 
 # ============================================================================
@@ -477,33 +477,33 @@ class AttributeInfo:
 class ExternalSymbol:
     """
     Externally visible symbol (function, variable, type).
-    
+
     Extended in  with metadata from AST traversal.
     """
-    
+
     name: str
     kind: str  # 'function', 'variable', 'type', 'struct', 'union', 'enum', 'typedef', 'macro'
-    
+
         source_location: Optional[SourceLocation] = None
     linkage: Optional[str] = None  # 'external', 'internal', 'unique_external'
     visibility: Optional[str] = None
     type_spelling: Optional[str] = None
     is_definition: bool = False
-    
+
         function_signature: Optional['FunctionSignature'] = None
-    
+
         global_variable_info: Optional['GlobalVariableInfo'] = None
-    
+
         macro_info: Optional['MacroInfo'] = None
-    
+
         attributes: List[AttributeInfo] = field(default_factory=list)
-    
+
     # Quick access flags (derived from attributes)
     is_deprecated: bool = False
     deprecation_message: Optional[str] = None
-    
+
         provenance: Optional[ProvenanceInfo] = None
-    
+
         namespaces: List[str] = field(default_factory=list)
     mangled_name: Optional[str] = None
     is_template_instantiation: bool = False
@@ -517,51 +517,51 @@ class ExternalSymbol:
             'kind': self.kind,
             'is_definition': self.is_definition
         }
-        
+
         if self.source_location:
             data['source_location'] = self.source_location.to_dict()
-        
+
         if self.linkage:
             data['linkage'] = self.linkage
-        
+
         if self.visibility:
             data['visibility'] = self.visibility
-        
+
         if self.type_spelling:
             data['type_spelling'] = self.type_spelling
-            
+
         if self.function_signature:
             data['function_signature'] = self.function_signature.to_dict()
-            
+
         if self.global_variable_info:
             data['global_variable_info'] = self.global_variable_info.to_dict()
-            
+
         if self.macro_info:
             data['macro_info'] = self.macro_info.to_dict()
-        
+
         if self.attributes:
             data['attributes'] = [attr.to_dict() for attr in self.attributes]
-        
+
         if self.is_deprecated:
             data['is_deprecated'] = True
             if self.deprecation_message:
                 data['deprecation_message'] = self.deprecation_message
-        
+
         if self.provenance:
             data['provenance'] = self.provenance.to_dict()
-            
+
         if self.namespaces:
             data['namespaces'] = self.namespaces
-            
+
         if self.mangled_name:
             data['mangled_name'] = self.mangled_name
-            
+
         if self.is_template_instantiation:
             data['is_template_instantiation'] = True
             if self.template_kind:
                 data['template_kind'] = self.template_kind
             data['template_arguments'] = self.template_arguments
-        
+
         return data
 
     def __repr__(self) -> str:
@@ -576,31 +576,31 @@ class ExternalSymbol:
 class MacroInfo:
     """
     Information about a preprocessor macro.
-    
+
     Captures macro name, value, parameters, and provenance.
     """
-    
+
     macro_name: str
     macro_value: Optional[str] = None  # Expanded constant value
     macro_body: str = ""  # Raw token sequence
-    
+
     # Function-like macros
     is_function_like: bool = False
     parameters: List[str] = field(default_factory=list)
-    
+
     # Classification
     macro_type: str = "unknown"  # 'integer', 'string', 'float', 'expression', 'empty'
-    
+
     # Provenance
     source_file: Optional[str] = None
     line_number: Optional[int] = None
     is_predefined: bool = False
     is_builtin: bool = False
     is_platform_specific: bool = False
-    
+
     # Conditional context
     conditional_context: List[str] = field(default_factory=list)  # Stack of active #ifdef conditions
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize macro info."""
         data = {
@@ -609,26 +609,26 @@ class MacroInfo:
             'macro_type': self.macro_type,
             'is_function_like': self.is_function_like
         }
-        
+
         if self.macro_value is not None:
             data['macro_value'] = self.macro_value
-        
+
         if self.parameters:
             data['parameters'] = self.parameters
-        
+
         if self.source_file:
             data['source_file'] = self.source_file
             data['line_number'] = self.line_number
-        
+
         if self.is_predefined:
             data['is_predefined'] = True
-        
+
         if self.is_platform_specific:
             data['is_platform_specific'] = True
-        
+
         if self.conditional_context:
             data['conditional_context'] = self.conditional_context
-        
+
         return data
 
     def __repr__(self) -> str:
@@ -639,22 +639,22 @@ class MacroInfo:
 class ParameterInfo:
     """
     Information about a function parameter.
-    
+
     Captures parameter name, type, qualifiers, and type metadata.
     """
-    
+
     name: str
     param_type: str  # Type spelling
     type_info: Optional['TypeInfo'] = None
-    
+
     # Qualifiers
     is_const: bool = False
     is_volatile: bool = False
     is_restrict: bool = False
-    
+
     # Metadata
     is_synthetic_name: bool = False  # Generated placeholder name
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize parameter info."""
         data = {
@@ -663,10 +663,10 @@ class ParameterInfo:
             'is_const': self.is_const,
             'is_synthetic_name': self.is_synthetic_name
         }
-        
+
         if self.type_info:
             data['type_info'] = self.type_info.to_dict()
-        
+
         return data
 
 @dataclass
@@ -674,21 +674,21 @@ class FunctionSignature:
     """
     Complete function signature including parameters, return type, and calling convention.
     """
-    
+
     return_type: str
     return_type_info: Optional['TypeInfo'] = None
-    
+
     parameters: List[ParameterInfo] = field(default_factory=list)
-    
+
     calling_convention: str = "cdecl"
     is_variadic: bool = False
-    
+
     # Language and linkage
     language_linkage: str = "C"  # 'C' or 'C++'
-    
+
     # Exception handling (C++ only)
     is_noexcept: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize function signature."""
         data = {
@@ -698,48 +698,48 @@ class FunctionSignature:
             'is_variadic': self.is_variadic,
             'language_linkage': self.language_linkage
         }
-        
+
         if self.return_type_info:
             data['return_type_info'] = self.return_type_info.to_dict()
-        
+
         if self.is_noexcept:
             data['is_noexcept'] = True
-        
+
         return data
 
 @dataclass
 class GlobalVariableInfo:
     """
     Complete information about a global variable.
-    
+
     Captures type, size, alignment, mutability, threading, and visibility.
     """
-    
+
     variable_type: str  # Type spelling
     type_info: Optional['TypeInfo'] = None
-    
+
     # Size and alignment
     size_bytes: int = 0
     alignment_bytes: int = 0
-    
+
     # Mutability qualifiers
     is_const: bool = False
     is_volatile: bool = False
     is_restrict: bool = False
-    
+
     # Thread-local storage
     is_thread_local: bool = False
-    
+
     # Linkage and visibility
     visibility: Optional[str] = None  # 'default', 'hidden', 'protected', 'invalid'
-    
+
     # Attributes
     section: Optional[str] = None  # Memory section name
     explicit_alignment: Optional[int] = None  # Explicit alignment attribute
-    
+
     # Definition status
     is_definition: bool = False  # True if this is a definition, not just declaration
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize global variable info."""
         data = {
@@ -751,33 +751,33 @@ class GlobalVariableInfo:
             'is_thread_local': self.is_thread_local,
             'is_definition': self.is_definition
         }
-        
+
         if self.type_info:
             data['type_info'] = self.type_info.to_dict()
-        
+
         if self.visibility:
             data['visibility'] = self.visibility
-        
+
         if self.section:
             data['section'] = self.section
-        
+
         if self.explicit_alignment:
             data['explicit_alignment'] = self.explicit_alignment
-        
+
         return data
 
 @dataclass
 class EnumeratorInfo:
     """
     Information about a single enumerator (enum constant).
-    
+
     Captures both signed and unsigned interpretations of the value.
     """
-    
+
     name: str
     value_signed: int  # Signed interpretation
     value_unsigned: int  # Unsigned interpretation (for large values)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize enumerator info."""
         return {
@@ -790,20 +790,20 @@ class EnumeratorInfo:
 class TypedefInfo:
     """
     Information about a typedef.
-    
+
     Captures the typedef name, underlying type, canonical type,
     and complete resolution chain.
     """
-    
+
     typedef_name: str           # The typedef identifier
     underlying_type: str        # Direct underlying type
     canonical_type: str         # Fully resolved canonical type
     typedef_chain: List[str]    # Complete chain: [name, ..., canonical]
-    
+
     # Completeness
     is_forward_declaration: bool = False
     is_incomplete: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize typedef info."""
         return {
@@ -819,51 +819,51 @@ class TypedefInfo:
 class TypeInfo:
     """
     Complete type information extracted from compiler.
-    
+
     Extended in  with comprehensive ABI-relevant properties.
     """
-    
+
     # Identity
     name: str  # Declared type name
     canonical_name: str  # Canonical name after typedef resolution
-    
+
     # Classification
     kind: str  # 'primitive', 'pointer', 'array', 'record', 'function', 'enum', 'typedef', 'unknown'
-    
+
     # Size and alignment (-1 if incomplete)
     size_bytes: int = -1
     alignment_bytes: int = -1
-    
+
     # Pointer types
     pointee_type: Optional[str] = None
     pointer_depth: int = 0
-    
+
     # Array types
     element_type: Optional[str] = None
     array_size: Optional[int] = None  # None for incomplete arrays
-    
+
     # Function types
     return_type: Optional[str] = None
     parameter_types: List[str] = field(default_factory=list)
     is_variadic: bool = False
     calling_convention: Optional[str] = None
-    
+
     # Record types
     record_kind: Optional[str] = None  # 'struct', 'union', None
-    
+
     # Enum types
     underlying_type: Optional[str] = None
-    
+
     # Qualifiers
     is_const: bool = False
     is_volatile: bool = False
     is_restrict: bool = False
-    
+
     # Completeness
     is_incomplete: bool = False
-    
+
         record_layout: Optional['RecordLayout'] = None
-    
+
         enum_enumerators: List['EnumeratorInfo'] = field(default_factory=list)
     enum_underlying_type: Optional[str] = None
     enum_is_signed: Optional[bool] = None
@@ -871,17 +871,17 @@ class TypeInfo:
     enum_max_value: Optional[int] = None
     enum_is_bitmask: bool = False
     enum_is_sequential: bool = False
-    
+
         typedef_info: Optional[TypedefInfo] = None
-    
+
     # Simplified typedef chain (for quick access)
     typedef_chain: List[str] = field(default_factory=list)
-    
+
         namespaces: List[str] = field(default_factory=list)
     is_template_instantiation: bool = False
     template_name: Optional[str] = None # Base template name
     template_arguments: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
         data = {
@@ -892,37 +892,37 @@ class TypeInfo:
             'alignment_bytes': self.alignment_bytes,
             'is_incomplete': self.is_incomplete
         }
-        
+
         if self.pointee_type:
             data['pointee_type'] = self.pointee_type
             data['pointer_depth'] = self.pointer_depth
-        
+
         if self.element_type:
             data['element_type'] = self.element_type
             data['array_size'] = self.array_size
-        
+
         if self.return_type:
             data['return_type'] = self.return_type
             data['parameter_types'] = self.parameter_types
             data['is_variadic'] = self.is_variadic
             data['calling_convention'] = self.calling_convention
-        
+
         if self.record_kind:
             data['record_kind'] = self.record_kind
-        
+
         if self.underlying_type:
             data['underlying_type'] = self.underlying_type
-        
+
         if self.is_const or self.is_volatile or self.is_restrict:
             data['qualifiers'] = {
                 'const': self.is_const,
                 'volatile': self.is_volatile,
                 'restrict': self.is_restrict
             }
-        
+
         if self.record_layout:
             data['record_layout'] = self.record_layout.to_dict()
-        
+
         # Enum metadata
         if self.enum_enumerators:
             data['enum'] = {
@@ -934,13 +934,13 @@ class TypeInfo:
                 'is_bitmask': self.enum_is_bitmask,
                 'is_sequential': self.enum_is_sequential
             }
-            
+
         if self.typedef_info:
             data['typedef_info'] = self.typedef_info.to_dict()
-            
+
         if self.typedef_chain:
             data['typedef_chain'] = self.typedef_chain
-        
+
         return data
 
     def __repr__(self) -> str:
@@ -955,23 +955,23 @@ class TypeInfo:
 class FieldInfo:
     """
     Complete information about a structure or union field.
-    
+
     Captures field name, type, offset, size, and alignment for ABI verification.
     """
-    
+
     name: str
     field_type: str  # Type name (e.g., 'int', 'struct Point*')
     offset_bytes: int  # Byte offset from structure base
     offset_bits: int = 0  # Exact bit offset
     size_bytes: int = 0
     alignment_bytes: int = 0
-    
+
         is_bitfield: bool = False
     bitfield_width: Optional[int] = None
-    
+
     # Complete type information
     type_info: Optional['TypeInfo'] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize field info."""
         data = {
@@ -982,14 +982,14 @@ class FieldInfo:
             'size_bytes': self.size_bytes,
             'alignment_bytes': self.alignment_bytes
         }
-        
+
         if self.is_bitfield:
             data['is_bitfield'] = True
             data['bitfield_width'] = self.bitfield_width
-        
+
         if self.type_info:
             data['type_info'] = self.type_info.to_dict()
-        
+
         return data
 
     def __repr__(self) -> str:
@@ -1000,14 +1000,14 @@ class FieldInfo:
 class PaddingInfo:
     """
     Represents padding bytes in a structure.
-    
+
     Padding occurs between fields (for alignment) or at the end (for array alignment).
     """
-    
+
     offset_bytes: int
     size_bytes: int
     reason: str  # 'inter-field', 'trailing', 'explicit'
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize padding info."""
         return {
@@ -1020,22 +1020,22 @@ class PaddingInfo:
 class RecordLayout:
     """
     Complete layout of a structure or union.
-    
+
     Captures all fields, padding, size, and alignment for ABI-sensitive verification.
     """
-    
+
     name: str
     kind: str  # 'struct', 'union'
     size_bytes: int
     alignment_bytes: int
-    
+
     fields: List[FieldInfo] = field(default_factory=list)
     padding_regions: List[PaddingInfo] = field(default_factory=list)
-    
+
     # Layout attributes
     is_packed: bool = False
     is_anonymous: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize record layout."""
         return {
@@ -1060,55 +1060,55 @@ class RecordLayout:
 class GlobalVariableExtractor:
     """
     Extracts complete global variable information from Clang AST.
-    
+
     Handles mutability analysis, thread-local detection, visibility queries,
     and attribute extraction.
     """
-    
+
     def __init__(self, type_extractor: 'TypeExtractor'):
         """
         Initialize global variable extractor.
-        
+
         Args:
             type_extractor: TypeExtractor for variable type resolution
         """
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         self.type_extractor = type_extractor
-    
+
     def extract_global_variable(
         self,
         var_cursor: 'CXIDE'
     ) -> GlobalVariableInfo:
         """
         Extract complete global variable information.
-        
+
         Args:
             var_cursor: Variable declaration cursor
-            
+
         Returns:
             Complete GlobalVariableInfo
         """
         # Get variable type
         var_type = libclang.clang_getIDEType(var_cursor)
         type_spelling = self.type_extractor._get_type_spelling(var_type)
-        
+
         # Get size and alignment
         size = libclang.clang_Type_getSizeOf(var_type)
         alignment = libclang.clang_Type_getAlignOf(var_type)
-        
+
         # Detect mutability qualifiers
         is_const = bool(libclang.clang_isConstQualifiedType(var_type))
         is_volatile = bool(libclang.clang_isVolatileQualifiedType(var_type))
         is_restrict = bool(libclang.clang_isRestrictQualifiedType(var_type))
-        
+
         # Detect thread-local storage
         is_thread_local = self._detect_thread_local(var_cursor)
-        
+
         # Get visibility
         visibility = self._get_visibility(var_cursor)
-        
+
         # Check if definition
         if hasattr(libclang, 'clang_isIDEDefinition'):
             is_definition = bool(libclang.clang_isIDEDefinition(var_cursor))
@@ -1116,7 +1116,7 @@ class GlobalVariableExtractor:
             # Fallback: check spelling equality with logical name which is weak
             # Better fallback: use clang_getIDEDefinition and compare cursors
             is_definition = False # Default
-        
+
         # Create variable info
         var_info = GlobalVariableInfo(
             variable_type=type_spelling,
@@ -1129,59 +1129,59 @@ class GlobalVariableExtractor:
             visibility=visibility,
             is_definition=is_definition
         )
-        
+
         # Extract complete type info
         try:
             var_info.type_info = self.type_extractor.extract_type(var_type)
         except Exception:
             pass
-        
+
         return var_info
-    
+
     def _detect_thread_local(self, cursor: 'CXIDE') -> bool:
         """
         Detect if variable is thread-local.
-        
+
         Args:
             cursor: Variable cursor
-            
+
         Returns:
             True if thread-local
         """
         # Check display name for thread-local keywords
         display_name_cxstr = libclang.clang_getIDEDisplayName(cursor)
         display_name = clang_string_to_python(display_name_cxstr)
-        
+
         # Look for TLS keywords
         tls_keywords = ['__thread', 'thread_local', '_Thread_local', '__declspec(thread)']
         for keyword in tls_keywords:
             if keyword in display_name:
                 return True
-        
+
         return False
-    
+
     def _get_visibility(self, cursor: 'CXIDE') -> str:
         """
         Get symbol visibility.
-        
+
         Args:
             cursor: Variable cursor
-            
+
         Returns:
             Visibility string
         """
         if not hasattr(libclang, 'clang_getIDEVisibility'):
             return 'unknown'
-            
+
         visibility = libclang.clang_getIDEVisibility(cursor)
-        
+
         visibility_map = {
             CXVisibilityKind.DEFAULT: 'default',
             CXVisibilityKind.HIDDEN: 'hidden',
             CXVisibilityKind.PROTECTED: 'protected',
             CXVisibilityKind.INVALID: 'invalid'
         }
-        
+
         return visibility_map.get(visibility, 'unknown')
 
 # ============================================================================
@@ -1191,55 +1191,55 @@ class GlobalVariableExtractor:
 class FunctionSignatureExtractor:
     """
     Extracts complete function signatures from Clang AST.
-    
+
     Handles parameter extraction, calling convention detection,
     variadic function handling, and return type analysis.
     """
-    
+
     def __init__(self, type_extractor: 'TypeExtractor'):
         """
         Initialize function signature extractor.
-        
+
         Args:
             type_extractor: TypeExtractor for parameter and return types
         """
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         self.type_extractor = type_extractor
-    
+
     def extract_function_signature(
         self,
         function_cursor: 'CXIDE'
     ) -> FunctionSignature:
         """
         Extract complete function signature.
-        
+
         Args:
             function_cursor: Function declaration cursor
-            
+
         Returns:
             Complete FunctionSignature
         """
         # Get function type
         func_type = libclang.clang_getIDEType(function_cursor)
-        
+
         # Extract return type
         return_type_cx = libclang.clang_getResultType(func_type)
         return_type_spelling = self.type_extractor._get_type_spelling(return_type_cx)
-        
+
         # Extract parameters
         parameters = self._extract_parameters(function_cursor, func_type)
-        
+
         # Detect calling convention
         calling_conv = self._get_calling_convention(func_type)
-        
+
         # Detect variadic
         is_variadic = bool(libclang.clang_isFunctionTypeVariadic(func_type))
-        
+
         # Detect language linkage
         language = self._get_language_linkage(function_cursor)
-        
+
         # Create signature
         signature = FunctionSignature(
             return_type=return_type_spelling,
@@ -1248,15 +1248,15 @@ class FunctionSignatureExtractor:
             is_variadic=is_variadic,
             language_linkage=language
         )
-        
+
         # Extract complete return type info
         try:
             signature.return_type_info = self.type_extractor.extract_type(return_type_cx)
         except Exception:
             pass
-        
+
         return signature
-    
+
     def _extract_parameters(
         self,
         function_cursor: 'CXIDE',
@@ -1264,38 +1264,38 @@ class FunctionSignatureExtractor:
     ) -> List[ParameterInfo]:
         """
         Extract all parameters from a function.
-        
+
         Args:
             function_cursor: Function cursor
             func_type: Function type
-            
+
         Returns:
             List of ParameterInfo
         """
         parameters = []
         param_index = 0
-        
+
         # Visitor to collect parameter cursors
         def param_visitor(child_cursor, parent_cursor, client_data):
             nonlocal param_index
-            
+
             if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.PARM_DECL:
                 return CXChildVisitResult.CONTINUE
-            
+
             try:
                 param = self._extract_parameter(child_cursor, param_index)
                 parameters.append(param)
                 param_index += 1
             except Exception:
                 pass
-            
+
             return CXChildVisitResult.CONTINUE
-        
+
         visitor_func = CXIDEVisitor(param_visitor)
         libclang.clang_visitChildren(function_cursor, visitor_func, None)
-        
+
         return parameters
-    
+
     def _extract_parameter(
         self,
         param_cursor: 'CXIDE',
@@ -1303,33 +1303,33 @@ class FunctionSignatureExtractor:
     ) -> ParameterInfo:
         """
         Extract a single parameter.
-        
+
         Args:
             param_cursor: Parameter cursor
             index: Parameter index (for synthetic names)
-            
+
         Returns:
             ParameterInfo
         """
         # Get parameter name
         name_cxstr = libclang.clang_getIDESpelling(param_cursor)
         name = clang_string_to_python(name_cxstr)
-        
+
         # Generate synthetic name if missing
         is_synthetic = False
         if not name:
             name = f"param{index}"
             is_synthetic = True
-        
+
         # Get parameter type
         param_type = libclang.clang_getIDEType(param_cursor)
         type_spelling = self.type_extractor._get_type_spelling(param_type)
-        
+
         # Detect qualifiers
         is_const = bool(libclang.clang_isConstQualifiedType(param_type))
         is_volatile = bool(libclang.clang_isVolatileQualifiedType(param_type))
         is_restrict = bool(libclang.clang_isRestrictQualifiedType(param_type))
-        
+
         # Create parameter info
         param_info = ParameterInfo(
             name=name,
@@ -1339,27 +1339,27 @@ class FunctionSignatureExtractor:
             is_restrict=is_restrict,
             is_synthetic_name=is_synthetic
         )
-        
+
         # Extract complete type info
         try:
             param_info.type_info = self.type_extractor.extract_type(param_type)
         except Exception:
             pass
-        
+
         return param_info
-    
+
     def _get_calling_convention(self, func_type: 'CXType') -> str:
         """
         Determine function calling convention.
-        
+
         Args:
             func_type: Function type
-            
+
         Returns:
             Calling convention name
         """
         calling_conv = libclang.clang_getFunctionTypeCallingConv(func_type)
-        
+
         # Map Clang calling convention to string
         conv_map = {
             CXCallingConv.C: 'cdecl',
@@ -1373,21 +1373,21 @@ class FunctionSignatureExtractor:
             CXCallingConv.WIN64: 'win64',
             CXCallingConv.DEFAULT: 'default'
         }
-        
+
         return conv_map.get(calling_conv, 'unknown')
-    
+
     def _get_language_linkage(self, cursor: 'CXIDE') -> str:
         """
         Determine language linkage (C vs C++).
-        
+
         Args:
             cursor: Function cursor
-            
+
         Returns:
             'C' or 'C++'
         """
         language = libclang.clang_getIDELanguage(cursor)
-        
+
         if language == CXLanguageKind.C:
             return 'C'
         elif language == CXLanguageKind.C_PLUS_PLUS:
@@ -1402,23 +1402,23 @@ class FunctionSignatureExtractor:
 class EnumExtractor:
     """
     Extracts complete enumeration information from Clang AST.
-    
+
     Handles enumerator value extraction, underlying type detection,
     signedness analysis, and value range computation.
     """
-    
+
     def __init__(self, type_extractor: 'TypeExtractor'):
         """
         Initialize enum extractor.
-        
+
         Args:
             type_extractor: TypeExtractor for underlying type resolution
         """
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         self.type_extractor = type_extractor
-    
+
     def extract_enum_info(
         self,
         enum_cursor: 'CXIDE',
@@ -1426,43 +1426,43 @@ class EnumExtractor:
     ) -> Dict[str, Any]:
         """
         Extract complete enum information.
-        
+
         Args:
             enum_cursor: Enum declaration cursor
             enum_type: Enum type
-            
+
         Returns:
             Dictionary with enum metadata
         """
         # Extract enumerators
         enumerators = self._extract_enumerators(enum_cursor)
-        
+
         # Extract underlying type
         underlying_type_cx = libclang.clang_getEnumDeclIntegerType(enum_cursor)
         underlying_type_spelling = self.type_extractor._get_type_spelling(underlying_type_cx)
-        
+
         # Determine signedness
         is_signed = self._is_signed_type(underlying_type_cx)
-        
+
         # Compute value range
         if enumerators:
             if is_signed:
                 values = [e.value_signed for e in enumerators]
             else:
                 values = [e.value_unsigned for e in enumerators]
-            
+
             min_value = min(values)
             max_value = max(values)
         else:
             min_value = None
             max_value = None
-        
+
         # Detect bitmask pattern
         is_bitmask = self._is_bitmask_enum(enumerators, is_signed)
-        
+
         # Detect sequential pattern
         is_sequential = self._is_sequential_enum(enumerators, is_signed)
-        
+
         return {
             'enumerators': enumerators,
             'underlying_type': underlying_type_spelling,
@@ -1472,85 +1472,85 @@ class EnumExtractor:
             'is_bitmask': is_bitmask,
             'is_sequential': is_sequential
         }
-    
+
     def _extract_enumerators(self, enum_cursor: 'CXIDE') -> List[EnumeratorInfo]:
         """
         Extract all enumerators from an enum.
-        
+
         Args:
             enum_cursor: Enum declaration cursor
-            
+
         Returns:
             List of EnumeratorInfo
         """
         enumerators = []
-        
+
         # Visitor to collect enum constants
         def enumerator_visitor(child_cursor, parent_cursor, client_data):
             if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.ENUM_CONSTANT_DECL:
                 return CXChildVisitResult.CONTINUE
-            
+
             try:
                 enumerator = self._extract_enumerator(child_cursor)
                 enumerators.append(enumerator)
             except Exception:
                 pass
-            
+
             return CXChildVisitResult.CONTINUE
-        
+
         visitor_func = CXIDEVisitor(enumerator_visitor)
         libclang.clang_visitChildren(enum_cursor, visitor_func, None)
-        
+
         return enumerators
-    
+
     def _extract_enumerator(self, constant_cursor: 'CXIDE') -> EnumeratorInfo:
         """
         Extract a single enumerator.
-        
+
         Args:
             constant_cursor: Enum constant cursor
-            
+
         Returns:
             EnumeratorInfo
         """
         # Get enumerator name
         name_cxstr = libclang.clang_getIDESpelling(constant_cursor)
         name = clang_string_to_python(name_cxstr)
-        
+
         # Get signed value
         value_signed = libclang.clang_getEnumConstantDeclValue(constant_cursor)
-        
+
         # Get unsigned value
         value_unsigned = libclang.clang_getEnumConstantDeclUnsignedValue(constant_cursor)
-        
+
         return EnumeratorInfo(
             name=name,
             value_signed=value_signed,
             value_unsigned=value_unsigned
         )
-    
+
     def _is_signed_type(self, cxtype: 'CXType') -> bool:
         """
         Determine if a type is signed.
-        
+
         Args:
             cxtype: Type to check
-            
+
         Returns:
             True if signed, False if unsigned
         """
         kind = cxtype.kind
-        
+
         # Unsigned types
         if kind in [
             CXTypeKind.UCHAR, CXTypeKind.USHORT, CXTypeKind.UINT,
             CXTypeKind.ULONG, CXTypeKind.ULONGLONG, CXTypeKind.CHAR_U
         ]:
             return False
-        
+
         # Signed types (default for most integer types)
         return True
-    
+
     def _is_bitmask_enum(
         self,
         enumerators: List[EnumeratorInfo],
@@ -1558,30 +1558,30 @@ class EnumExtractor:
     ) -> bool:
         """
         Detect if enum is a bitmask (all values are powers of 2).
-        
+
         Args:
             enumerators: List of enumerators
             is_signed: Whether enum is signed
-            
+
         Returns:
             True if bitmask pattern detected
         """
         if not enumerators:
             return False
-        
+
         for enum in enumerators:
             value = enum.value_signed if is_signed else enum.value_unsigned
-            
+
             # Skip zero (common in bitmasks)
             if value == 0:
                 continue
-            
+
             # Check if power of 2: (value & (value - 1)) == 0
             if value < 0 or (value & (value - 1)) != 0:
                 return False
-        
+
         return True
-    
+
     def _is_sequential_enum(
         self,
         enumerators: List[EnumeratorInfo],
@@ -1589,28 +1589,28 @@ class EnumExtractor:
     ) -> bool:
         """
         Detect if enum has sequential values (0, 1, 2, ... or similar).
-        
+
         Args:
             enumerators: List of enumerators
             is_signed: Whether enum is signed
-            
+
         Returns:
             True if sequential pattern detected
         """
         if len(enumerators) < 2:
             return False
-        
+
         values = [
             (e.value_signed if is_signed else e.value_unsigned)
             for e in enumerators
         ]
-        
+
         # Check if consecutive
         sorted_values = sorted(values)
         for i in range(len(sorted_values) - 1):
             if sorted_values[i + 1] != sorted_values[i] + 1:
                 return False
-        
+
         return True
 
 # ============================================================================
@@ -1620,23 +1620,23 @@ class EnumExtractor:
 class RecordLayoutExtractor:
     """
     Extracts complete structure and union layouts from Clang AST.
-    
+
     Handles field enumeration, offset calculation, padding detection,
     and nested structure resolution.
     """
-    
+
     def __init__(self, type_extractor: 'TypeExtractor'):
         """
         Initialize record layout extractor.
-        
+
         Args:
             type_extractor: TypeExtractor for resolving field types
         """
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         self.type_extractor = type_extractor
-    
+
     def extract_record_layout(
         self,
         cursor: 'CXIDE',
@@ -1644,29 +1644,29 @@ class RecordLayoutExtractor:
     ) -> RecordLayout:
         """
         Extract complete layout of a structure or union.
-        
+
         Args:
             cursor: Record declaration cursor
             record_type: CXType of the record
-            
+
         Returns:
             Complete RecordLayout
         """
         # Get record name
         name_cxstr = libclang.clang_getIDESpelling(cursor)
         name = clang_string_to_python(name_cxstr)
-        
+
         # Detect if anonymous
         is_anonymous = (not name or name.startswith('(anonymous'))
-        
+
         # Get cursor kind to determine struct vs union
         cursor_kind = libclang.clang_getIDEKind(cursor)
         kind = 'union' if cursor_kind == CXIDEKind.UNION_DECL else 'struct'
-        
+
         # Get size and alignment
         size = libclang.clang_Type_getSizeOf(record_type)
         alignment = libclang.clang_Type_getAlignOf(record_type)
-        
+
         # Create layout
         layout = RecordLayout(
             name=name if name else '<anonymous>',
@@ -1675,15 +1675,15 @@ class RecordLayoutExtractor:
             alignment_bytes=max(0, alignment),
             is_anonymous=is_anonymous
         )
-        
+
         # Extract fields
         self._extract_fields(cursor, record_type, layout)
-        
+
         # Detect padding
         self._detect_padding(layout)
-        
+
         return layout
-    
+
     def _extract_fields(
         self,
         cursor: 'CXIDE',
@@ -1692,64 +1692,64 @@ class RecordLayoutExtractor:
     ):
         """
         Extract all fields from a record.
-        
+
         Args:
             cursor: Record cursor
             record_type: Record type
             layout: RecordLayout to populate
         """
         fields = []
-        
+
         # Visitor to collect field cursors
         def field_visitor(child_cursor, parent_cursor, client_data):
             # Only process field declarations (CXIDE_FieldDecl = 9)
             if libclang.clang_getIDEKind(child_cursor) != 9:
                 return CXChildVisitResult.CONTINUE
-            
+
             try:
                 field_info = self._extract_field(child_cursor)
                 fields.append(field_info)
             except Exception:
                 pass  # Skip problematic fields
-            
+
             return CXChildVisitResult.CONTINUE
-        
+
         visitor_func = CXIDEVisitor(field_visitor)
         libclang.clang_visitChildren(cursor, visitor_func, None)
-        
+
         layout.fields = fields
-    
+
     def _extract_field(self, field_cursor: 'CXIDE') -> FieldInfo:
         """
         Extract information for a single field.
-        
+
         Args:
             field_cursor: Field declaration cursor
-            
+
         Returns:
             FieldInfo
         """
         # Get field name
         name_cxstr = libclang.clang_getIDESpelling(field_cursor)
         name = clang_string_to_python(name_cxstr)
-        
+
         # Get field type
         field_type = libclang.clang_getIDEType(field_cursor)
         type_spelling = self.type_extractor._get_type_spelling(field_type)
-        
+
         # Get field offset (in bits, convert to bytes)
         offset_bits = libclang.clang_IDE_getOffsetOfField(field_cursor)
         offset_bytes = offset_bits // 8 if offset_bits >= 0 else 0
-        
+
         # Get field size and alignment
         size = libclang.clang_Type_getSizeOf(field_type)
         alignment = libclang.clang_Type_getAlignOf(field_type)
-        
+
                 is_bitfield = bool(libclang.clang_IDE_isBitField(field_cursor))
         bit_width = None
         if is_bitfield:
             bit_width = libclang.clang_getFieldDeclBitWidth(field_cursor)
-        
+
         # Create field info
         field_info = FieldInfo(
             name=name,
@@ -1761,40 +1761,40 @@ class RecordLayoutExtractor:
             is_bitfield=is_bitfield,
             bitfield_width=bit_width
         )
-        
+
         # Extract complete type info (recursive)
         try:
             field_info.type_info = self.type_extractor.extract_type(field_type)
         except Exception:
             pass  # Type extraction may fail for complex types
-        
+
         return field_info
-    
+
     def _detect_padding(self, layout: RecordLayout):
         """
         Detect padding regions in a record.
-        
+
         Args:
             layout: RecordLayout to analyze
         """
         if not layout.fields:
             return
-        
+
         # Sort fields by offset (important for structures)
         # For unions, all fields are at offset 0, so gaps don't really mean padding in the same way
         if layout.kind == 'union':
             return
-            
+
         sorted_fields = sorted(layout.fields, key=lambda f: f.offset_bytes)
-        
+
         # Detect inter-field padding
         for i in range(len(sorted_fields) - 1):
             current_field = sorted_fields[i]
             next_field = sorted_fields[i + 1]
-            
+
             current_end = current_field.offset_bytes + current_field.size_bytes
             gap = next_field.offset_bytes - current_end
-            
+
             if gap > 0:
                 padding = PaddingInfo(
                     offset_bytes=current_end,
@@ -1802,12 +1802,12 @@ class RecordLayoutExtractor:
                     reason='inter-field'
                 )
                 layout.padding_regions.append(padding)
-        
+
         # Detect trailing padding
         if sorted_fields:
             last_field = sorted_fields[-1]
             last_end = last_field.offset_bytes + last_field.size_bytes
-            
+
             if last_end < layout.size_bytes:
                 padding = PaddingInfo(
                     offset_bytes=last_end,
@@ -1819,7 +1819,7 @@ class RecordLayoutExtractor:
 class TypedefResolver:
     """
     Resolves typedef chains and tracks typedef definitions.
-    
+
     Handles typedef chain traversal, circular typedef detection,
     and typedef provenance tracking.
     """
@@ -1827,104 +1827,104 @@ class TypedefResolver:
     def __init__(self, type_extractor: 'TypeExtractor'):
         """
         Initialize typedef resolver.
-        
+
         Args:
             type_extractor: TypeExtractor for type queries
         """
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         self.type_extractor = type_extractor
-        
+
         # Cache of resolved typedefs
         self._typedef_cache: Dict[str, TypedefInfo] = {}
 
     def resolve_typedef_chain(self, typedef_type: 'CXType') -> List[str]:
         """
         Resolve complete typedef chain to canonical type.
-        
+
         Args:
             typedef_type: Typedef type to resolve
-            
+
         Returns:
             List of type names from typedef to canonical
-            
+
         Raises:
             CircularTypedefError: If circular typedef detected
         """
         chain = []
         visited = set()
         current_type = typedef_type
-        
+
         # Traverse typedef chain
         max_depth = 100  # Prevent infinite loops
         depth = 0
-        
+
         while current_type.kind == CXTypeKind.TYPEDEF and depth < max_depth:
             type_spelling = self.type_extractor._get_type_spelling(current_type)
-            
+
             # Detect circular reference
             if type_spelling in visited:
                 raise CircularTypedefError(
                     f"Circular typedef detected: {type_spelling} appears multiple times in chain"
                 )
-            
+
             visited.add(type_spelling)
             chain.append(type_spelling)
-            
+
             # Get underlying type via declaration
             decl = libclang.clang_getTypeDeclaration(current_type)
             if decl.kind == CXIDEKind.NO_DECL_FOUND:
                 break
-                
+
             current_type = libclang.clang_getTypedefDeclUnderlyingType(decl)
             depth += 1
-        
+
         # Add final canonical type
         canonical_type = libclang.clang_getCanonicalType(typedef_type)
         canonical_spelling = self.type_extractor._get_type_spelling(canonical_type)
-        
+
         if not chain or chain[-1] != canonical_spelling:
             chain.append(canonical_spelling)
-        
+
         return chain
 
     def extract_typedef_info(self, typedef_cursor: 'CXIDE') -> 'TypedefInfo':
         """
         Extract complete typedef information from typedef declaration.
-        
+
         Args:
             typedef_cursor: Typedef declaration cursor
-            
+
         Returns:
             TypedefInfo with complete chain
         """
         # Get typedef name
         name_cxstr = libclang.clang_getIDESpelling(typedef_cursor)
         typedef_name = clang_string_to_python(name_cxstr)
-        
+
         # Check cache
         if typedef_name in self._typedef_cache:
             return self._typedef_cache[typedef_name]
-        
+
         # Get underlying type
         underlying_type_cx = libclang.clang_getTypedefDeclUnderlyingType(typedef_cursor)
         underlying_type_spelling = self.type_extractor._get_type_spelling(underlying_type_cx)
-        
+
         # Get canonical type
         canonical_type_cx = libclang.clang_getCanonicalType(underlying_type_cx)
         canonical_type_spelling = self.type_extractor._get_type_spelling(canonical_type_cx)
-        
+
         # Resolve complete chain
         try:
             typedef_chain = self.resolve_typedef_chain(libclang.clang_getIDEType(typedef_cursor))
         except CircularTypedefError:
             typedef_chain = [typedef_name, "<circular>"]
-        
+
         # Check if incomplete
         size = libclang.clang_Type_getSizeOf(underlying_type_cx)
         is_incomplete = (size < 0)
-        
+
         # Create typedef info
         typedef_info = TypedefInfo(
             typedef_name=typedef_name,
@@ -1933,19 +1933,19 @@ class TypedefResolver:
             typedef_chain=typedef_chain,
             is_incomplete=is_incomplete
         )
-        
+
         # Cache
         self._typedef_cache[typedef_name] = typedef_info
-        
+
         return typedef_info
 
     def is_typedef_type(self, cxtype: 'CXType') -> bool:
         """
         Check if a type is a typedef.
-        
+
         Args:
             cxtype: Type to check
-            
+
         Returns:
             True if typedef
         """
@@ -1958,16 +1958,16 @@ class TypedefResolver:
 class MacroExtractor:
     """
     Extracts preprocessor macro definitions from Clang AST.
-    
+
     Handles object-like macros, function-like macros, and conditional
     compilation analysis.
     """
-    
+
     def __init__(self):
         """Initialize macro extractor."""
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         # Track platform-specific macro names
         self._platform_macros = {
             '_WIN32', '_WIN64', '__WIN32__', '__WINDOWS__',
@@ -1979,35 +1979,35 @@ class MacroExtractor:
     def extract_macro(self, macro_cursor: 'CXIDE') -> MacroInfo:
         """
         Extract complete macro information.
-        
+
         Args:
             macro_cursor: Macro definition cursor
-            
+
         Returns:
             Complete MacroInfo
         """
         # Get macro name
         name_cxstr = libclang.clang_getIDESpelling(macro_cursor)
         macro_name = clang_string_to_python(name_cxstr)
-        
+
         # Check if function-like
         is_function_like = bool(libclang.clang_IDE_isMacroFunctionLike(macro_cursor))
-        
+
         # Check if builtin/predefined
         is_builtin = bool(libclang.clang_IDE_isMacroBuiltin(macro_cursor))
-        
+
         # Get source location
         location = libclang.clang_getIDELocation(macro_cursor)
         source_file = None
         line_number = None
-        
+
         # Extract full location
         if LIBCLANG_AVAILABLE:
             cxfile = ctypes.c_void_p()
             line = ctypes.c_uint()
             column = ctypes.c_uint()
             offset = ctypes.c_uint()
-            
+
             libclang.clang_getSpellingLocation(
                 location,
                 ctypes.byref(cxfile),
@@ -2015,15 +2015,15 @@ class MacroExtractor:
                 ctypes.byref(column),
                 ctypes.byref(offset)
             )
-            
+
             if cxfile.value:
                 file_cxstr = libclang.clang_getFileName(cxfile)
                 source_file = clang_string_to_python(file_cxstr)
                 line_number = int(line.value)
-        
+
         # Detect platform-specific
         is_platform_specific = macro_name in self._platform_macros
-        
+
         # Create macro info
         macro_info = MacroInfo(
             macro_name=macro_name,
@@ -2034,19 +2034,19 @@ class MacroExtractor:
             source_file=source_file,
             line_number=line_number
         )
-        
+
         # Classify macro type (simplified - full implementation would parse tokens)
         macro_info.macro_type = self._classify_macro(macro_name)
-        
+
         return macro_info
 
     def _classify_macro(self, macro_name: str) -> str:
         """
         Classify macro by name patterns.
-        
+
         Args:
             macro_name: Macro name
-            
+
         Returns:
             Macro type classification
         """
@@ -2061,10 +2061,10 @@ class MacroExtractor:
     def is_platform_macro(self, macro_name: str) -> bool:
         """
         Check if macro is platform-specific.
-        
+
         Args:
             macro_name: Macro name
-            
+
         Returns:
             True if platform-specific
         """
@@ -2077,38 +2077,38 @@ class MacroExtractor:
 class LocationExtractor:
     """
     Extracts source location and provenance information from Clang AST.
-    
+
     Handles spelling/expansion locations, ranges, include chains,
     and header classification.
     """
-    
+
     def __init__(self):
         """Initialize location extractor."""
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-    
+
     def extract_location(
         self,
         cursor: 'CXIDE'
     ) -> SourceLocation:
         """
         Extract source location from cursor.
-        
+
         Args:
             cursor: IDE to extract location from
-            
+
         Returns:
             SourceLocation
         """
         # Get cursor location
         location = libclang.clang_getIDELocation(cursor)
-        
+
         # Extract spelling location
         file_ptr = ctypes.POINTER(CXFile)()
         line = ctypes.c_uint()
         column = ctypes.c_uint()
         offset = ctypes.c_uint()
-        
+
         libclang.clang_getSpellingLocation(
             location,
             ctypes.byref(file_ptr),
@@ -2116,16 +2116,16 @@ class LocationExtractor:
             ctypes.byref(column),
             ctypes.byref(offset)
         )
-        
+
         # Get file name
         file_path = "<unknown>"
         if file_ptr:
             file_name_cxstr = libclang.clang_getFileName(file_ptr)
             file_path = clang_string_to_python(file_name_cxstr)
-        
+
         # Check if in system header
         is_system = bool(libclang.clang_Location_isInSystemHeader(location))
-        
+
         return SourceLocation(
             file_path=file_path,
             line=line.value,
@@ -2134,33 +2134,33 @@ class LocationExtractor:
             is_in_system_header=is_system,
             offset=offset.value
         )
-    
+
     def extract_range(
         self,
         cursor: 'CXIDE'
     ) -> SourceRange:
         """
         Extract source range from cursor.
-        
+
         Args:
             cursor: IDE to extract range from
-            
+
         Returns:
             SourceRange
         """
         # Get cursor extent
         extent = libclang.clang_getIDEExtent(cursor)
-        
+
         # Get start and end locations
         start_loc = libclang.clang_getRangeStart(extent)
         end_loc = libclang.clang_getRangeEnd(extent)
-        
+
         # Extract start location
         start_file = ctypes.POINTER(CXFile)()
         start_line = ctypes.c_uint()
         start_col = ctypes.c_uint()
         start_offset = ctypes.c_uint()
-        
+
         libclang.clang_getSpellingLocation(
             start_loc,
             ctypes.byref(start_file),
@@ -2168,18 +2168,18 @@ class LocationExtractor:
             ctypes.byref(start_col),
             ctypes.byref(start_offset)
         )
-        
+
         start_path = "<unknown>"
         if start_file:
             start_name = libclang.clang_getFileName(start_file)
             start_path = clang_string_to_python(start_name)
-        
+
         # Extract end location
         end_file = ctypes.POINTER(CXFile)()
         end_line = ctypes.c_uint()
         end_col = ctypes.c_uint()
         end_offset = ctypes.c_uint()
-        
+
         libclang.clang_getSpellingLocation(
             end_loc,
             ctypes.byref(end_file),
@@ -2187,51 +2187,51 @@ class LocationExtractor:
             ctypes.byref(end_col),
             ctypes.byref(end_offset)
         )
-        
+
         end_path = start_path  # Assume same file
         if end_file:
             end_name = libclang.clang_getFileName(end_file)
             end_path = clang_string_to_python(end_name)
-        
+
         start_location = SourceLocation(
             file_path=start_path,
             line=start_line.value,
             column=start_col.value,
             offset=start_offset.value
         )
-        
+
         end_location = SourceLocation(
             file_path=end_path,
             line=end_line.value,
             column=end_col.value,
             offset=end_offset.value
         )
-        
+
         return SourceRange(start=start_location, end=end_location)
-    
+
     def extract_provenance(
         self,
         cursor: 'CXIDE'
     ) -> ProvenanceInfo:
         """
         Extract complete provenance information.
-        
+
         Args:
             cursor: IDE to extract provenance from
-            
+
         Returns:
             ProvenanceInfo
         """
         # Extract primary location
         location = self.extract_location(cursor)
-        
+
         # Extract extent
         extent = self.extract_range(cursor)
-        
+
         # Determine header classification
         is_system_header = location.is_in_system_header
         is_public_header = not is_system_header  # Heuristic: non-system = public
-        
+
         return ProvenanceInfo(
             location=location,
             extent=extent,
@@ -2246,75 +2246,75 @@ class LocationExtractor:
 class AttributeExtractor:
     """
     Extracts compiler attributes from Clang AST.
-    
+
     Handles GCC/Clang __attribute__, MSVC __declspec, C++11/C23 [[...]],
     and pragma directives.
     """
-    
+
     def __init__(self):
         """Initialize attribute extractor."""
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-        
+
         # Map attribute names to impact classification
         self._abi_affecting_attributes = {
             'aligned', 'packed', 'ms_struct', 'gcc_struct',
             'stdcall', 'cdecl', 'fastcall', 'thiscall', 'vectorcall'
         }
-        
+
         self._visibility_affecting_attributes = {
             'visibility', 'dllexport', 'dllimport', 'hidden', 'default'
         }
-    
+
     def extract_attributes(
         self,
         cursor: 'CXIDE'
     ) -> List[AttributeInfo]:
         """
         Extract all attributes from a cursor.
-        
+
         Args:
             cursor: Declaration cursor
-            
+
         Returns:
             List of AttributeInfo
         """
         attributes = []
-        
+
         # Check if cursor has attributes
         if not libclang.clang_IDE_hasAttrs(cursor):
             return attributes
-        
+
         # Important: Full attribute extraction requires traversing cursor children
         # and identifying attribute-specific cursor kinds. This is simplified
-                
+        
         # Detect common attributes through heuristics
         attributes.extend(self._detect_alignment_attributes(cursor))
         attributes.extend(self._detect_deprecated_attributes(cursor))
-        
+
         return attributes
-    
+
     def _detect_alignment_attributes(
         self,
         cursor: 'CXIDE'
     ) -> List[AttributeInfo]:
         """
         Detect alignment attributes.
-        
+
         Args:
             cursor: IDE to analyze
-            
+
         Returns:
             List of alignment AttributeInfo
         """
         attributes = []
-        
+
         # Get cursor type
         cursor_type = libclang.clang_getIDEType(cursor)
-        
+
         # Get alignment
         alignment = libclang.clang_Type_getAlignOf(cursor_type)
-        
+
         # Check if alignment is non-standard (heuristic)
         # Full implementation would parse actual attribute syntax
         if alignment > 0:
@@ -2327,39 +2327,39 @@ class AttributeExtractor:
                     affects_abi=True
                 )
                 attributes.append(attr)
-        
+
         return attributes
-    
+
     def _detect_deprecated_attributes(
         self,
         cursor: 'CXIDE'
     ) -> List[AttributeInfo]:
         """
         Detect deprecated attributes.
-        
+
         Args:
             cursor: IDE to analyze
-            
+
         Returns:
             List of deprecated AttributeInfo
         """
         attributes = []
-        
+
         # Important: Full implementation would parse cursor attributes
         # This is a simplified placeholder
-        
+
         return attributes
-    
+
     def classify_attribute(
         self,
         attribute_kind: str
     ) -> Dict[str, bool]:
         """
         Classify attribute impact.
-        
+
         Args:
             attribute_kind: Attribute name
-            
+
         Returns:
             Dictionary with impact flags
         """
@@ -2376,28 +2376,28 @@ class AttributeExtractor:
 class CppExtractor:
     """
     Extracts C++ specific features.
-    
+
     Handles namespaces, templates, mangling, and other C++ constructs.
     """
-    
+
     def __init__(self):
         """Initialize C++ extractor."""
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
-            
+
     def extract_namespaces(self, cursor: 'CXIDE') -> List[str]:
         """
         Extract namespace hierarchy for a cursor.
-        
+
         Args:
             cursor: IDE to analyze
-            
+
         Returns:
             List of namespace names (outer to inner)
         """
         namespaces = []
         parent = libclang.clang_getIDESemanticParent(cursor)
-        
+
         while parent and libclang.clang_getIDEKind(parent) != CXIDEKind.TRANSLATION_UNIT:
             kind = libclang.clang_getIDEKind(parent)
             if kind == CXIDEKind.NAMESPACE:
@@ -2407,46 +2407,46 @@ class CppExtractor:
                     namespaces.insert(0, name) # Prepend to keep outer-to-inner order
                 else:
                     namespaces.insert(0, "(anonymous)")
-            
+
             # Continue traversal up
             parent = libclang.clang_getIDESemanticParent(parent)
-            
+
         return namespaces
 
     def extract_template_info(self, cursor: 'CXIDE', type_info: Optional[TypeInfo] = None) -> Dict[str, Any]:
         """
         Extract template instantiation information.
-        
+
         Args:
             cursor: IDE to analyze
             type_info: Optional TypeInfo to update directly
-            
+
         Returns:
             Dictionary with template metadata
         """
         info = {}
-        
+
         kind = libclang.clang_getIDEKind(cursor)
         is_template = False
         template_kind = None
-        
+
         # Check if it's a template instantiation or specialization
-        if kind in [CXIDEKind.CLASS_TEMPLATE, CXIDEKind.FUNCTION_TEMPLATE, 
+        if kind in [CXIDEKind.CLASS_TEMPLATE, CXIDEKind.FUNCTION_TEMPLATE,
                    CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION, CXIDEKind.TYPE_ALIAS_TEMPLATE_DECL]:
             # These are definitions, not instantiations (though they use template syntax)
             # Typically dealing with instantiations found in code use
             pass
-            
+
         # Get number of template arguments
         num_args = libclang.clang_IDE_getNumTemplateArguments(cursor)
-        
+
         if num_args > 0:
             is_template = True
             args = []
-            
+
             for i in range(num_args):
                 arg_kind = libclang.clang_IDE_getTemplateArgumentKind(cursor, i)
-                
+
                 # Check different argument kinds
                 if arg_kind == CXTemplateArgumentKind.TYPE:
                     arg_type = libclang.clang_IDE_getTemplateArgumentType(cursor, i)
@@ -2457,17 +2457,17 @@ class CppExtractor:
                     args.append(str(val))
                 else:
                     args.append("") # Placeholder for complex args
-            
+
             info['arguments'] = args
 
         if is_template:
             info['is_template'] = True
-            
+
             if kind == CXIDEKind.ClassDecl or kind == CXIDEKind.StructDecl:
                  info['kind'] = 'class'
             elif kind == CXIDEKind.FunctionDecl:
                  info['kind'] = 'function'
-                 
+
         return info
 
     def get_mangled_name(self, cursor: 'CXIDE') -> Optional[str]:
@@ -2484,27 +2484,27 @@ class CppExtractor:
 class TypeExtractor:
     """
     Extracts complete type information from Clang AST.
-    
+
     Handles type classification, canonicalization, size/alignment queries,
     and recursive type decomposition.
     """
-    
+
     def __init__(self):
         """Initialize type extractor."""
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available for type extraction")
-        
+
         # Cache for extracted types
         self._type_cache: Dict[str, TypeInfo] = {}
         self._record_extractor: Optional['RecordLayoutExtractor'] = None
         self._enum_extractor: Optional['EnumExtractor'] = None
         self._typedef_resolver: Optional['TypedefResolver'] = None
         self._cpp_extractor: Optional['CppExtractor'] = None
-    
+
     def set_record_extractor(self, extractor: 'RecordLayoutExtractor'):
         """Set record layout extractor (avoid circular dependency)."""
         self._record_extractor = extractor
-        
+
     def set_enum_extractor(self, extractor: 'EnumExtractor'):
         """Set enum extractor (avoid circular dependency)."""
         self._enum_extractor = extractor
@@ -2512,37 +2512,37 @@ class TypeExtractor:
     def set_typedef_resolver(self, resolver: 'TypedefResolver'):
         """Set typedef resolver (avoid circular dependency)."""
         self._typedef_resolver = resolver
-    
+
     def extract_type(self, cxtype: 'CXType') -> TypeInfo:
         """
         Extract complete type information from CXType.
-        
+
         Args:
             cxtype: Clang CXType
-            
+
         Returns:
             Complete TypeInfo
         """
         # Get type spelling
         type_spelling = self._get_type_spelling(cxtype)
-        
+
         # Check cache
         if type_spelling in self._type_cache:
             return self._type_cache[type_spelling]
-        
+
         # Get canonical type
         canonical_type = libclang.clang_getCanonicalType(cxtype)
         canonical_spelling = self._get_type_spelling(canonical_type)
-        
+
         # Classify type
         kind = self._classify_type(cxtype)
-        
+
         # Extract size and alignment
         size = libclang.clang_Type_getSizeOf(cxtype)
         alignment = libclang.clang_Type_getAlignOf(cxtype)
-        
+
         is_incomplete = (size < 0)
-        
+
         # Create base type info
         type_info = TypeInfo(
             name=type_spelling,
@@ -2552,18 +2552,18 @@ class TypeExtractor:
             alignment_bytes=max(0, alignment),
             is_incomplete=is_incomplete
         )
-        
+
         # Extract qualifiers
         type_info.is_const = bool(libclang.clang_isConstQualifiedType(cxtype))
         type_info.is_volatile = bool(libclang.clang_isVolatileQualifiedType(cxtype))
         type_info.is_restrict = bool(libclang.clang_isRestrictQualifiedType(cxtype))
-        
+
                 if self._cpp_extractor:
              # Try to find declaration cursor for this type to get namespaces/templates
              decl_cursor = libclang.clang_getTypeDeclaration(cxtype)
              if decl_cursor:
                  type_info.namespaces = self._cpp_extractor.extract_namespaces(decl_cursor)
-                 
+
                  # Template info
                  # Check if type spelling suggests template (heuristic fallback + cursor check)
                  if '<' in type_spelling and '>' in type_spelling:
@@ -2572,10 +2572,10 @@ class TypeExtractor:
                      tpl_info = self._cpp_extractor.extract_template_info(decl_cursor)
                      if 'arguments' in tpl_info:
                          type_info.template_arguments = tpl_info['arguments']
-                     
+
                      # Base template name detection (simple splitting for now)
                      type_info.template_name = type_spelling.split('<')[0]
-        
+
         # Extract kind-specific properties
         if kind == 'pointer':
             self._extract_pointer_info(cxtype, type_info)
@@ -2591,27 +2591,27 @@ class TypeExtractor:
             try:
                 typedef_chain = self._typedef_resolver.resolve_typedef_chain(cxtype)
                 type_info.typedef_chain = typedef_chain
-                
+
                 # If we have a cursor for this typedef, we can extract more info
                 decl_cursor = libclang.clang_getTypeDeclaration(cxtype)
                 if decl_cursor.kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
                     type_info.typedef_info = self._typedef_resolver.extract_typedef_info(decl_cursor)
             except CircularTypedefError:
                 type_info.typedef_chain = [type_spelling, "<circular>"]
-        
+
         # Cache and return
         self._type_cache[type_spelling] = type_info
         return type_info
-    
+
     def _get_type_spelling(self, cxtype: 'CXType') -> str:
         """Get human-readable type spelling."""
         spelling_cxstr = libclang.clang_getTypeSpelling(cxtype)
         return clang_string_to_python(spelling_cxstr)
-    
+
     def _classify_type(self, cxtype: 'CXType') -> str:
         """Classify type into ABI category."""
         kind = cxtype.kind
-        
+
         # Primitive types
         if kind in [
             CXTypeKind.VOID, CXTypeKind.BOOL,
@@ -2621,71 +2621,70 @@ class TypeExtractor:
             CXTypeKind.FLOAT, CXTypeKind.DOUBLE
         ]:
             return 'primitive'
-        
+
         elif kind == CXTypeKind.POINTER:
             return 'pointer'
-        
+
         elif kind in [CXTypeKind.CONSTANTARRAY, CXTypeKind.INCOMPLETEARRAY]:
             return 'array'
-        
+
         elif kind == CXTypeKind.FUNCTIONPROTO:
             return 'function'
-        
+
         elif kind == CXTypeKind.RECORD:
             return 'record'
-        
+
         elif kind == CXTypeKind.ENUM:
             return 'enum'
-        
+
         elif kind == CXTypeKind.TYPEDEF:
             return 'typedef'
-        
+
         else:
             return 'unknown'
-    
+
     def _extract_pointer_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """Extract pointer type information."""
         pointee = libclang.clang_getPointeeType(cxtype)
         type_info.pointee_type = self._get_type_spelling(pointee)
-        
+
         # Calculate pointer depth
         depth = 1
         current = pointee
         while current.kind == CXTypeKind.POINTER:
             depth += 1
             current = libclang.clang_getPointeeType(current)
-        
+
         type_info.pointer_depth = depth
-    
+
     def _extract_array_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """Extract array type information."""
         element = libclang.clang_getArrayElementType(cxtype)
         type_info.element_type = self._get_type_spelling(element)
-        
+
         # Get array size if constant
         if cxtype.kind == CXTypeKind.CONSTANTARRAY:
             size = libclang.clang_getArraySize(cxtype)
             type_info.array_size = size if size >= 0 else None
         else:
             type_info.array_size = None
-            
 
     def _extract_function_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """Extract function type information."""
         # Return type
         return_type = libclang.clang_getResultType(cxtype)
         type_info.return_type = self._get_type_spelling(return_type)
-        
+
         # Parameter types
         num_params = libclang.clang_getNumArgTypes(cxtype)
         for i in range(num_params):
             param_type = libclang.clang_getArgType(cxtype, i)
             param_spelling = self._get_type_spelling(param_type)
             type_info.parameter_types.append(param_spelling)
-        
+
         # Variadic flag
         type_info.is_variadic = bool(libclang.clang_isFunctionTypeVariadic(cxtype))
-        
+
         # Calling convention
         calling_conv = libclang.clang_getFunctionTypeCallingConv(cxtype)
         calling_conv_map = {
@@ -2697,26 +2696,26 @@ class TypeExtractor:
             CXCallingConv.DEFAULT: 'default'
         }
         type_info.calling_convention = calling_conv_map.get(calling_conv, 'unknown')
-    
+
     def _extract_record_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """
         Extract record (struct/union) type information.
-        
+
         Enhanced in  to extract complete layout.
         """
         # Detect struct vs union (requires cursor)
         type_info.record_kind = 'struct'  # Default assumption
-        
+
         # Important: Full layout extraction requires cursor, which is not available
         # from CXType alone. Layout extraction happens when processing cursors
         # in ClangFrontend. This method sets up basic record info.
-    
+
     def _extract_enum_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """
         Extract enum type information.
-        
+
         Enhanced in  to extract complete enum metadata.
-        
+
         Important: Full extraction requires cursor, which is not available from
         CXType alone. Enum extraction happens when processing cursors in
         ClangFrontend. This method sets up basic enum info.
@@ -2732,42 +2731,42 @@ class TypeExtractor:
 class RawInterfaceArtifact:
     """
     Primary output of native interface ingestion.
-    
+
     Contains the complete, compiler-faithful representation of an external
     interface including symbols, types, and dependency relationships.
     """
-    
+
     # Artifact metadata
     artifact_version: str = "1.0"
     generation_timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    
+
     # Compilation context used for ingestion
     compilation_context: Optional[CompilationContext] = None
-    
+
     # Extracted symbols
     external_symbols: List[ExternalSymbol] = field(default_factory=list)
-    
+
     # Type definitions
     type_definitions: Dict[str, TypeInfo] = field(default_factory=dict)
-    
+
         dependency_graph: Optional['IncludeDependencyGraph'] = None
     header_classifications: Dict[str, 'HeaderClassification'] = field(default_factory=dict)
-    
+
     # Symbol dependency graph
     symbol_dependencies: Dict[str, List[str]] = field(default_factory=dict)
-    
+
     # Validation state
     validation_passed: bool = False
     validation_errors: List[str] = field(default_factory=list)
-    
+
         report: Optional[IngestionReport] = None
-    
+
     def to_json(self) -> str:
         """
         Serialize artifact to JSON.
-        
+
         Returns:
             JSON string representation of complete artifact
         """
@@ -2799,19 +2798,19 @@ class RawInterfaceArtifact:
             'report': self.report.to_dict() if self.report else None
         }
         return json.dumps(data, indent=2)
-    
+
     def save(self, output_path: Path):
         """Save artifact to file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w') as f:
             f.write(self.to_json())
-    
+
     @classmethod
     def load(cls, artifact_path: Path) -> 'RawInterfaceArtifact':
         """Load artifact from file."""
         with open(artifact_path, 'r') as f:
             data = json.load(f)
-        
+
         # Reconstruct compilation context
         context_data = data.get('compilation_context')
         context = None
@@ -2826,12 +2825,12 @@ class RawInterfaceArtifact:
                 compiler_name=context_data['compiler']['name'],
                 compiler_version=context_data['compiler']['version']
             )
-        
+
                 symbols = [
             ExternalSymbol(name=s['name'], kind=s['kind'])
             for s in data.get('external_symbols', [])
         ]
-        
+
                 types = {
             k: TypeInfo(
                 name=v['name'],
@@ -2843,7 +2842,7 @@ class RawInterfaceArtifact:
             )
             for k, v in data.get('type_definitions', {}).items()
         }
-        
+
         return cls(
             artifact_version=data['artifact_version'],
             generation_timestamp=data['generation_timestamp'],
@@ -2862,22 +2861,22 @@ class RawInterfaceArtifact:
 class CompilationUnit:
     """
     Opaque handle to compiler's internal representation.
-    
+
     Different compilers (Clang, MSVC, rustc) will have different internal
     representations. This class provides a uniform interface.
     """
-    
+
     def __init__(self, internal_repr: Any = None):
         self.internal_repr = internal_repr
 
 class CompilerFrontend(ABC):
     """
     Abstract base class for compiler frontend integrations.
-    
+
     Each supported compiler (Clang, MSVC, rustc) implements this interface
     to provide uniform access to compiler-internal representations.
     """
-    
+
     @abstractmethod
     def parse_headers(
         self,
@@ -2885,18 +2884,18 @@ class CompilerFrontend(ABC):
     ) -> CompilationUnit:
         """
         Parse headers using compiler frontend.
-        
+
         Args:
             context: Complete compilation environment
-            
+
         Returns:
             CompilationUnit containing compiler's internal representation
-            
+
         Raises:
             IngestionError: If parsing fails or compiler unavailable
         """
         pass
-    
+
     @abstractmethod
     def extract_symbols(
         self,
@@ -2904,15 +2903,15 @@ class CompilerFrontend(ABC):
     ) -> List[ExternalSymbol]:
         """
         Extract externally visible symbols from compilation unit.
-        
+
         Args:
             unit: Parsed compilation unit
-            
+
         Returns:
             List of external symbols (functions, variables, types)
         """
         pass
-    
+
     @abstractmethod
     def get_type_info(
         self,
@@ -2921,22 +2920,22 @@ class CompilerFrontend(ABC):
     ) -> Optional[TypeInfo]:
         """
         Retrieve complete type information.
-        
+
         Args:
             unit: Parsed compilation unit
             type_name: Name of type to retrieve
-            
+
         Returns:
             TypeInfo if found, None otherwise
         """
         pass
-    
+
     @property
     @abstractmethod
     def compiler_name(self) -> str:
         """Get compiler name (e.g., 'clang', 'msvc')."""
         pass
-    
+
     @property
     @abstractmethod
     def compiler_version(self) -> str:
@@ -2992,7 +2991,7 @@ def get_module_info() -> Dict[str, str]:
 # Attempt to load libclang
 def _load_libclang():
     """Attempt to load libclang library with robust fallback strategies."""
-    
+
     # Strategy 1: subprocess llvm-config (Most reliable for installed LLVM)
     for cmd in ['llvm-config', 'llvm-config-14', 'llvm-config-13', 'llvm-config-15', 'llvm-config-12']:
         try:
@@ -3031,11 +3030,11 @@ def _load_libclang():
         names.extend(glob.glob('/usr/local/opt/llvm*/lib/libclang.dylib'))
     elif sys.platform.startswith('linux'):
         names = ['libclang.so', 'libclang.so.1', 'libclang-14.so.1']
-        
+
         # Explicitly check versioned llvm directories
         for ver in range(10, 19):
              names.extend(glob.glob(f'/usr/lib/llvm-{ver}/lib/libclang.so*'))
-        
+
         # Common system paths
         names.extend(glob.glob('/usr/lib/x86_64-linux-gnu/libclang-*.so*'))
         names.extend(glob.glob('/usr/lib/libclang.so*'))
@@ -3075,11 +3074,11 @@ def _load_libclang():
         except OSError as e:
             errors.append(f"{name}: {e}")
             continue
-            
+
     if names:
         # Only print diagnostics if we actually had candidates but all failed
         print("DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
-            
+
     return None
 
 libclang = _load_libclang()
@@ -3172,7 +3171,7 @@ class CXIDEKind(IntEnum):
     TYPE_ALIAS_TEMPLATE_DECL = 413
     MACRO_DEFINITION = 501
     MACRO_EXPANSION = 502
-    NO_DECL_FOUND = 700 
+    NO_DECL_FOUND = 700
 
 class CXTemplateArgumentKind(IntEnum):
     NULL = 0
@@ -3234,7 +3233,7 @@ if LIBCLANG_AVAILABLE:
     # Index management
     bind('clang_createIndex', [ctypes.c_int, ctypes.c_int], ctypes.POINTER(CXIndex))
     bind('clang_disposeIndex', [ctypes.POINTER(CXIndex)], None)
-    
+
     # Translation unit parsing
     bind('clang_parseTranslationUnit', [
         ctypes.POINTER(CXIndex),
@@ -3245,9 +3244,9 @@ if LIBCLANG_AVAILABLE:
         ctypes.c_uint,
         ctypes.c_uint
     ], ctypes.POINTER(CXTranslationUnit))
-    
+
     bind('clang_disposeTranslationUnit', [ctypes.POINTER(CXTranslationUnit)], None)
-    
+
     # IDE operations
     bind('clang_getTranslationUnitIDE', [ctypes.POINTER(CXTranslationUnit)], CXIDE)
     bind('clang_getIDEKind', [CXIDE], ctypes.c_int)
@@ -3258,11 +3257,11 @@ if LIBCLANG_AVAILABLE:
     bind('clang_getIDEVisibility', [CXIDE], ctypes.c_int)
     bind('clang_isIDEDefinition', [CXIDE], ctypes.c_int)
     bind('clang_IDE_hasAttrs', [CXIDE], ctypes.c_int)
-    
+
     # String operations
     bind('clang_getCString', [CXString], ctypes.c_char_p)
     bind('clang_disposeString', [CXString], None)
-    
+
     # Location operations
     bind('clang_getIDELocation', [CXIDE], CXSourceLocation)
     bind('clang_getSpellingLocation', [
@@ -3273,7 +3272,7 @@ if LIBCLANG_AVAILABLE:
         ctypes.POINTER(ctypes.c_uint)
     ], None)
     bind('clang_getFileName', [ctypes.c_void_p], CXString)
-    
+
     # Visitor
     CXIDEVisitor = ctypes.CFUNCTYPE(
         ctypes.c_int,
@@ -3281,7 +3280,7 @@ if LIBCLANG_AVAILABLE:
         CXIDE,
         ctypes.c_void_p
     )
-    
+
     bind('clang_visitChildren', [
         CXIDE,
         CXIDEVisitor,
@@ -3313,11 +3312,11 @@ if LIBCLANG_AVAILABLE:
         bind('clang_getEnumDeclIntegerType', [CXIDE], CXType)
     bind('clang_getEnumConstantDeclValue', [CXIDE], ctypes.c_longlong)
     bind('clang_getEnumConstantDeclUnsignedValue', [CXIDE], ctypes.c_ulonglong)
-    
+
         bind('clang_getTypeDeclaration', [CXType], CXIDE)
     bind('clang_getTypedefDeclUnderlyingType', [CXIDE], CXType)
     bind('clang_getTypedefName', [CXType], CXString)
-    
+
         bind('clang_IDE_isMacroFunctionLike', [CXIDE], ctypes.c_int)
     bind('clang_IDE_isMacroBuiltin', [CXIDE], ctypes.c_int)
 
@@ -3340,7 +3339,7 @@ if LIBCLANG_AVAILABLE:
     bind('clang_IDE_getTemplateArgumentType', [CXIDE, ctypes.c_uint], CXType)
     bind('clang_IDE_getTemplateArgumentValue', [CXIDE, ctypes.c_uint], ctypes.c_longlong)
     bind('clang_IDE_getTemplateArgumentUnsignedValue', [CXIDE, ctypes.c_uint], ctypes.c_ulonglong)
-    # Mangling might not be available in all liblclang versions, wrap in try/except if needed, 
+    # Mangling might not be available in all liblclang versions, wrap in try/except if needed,
     # but here we use simple bind. If symbol missing, it will be None/fail at runtime if called.
     # We will check availability before calling.
     bind('clang_IDE_getMangling', [CXIDE], CXString)
@@ -3350,7 +3349,7 @@ def clang_string_to_python(cxstring: CXString) -> str:
     """Convert CXString to Python string and dispose."""
     if not LIBCLANG_AVAILABLE:
         return ""
-    
+
     c_str = libclang.clang_getCString(cxstring)
     py_str = c_str.decode('utf-8') if c_str else ""
     libclang.clang_disposeString(cxstring)
@@ -3362,7 +3361,7 @@ def clang_string_to_python(cxstring: CXString) -> str:
 
 class ClangCompilationUnit(CompilationUnit):
     """Clang-specific compilation unit wrapping CXTranslationUnit."""
-    
+
     def __init__(
         self,
         index: ctypes.POINTER(CXIndex),
@@ -3371,13 +3370,13 @@ class ClangCompilationUnit(CompilationUnit):
         super().__init__(internal_repr=translation_unit)
         self.index = index
         self.translation_unit = translation_unit
-    
+
     def dispose(self):
         """Release Clang resources."""
         if LIBCLANG_AVAILABLE and self.translation_unit:
             libclang.clang_disposeTranslationUnit(self.translation_unit)
             self.translation_unit = None
-        
+
         if LIBCLANG_AVAILABLE and self.index:
             libclang.clang_disposeIndex(self.index)
             self.index = None
@@ -3391,12 +3390,12 @@ class HeaderMetadata:
     """
     Metadata about a header file for change detection.
     """
-    
+
     path: str
     mtime: float  # Modification timestamp
     size: int
     hash: str  # Content hash (SHA-256)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize metadata."""
         return {
@@ -3405,18 +3404,18 @@ class HeaderMetadata:
             'size': self.size,
             'hash': self.hash
         }
-    
+
     @classmethod
     def from_file(cls, file_path: Path) -> 'HeaderMetadata':
         """Create metadata from file."""
         stat = file_path.stat()
-        
+
         # Compute content hash
         hasher = hashlib.sha256()
         with open(file_path, 'rb') as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
-        
+
         return cls(
             path=str(file_path),
             mtime=stat.st_mtime,
@@ -3427,32 +3426,32 @@ class HeaderMetadata:
 class IngestionCache:
     """
     Cache for ingested interface artifacts.
-    
+
     Implements incremental ingestion with change detection and
     dependency tracking.
     """
-    
+
     def __init__(self, cache_dir: Path):
         """
         Initialize ingestion cache.
-        
+
         Args:
             cache_dir: Directory for cache storage
         """
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.index_file = cache_dir / 'index.json'
-        
+
         # Load or create index
         self.index = self._load_index()
-    
+
     def _load_index(self) -> Dict[str, Any]:
         """Load cache index from disk."""
         if self.index_file.exists():
             with open(self.index_file, 'r') as f:
                 return json.load(f)
-        
+
         return {
             'version': '1.0',
             'last_update': datetime.now(timezone.utc).isoformat(),
@@ -3460,14 +3459,14 @@ class IngestionCache:
             'artifacts': {},
             'compilation_context': None
         }
-    
+
     def _save_index(self):
         """Save cache index to disk."""
         self.index['last_update'] = datetime.now(timezone.utc).isoformat()
-        
+
         with open(self.index_file, 'w') as f:
             json.dump(self.index, f, indent=2)
-    
+
     def is_header_changed(
         self,
         header_path: Path,
@@ -3475,103 +3474,103 @@ class IngestionCache:
     ) -> bool:
         """
         Check if header has changed since last ingestion.
-        
+
         Args:
             header_path: Path to header file
             cached_metadata: Previously cached metadata
-            
+
         Returns:
             True if header changed
         """
         if not header_path.exists():
             return True  # File deleted/missing
-        
+
         if not cached_metadata:
             return True  # No cache entry
-        
+
         # Quick timestamp check
         stat = header_path.stat()
         if stat.st_mtime <= cached_metadata.mtime:
             return False  # Definitely unchanged
-        
+
         # Timestamp changed, verify with hash
         current_metadata = HeaderMetadata.from_file(header_path)
         return current_metadata.hash != cached_metadata.hash
-    
+
     def is_context_changed(self, context: CompilationContext) -> bool:
         """
         Check if compilation context has changed.
-        
+
         Args:
             context: Current compilation context
-            
+
         Returns:
             True if context changed
         """
         cached_context = self.index.get('compilation_context')
-        
+
         if not cached_context:
             return True  # No cached context
-        
+
         current_hash = context.compute_hash()
         return current_hash != cached_context.get('hash')
-    
+
     def detect_changes(
         self,
         header_files: List[Path]
     ) -> List[Path]:
         """
         Detect which headers have changed.
-        
+
         Args:
             header_files: List of header files to check
-            
+
         Returns:
             List of changed header files
         """
         changed = []
-        
+
         for header in header_files:
             header_key = str(header)
             cached_data = self.index['headers'].get(header_key)
-            
+
             if not cached_data:
                 changed.append(header)
                 continue
-            
+
             cached_metadata = HeaderMetadata(
                 path=cached_data['path'],
                 mtime=cached_data['mtime'],
                 size=cached_data['size'],
                 hash=cached_data['hash']
             )
-            
+
             if self.is_header_changed(header, cached_metadata):
                 changed.append(header)
-        
+
         return changed
-    
+
     def load_cached_artifact(self) -> Optional[RawInterfaceArtifact]:
         """
         Load cached artifact if available and valid.
-        
+
         Returns:
             Cached artifact or None
         """
         artifacts = self.index.get('artifacts', {})
-        
+
         if not artifacts:
             return None
-        
+
         # Load first artifact (simplified - would merge multiple in production)
         for artifact_id, artifact_info in artifacts.items():
             artifact_file = self.cache_dir / artifact_info['file']
-            
+
             if artifact_file.exists():
                 return RawInterfaceArtifact.load(artifact_file)
-        
+
         return None
-    
+
     def store_artifact(
         self,
         artifact: RawInterfaceArtifact,
@@ -3579,7 +3578,7 @@ class IngestionCache:
     ):
         """
         Store artifact in cache.
-        
+
         Args:
             artifact: Artifact to cache
             context: Compilation context
@@ -3588,37 +3587,37 @@ class IngestionCache:
         artifact_id = f"artifact_{int(time.time())}"
         artifact_file = f"{artifact_id}.json"
         artifact_path = self.cache_dir / artifact_file
-        
+
         # Save artifact
         artifact.save(artifact_path)
-        
+
         # Update index
         self.index['artifacts'][artifact_id] = {
             'file': artifact_file,
             'symbols': [s.name for s in artifact.external_symbols],
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
-        
+
         # Update header metadata
         if context.header_files:
             for header in context.header_files:
                 metadata = HeaderMetadata.from_file(header)
                 self.index['headers'][str(header)] = metadata.to_dict()
-        
+
         # Update compilation context
         self.index['compilation_context'] = {
             'hash': context.compute_hash(),
             'target_triple': context.target_triple
         }
-        
+
         self._save_index()
-    
+
     def clear(self):
         """Clear all cached data."""
         # Remove artifact files
         for artifact_file in self.cache_dir.glob('artifact_*.json'):
             artifact_file.unlink()
-        
+
         # Reset index
         self.index = {
             'version': '1.0',
@@ -3627,7 +3626,7 @@ class IngestionCache:
             'artifacts': {},
             'compilation_context': None
         }
-        
+
         self._save_index()
 
 @dataclass
@@ -3635,29 +3634,29 @@ class IngestionPerformance:
     """
     Performance metrics for ingestion.
     """
-    
+
     total_time: float
-    
+
     # Cache metrics
     cache_hit_count: int = 0
     cache_miss_count: int = 0
     cache_load_time: float = 0.0
-    
+
     # Parsing metrics
     headers_parsed: int = 0
     parsing_time: float = 0.0
-    
+
     # Extraction metrics
     symbols_extracted: int = 0
     extraction_time: float = 0.0
-    
+
     def cache_hit_rate(self) -> float:
         """Compute cache hit rate."""
         total = self.cache_hit_count + self.cache_miss_count
         if total == 0:
             return 0.0
         return self.cache_hit_count / total
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize performance metrics."""
         return {
@@ -3672,20 +3671,20 @@ class IngestionPerformance:
 class IncrementalIngestionOrchestrator:
     """
     Orchestrates incremental ingestion with caching.
-    
+
     Detects changes, loads cached data, performs partial ingestion,
     and merges results.
     """
-    
+
     def __init__(self, cache_dir: Path):
         """
         Initialize orchestrator.
-        
+
         Args:
             cache_dir: Cache directory
         """
         self.cache = IngestionCache(cache_dir)
-    
+
     def ingest(
         self,
         context: CompilationContext,
@@ -3693,22 +3692,22 @@ class IncrementalIngestionOrchestrator:
     ) -> Tuple[RawInterfaceArtifact, IngestionPerformance]:
         """
         Perform incremental ingestion.
-        
+
         Args:
             context: Compilation context
             force_full: Force full re-ingestion
-            
+
         Returns:
             Tuple of (artifact, performance metrics)
         """
         start_time = time.time()
-        
+
         perf = IngestionPerformance(total_time=0.0)
-        
+
         # Clear cache if forced
         if force_full:
             self.cache.clear()
-        
+
         # Check for context changes
         if self.cache.is_context_changed(context):
             # Context changed, full re-ingestion required
@@ -3717,7 +3716,7 @@ class IncrementalIngestionOrchestrator:
         else:
             # Detect file changes
             changed_headers = self.cache.detect_changes(context.header_files)
-            
+
             if not changed_headers:
                 # Full cache hit
                 cache_start = time.time()
@@ -3725,32 +3724,32 @@ class IncrementalIngestionOrchestrator:
                 perf.cache_load_time = time.time() - cache_start
                 perf.cache_hit_count = len(context.header_files)
                 perf.total_time = time.time() - start_time
-                
+
                 if artifact:
                     return artifact, perf
-            
+
             perf.cache_miss_count = len(changed_headers)
             perf.cache_hit_count = len(context.header_files) - len(changed_headers)
-        
+
         # Perform full ingestion (simplified - would do partial in production)
         parse_start = time.time()
-        
+
         # Use ClangFrontend to parse
         frontend = ClangFrontend()
         unit = frontend.parse_headers(context)
-        
+
         perf.parsing_time = time.time() - parse_start
         perf.headers_parsed = len(context.header_files)
-        
+
         # Extract symbols
         extract_start = time.time()
         symbols = frontend.extract_symbols(unit)
         perf.extraction_time = time.time() - extract_start
         perf.symbols_extracted = len(symbols)
-        
+
         # Gather types from TypeExtractor
         type_defs = frontend._type_extractor._type_cache if hasattr(frontend, '_type_extractor') else {}
-        
+
         artifact = RawInterfaceArtifact(
             artifact_version=__version__,
             generation_timestamp=datetime.now(timezone.utc).isoformat(),
@@ -3759,16 +3758,16 @@ class IncrementalIngestionOrchestrator:
             type_definitions=type_defs,
             validation_passed=True
         )
-        
+
         # Attach diagnostic report if available
         if hasattr(frontend, '_diagnostic_collector'):
              artifact.report = frontend._diagnostic_collector.get_report()
-        
+
         # Store in cache
         self.cache.store_artifact(artifact, context)
-        
+
         perf.total_time = time.time() - start_time
-        
+
         return artifact, perf
 # ============================================================================
 # PERFORMANCE PROFILER ()
@@ -3781,21 +3780,21 @@ class IncrementalIngestionOrchestrator:
 class InputHasher:
     """
     Computes cryptographic hashes of ingestion inputs.
-    
+
     Used for change detection and cache key generation.
     """
-    
+
     @staticmethod
     def compute_context_hash(context: CompilationContext) -> str:
         """
         Compute hash of compilation context.
-        
+
         Hashes header contents, flags, and configuration.
         """
         hasher = hashlib.sha256()
-        
+
         # specific order is important for stability
-        
+
         # 1. Header files content
         for header in sorted(context.header_files):
             header_path = Path(header)
@@ -3805,28 +3804,28 @@ class InputHasher:
             else:
                 # If file doesn't exist, hash its name to at least capture the intent
                 hasher.update(str(header_path).encode('utf-8'))
-        
+
         # 2. Macro definitions
         for key in sorted(context.macro_definitions.keys()):
             val = context.macro_definitions[key]
             hasher.update(f"{key}={val}".encode('utf-8'))
-            
+
         # 3. Include paths (just paths, not content of all files in them)
         for path in sorted(context.include_paths):
             hasher.update(str(path).encode('utf-8'))
-            
+
         # 4. Flags and target
         hasher.update(str(context.target_triple).encode('utf-8'))
         hasher.update(str(context.language_standard).encode('utf-8'))
         for flag in sorted(context.abi_flags):
             hasher.update(flag.encode('utf-8'))
-            
+
         # 5. Compiler info
         if context.compiler_name:
             hasher.update(context.compiler_name.encode('utf-8'))
         if context.compiler_version:
             hasher.update(context.compiler_version.encode('utf-8'))
-            
+
         return hasher.hexdigest()
 
 # ============================================================================
@@ -3844,14 +3843,14 @@ class InputHasher:
 class DiagnosticCollector:
     """
     Collects diagnostics during ingestion.
-    
+
     Provides methods for adding diagnostics and generating reports.
     """
-    
+
     def __init__(self):
         """Initialize diagnostic collector."""
         self.report = IngestionReport()
-    
+
     def add_fatal(
         self,
         message: str,
@@ -3866,7 +3865,7 @@ class DiagnosticCollector:
             **kwargs
         )
         self.report.add_diagnostic(diag)
-    
+
     def add_error(
         self,
         message: str,
@@ -3881,7 +3880,7 @@ class DiagnosticCollector:
             **kwargs
         )
         self.report.add_diagnostic(diag)
-    
+
     def add_warning(
         self,
         message: str,
@@ -3896,7 +3895,7 @@ class DiagnosticCollector:
             **kwargs
         )
         self.report.add_diagnostic(diag)
-    
+
     def add_info(
         self,
         message: str,
@@ -3911,7 +3910,7 @@ class DiagnosticCollector:
             **kwargs
         )
         self.report.add_diagnostic(diag)
-    
+
     def collect_clang_diagnostics(
         self,
         translation_unit: ctypes.POINTER(CXTranslationUnit)
@@ -3919,15 +3918,15 @@ class DiagnosticCollector:
         """Collect diagnostics from Clang translation unit."""
         if not LIBCLANG_AVAILABLE:
             return
-        
+
         num_diags = libclang.clang_getNumDiagnostics(translation_unit)
-        
+
         for i in range(num_diags):
             diag_handle = libclang.clang_getDiagnostic(translation_unit, i)
-            
+
             # Get severity
             severity_int = libclang.clang_getDiagnosticSeverity(diag_handle)
-            
+
             # Map to internal severity
             severity_map = {
                 CXDiagnosticSeverity.IGNORED: None,
@@ -3936,28 +3935,28 @@ class DiagnosticCollector:
                 CXDiagnosticSeverity.ERROR: 'error',
                 CXDiagnosticSeverity.FATAL: 'fatal'
             }
-            
+
             severity = severity_map.get(severity_int)
             if not severity:
                 libclang.clang_disposeDiagnostic(diag_handle)
                 continue
-            
+
             # Get message
             msg_cxstr = libclang.clang_getDiagnosticSpelling(diag_handle)
             message = clang_string_to_python(msg_cxstr)
-            
+
             # Create diagnostic
             diag = Diagnostic(
                 severity=severity,
                 message=message,
                 category='parsing'
             )
-            
+
             self.report.add_diagnostic(diag)
-            
+
             # Dispose diagnostic
             libclang.clang_disposeDiagnostic(diag_handle)
-    
+
     def get_report(self) -> IngestionReport:
         """Get final ingestion report."""
         return self.report
@@ -3969,13 +3968,13 @@ class DiagnosticCollector:
 class ClangFrontend(CompilerFrontend):
     """
     Clang compiler frontend integration via libclang.
-    
+
     Provides access to Clang's preprocessor, parser, and AST for extracting
     native interface information with compiler-grade fidelity.
-    
+
     Enhanced in  with complete type extraction.
     """
-    
+
     def __init__(self):
         """Initialize Clang frontend."""
         if not LIBCLANG_AVAILABLE:
@@ -3983,10 +3982,10 @@ class ClangFrontend(CompilerFrontend):
                 "libclang not available. Install LLVM/Clang and ensure "
                 "libclang library is in system path."
             )
-        
+
         self._compiler_name = "clang"
         self._compiler_version = "unknown"  # TODO: Query via clang_getClangVersion
-        
+
                 self._type_extractor = TypeExtractor()
         self._record_extractor = RecordLayoutExtractor(self._type_extractor)
         self._enum_extractor = EnumExtractor(self._type_extractor)
@@ -3997,7 +3996,7 @@ class ClangFrontend(CompilerFrontend):
         self._attribute_extractor = AttributeExtractor()
         self._location_extractor = LocationExtractor()
         self._cpp_extractor = CppExtractor()         self._diagnostic_collector = DiagnosticCollector()
-        
+
         # Wiring
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
@@ -4006,57 +4005,57 @@ class ClangFrontend(CompilerFrontend):
         self._type_extractor._cpp_extractor = self._cpp_extractor         self._enum_extractor.type_extractor = self._type_extractor
         self._variable_extractor.type_extractor = self._type_extractor
         self._typedef_resolver.type_extractor = self._type_extractor
-    
+
     @property
     def compiler_name(self) -> str:
         """Get compiler name."""
         return self._compiler_name
-    
+
     @property
     def compiler_version(self) -> str:
         """Get compiler version."""
         return self._compiler_version
-    
+
     def parse_headers(
         self,
         context: CompilationContext
     ) -> CompilationUnit:
         """
         Parse headers using Clang frontend.
-        
+
         Args:
             context: Complete compilation environment
-            
+
         Returns:
             ClangCompilationUnit with parsed AST
-            
+
         Raises:
             ConfigError: Invalid compilation context
             ToolchainError: Clang invocation failed
         """
         if not context.header_files:
             raise ConfigError("No header files specified in compilation context")
-        
+
         # Create index
         index = libclang.clang_createIndex(0, 1)  # excludePCH=0, displayDiagnostics=1
         if not index:
             raise ToolchainError("Failed to create Clang index")
-        
+
         # Build command-line arguments
         args = self._build_clang_args(context)
-        
+
         # Convert to C argument array
         c_args = (ctypes.c_char_p * len(args))()
         for i, arg in enumerate(args):
             c_args[i] = arg.encode('utf-8')
-        
+
         # Parse first header file
         # TODO: Support multiple headers via virtual header
         header_path = str(context.header_files[0])
-        
+
         # Parse with detailed preprocessing record to capture macros
         options = 0x01  # CXTranslationUnit_DetailedPreprocessingRecord
-        
+
         translation_unit = libclang.clang_parseTranslationUnit(
             index,
             header_path.encode('utf-8'),
@@ -4066,74 +4065,74 @@ class ClangFrontend(CompilerFrontend):
             0,     # num_unsaved_files
             options
         )
-        
+
         if not translation_unit:
             libclang.clang_disposeIndex(index)
             raise ToolchainError(f"Failed to parse header: {header_path}")
-        
+
         return ClangCompilationUnit(index, translation_unit)
-    
+
     def _build_clang_args(self, context: CompilationContext) -> List[str]:
         """
         Build Clang command-line arguments from compilation context.
-        
+
         Args:
             context: Compilation context
-            
+
         Returns:
             List of command-line arguments
         """
         args = []
-        
+
         # Include paths
         for include_path in context.include_paths:
             args.append(f'-I{include_path}')
-        
+
         # Macro definitions
         for name, value in context.macro_definitions.items():
             if value:
                 args.append(f'-D{name}={value}')
             else:
                 args.append(f'-D{name}')
-        
+
         # Target triple
         if context.target_triple:
             args.append('-target')
             args.append(context.target_triple)
-        
+
         # Language standard
         if context.language_standard:
             args.append(f'-std={context.language_standard}')
-        
+
         # ABI flags
         args.extend(context.abi_flags)
-        
+
         return args
-    
+
     def extract_symbols(
         self,
         unit: CompilationUnit
     ) -> List[ExternalSymbol]:
         """
         Extract externally visible symbols from compilation unit.
-        
+
         Args:
             unit: Parsed compilation unit (must be ClangCompilationUnit)
-            
+
         Returns:
             List of external symbols
-            
+
         Raises:
             ExtractionError: Symbol extraction failed
         """
         if not isinstance(unit, ClangCompilationUnit):
             raise ExtractionError("Expected ClangCompilationUnit")
-        
+
         symbols = []
-        
+
         # Get root cursor
         cursor = libclang.clang_getTranslationUnitIDE(unit.translation_unit)
-        
+
         # Visitor callback
         def visitor(child_cursor, parent_cursor, client_data):
             try:
@@ -4143,17 +4142,17 @@ class ClangFrontend(CompilerFrontend):
             except Exception:
                 # Log but continue traversal
                 pass
-            
+
             return CXChildVisitResult.RECURSE
-        
+
         # Create CFUNCTYPE callback
         visitor_func = CXIDEVisitor(visitor)
-        
+
         # Traverse AST
         libclang.clang_visitChildren(cursor, visitor_func, None)
-        
+
         return symbols
-    
+
     def get_type_info(
         self,
         unit: CompilationUnit,
@@ -4161,30 +4160,30 @@ class ClangFrontend(CompilerFrontend):
     ) -> Optional[TypeInfo]:
         """
         Retrieve complete type information.
-        
+
         Args:
             unit: Parsed compilation unit
             type_name: Name of type to retrieve
-            
+
         Returns:
             TypeInfo if found, None otherwise
         """
                 # Full implementation in later prompts
         return None
-    
+
     def _process_cursor(self, cursor: CXIDE) -> Optional[ExternalSymbol]:
         """
         Process a cursor and extract symbol information if external.
-        
+
         Enhanced in 0 to extract macros.
         """
         # Get cursor kind
         kind = libclang.clang_getIDEKind(cursor)
-        
+
                 if kind == CXIDEKind.MACRO_DEFINITION:
             try:
                 macro_info = self._macro_extractor.extract_macro(cursor)
-                
+
                 # Create symbol for macro
                 symbol = ExternalSymbol(
                     name=macro_info.macro_name,
@@ -4192,18 +4191,18 @@ class ClangFrontend(CompilerFrontend):
                     linkage='none',
                     macro_info=macro_info
                 )
-                
+
                 if macro_info.source_file:
                     symbol.source_location = SourceLocation(
                         file_path=macro_info.source_file,
                         line=macro_info.line_number if macro_info.line_number else 0,
                         column=0
                     )
-                
+
                 return symbol
             except Exception:
                 return None
-                
+
                 # Add location to symbol if available
                 if macro_info.source_file:
                     symbol.source_location = SourceLocation(
@@ -4211,21 +4210,21 @@ class ClangFrontend(CompilerFrontend):
                         line=macro_info.line_number or 0,
                         column=0
                     )
-                
+
                 return symbol
-        
+
         # Get cursor name
         name_cxstr = libclang.clang_getIDESpelling(cursor)
         name = clang_string_to_python(name_cxstr)
-        
+
         if not name:
             return None
-        
+
         # Get cursor type
         cursor_type = libclang.clang_getIDEType(cursor)
         type_spelling_cxstr = libclang.clang_getTypeSpelling(cursor_type)
         type_spelling = clang_string_to_python(type_spelling_cxstr)
-        
+
                 provenance = None
         source_location = None
         try:
@@ -4250,14 +4249,14 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.NAMESPACE # C++
         ]:
             return None
-        
+
         # Check linkage
         linkage_kind = libclang.clang_getIDELinkage(cursor)
         # Linkage can be external or none (for types/macros)
         is_external = (linkage_kind == CXLinkageKind.EXTERNAL)
         is_type_decl = kind in [
-            CXIDEKind.STRUCT_DECL, 
-            CXIDEKind.UNION_DECL, 
+            CXIDEKind.STRUCT_DECL,
+            CXIDEKind.UNION_DECL,
             CXIDEKind.ENUM_DECL,
             CXIDEKind.TYPEDEF_DECL,
             CXIDEKind.TYPE_ALIAS_DECL,
@@ -4265,10 +4264,10 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.CLASS_TEMPLATE, # C++
             CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION # C++
         ]
-        
+
         if not is_external and not is_type_decl and kind != CXIDEKind.NAMESPACE:
             return None
-        
+
         linkage_map = {
             CXLinkageKind.EXTERNAL: 'external',
             CXLinkageKind.INTERNAL: 'internal',
@@ -4276,13 +4275,13 @@ class ClangFrontend(CompilerFrontend):
             CXLinkageKind.NO_LINKAGE: 'none'
         }
         linkage_str = linkage_map.get(linkage_kind, 'none')
-        
+
         # Get symbol name (already extracted)
         # name = clang_string_to_python(name_cxstr)
-        
+
         if not name:
             return None
-        
+
         # Map cursor kind to symbol kind
         kind_map = {
             CXIDEKind.FUNCTION_DECL: 'function',
@@ -4298,13 +4297,13 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.FUNCTION_TEMPLATE: 'function_template', # C++
             CXIDEKind.NAMESPACE: 'namespace' # C++
         }
-        
+
         symbol_kind = kind_map.get(kind, 'unknown')
-        
+
         # Extract type information
         # cursor_type already extracted
         # type_spelling already extracted
-        
+
         # Helper to create symbol
         def create_symbol(kind_str, **kwargs):
             sym = ExternalSymbol(
@@ -4316,41 +4315,41 @@ class ClangFrontend(CompilerFrontend):
                 provenance=provenance,
                 **kwargs
             )
-            
+
                         if self._cpp_extractor:
                 sym.namespaces = self._cpp_extractor.extract_namespaces(cursor)
                 sym.mangled_name = self._cpp_extractor.get_mangled_name(cursor)
-                
+
                 tpl = self._cpp_extractor.extract_template_info(cursor)
                 if tpl.get('is_template'):
                     sym.is_template_instantiation = True
                     sym.template_kind = tpl.get('kind')
                     sym.template_arguments = tpl.get('arguments', [])
-            
+
             return sym
 
         # Create symbol
         symbol = create_symbol(symbol_kind)
-        
+
                 if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL, CXIDEKind.CLASS_DECL, CXIDEKind.CLASS_TEMPLATE, CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION]:
             try:
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)
-                
+
                 # Extract detailed layout
                 layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
                 symbol_type_info.record_layout = layoutValue
             except Exception:
                 pass
-        
+
                 if kind == CXIDEKind.ENUM_DECL:
             try:
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)
-                
+
                 # Extract detailed enum info
                 enum_meta = self._enum_extractor.extract_enum_info(cursor, cursor_type)
-                
+
                 # Update TypeInfo with enum metadata
                 symbol_type_info.enum_enumerators = enum_meta['enumerators']
                 symbol_type_info.enum_underlying_type = enum_meta['underlying_type']
@@ -4361,39 +4360,39 @@ class ClangFrontend(CompilerFrontend):
                 symbol_type_info.enum_is_sequential = enum_meta['is_sequential']
             except Exception:
                 pass
-        
+
                 if symbol_kind == 'function':
             try:
                 signature = self._function_extractor.extract_function_signature(cursor)
                 symbol.function_signature = signature
             except Exception:
                 pass
-                
+
                 if symbol_kind == 'variable':
             try:
                 var_info = self._variable_extractor.extract_global_variable(cursor)
                 symbol.global_variable_info = var_info
             except Exception:
                 pass
-        
+
                 if kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
             try:
                 # Use resolver to get complete info
                 typedef_info = self._typedef_resolver.extract_typedef_info(cursor)
-                
+
                 # Update symbol kind to 'typedef' (already handled in kind_map but being explicit)
                 symbol.kind = 'typedef'
-                
+
                 # Make sure the type_info in TypeExtractor is also updated
                 self._type_extractor.extract_type(cursor_type)
             except Exception:
                 pass
-        
+
                 try:
             attributes = self._attribute_extractor.extract_attributes(cursor)
             if attributes:
                 symbol.attributes = attributes
-            
+
             # Check for deprecated attribute
             for attr in attributes:
                 if attr.attribute_kind == 'deprecated':
@@ -4402,7 +4401,7 @@ class ClangFrontend(CompilerFrontend):
                         symbol.deprecation_message = attr.arguments[0]
         except Exception:
             pass
-            
+
         return symbol
 
 # ============================================================================
@@ -4417,43 +4416,43 @@ class ClangFrontend(CompilerFrontend):
 class ValidationReport:
     """
     Validation results for ingested artifact.
-    
+
     Aggregates diagnostics from all validation checks.
     """
-    
+
     passed: bool = True
-    
+
     # Categorized diagnostics
     structural_errors: List[Diagnostic] = field(default_factory=list)
     abi_errors: List[Diagnostic] = field(default_factory=list)
     completeness_warnings: List[Diagnostic] = field(default_factory=list)
     cross_symbol_errors: List[Diagnostic] = field(default_factory=list)
     ffi_hazards: List[Diagnostic] = field(default_factory=list)
-    
+
     def all_diagnostics(self) -> List[Diagnostic]:
         """Get all diagnostics."""
         return (
-            self.structural_errors + 
-            self.abi_errors + 
-            self.completeness_warnings + 
-            self.cross_symbol_errors + 
+            self.structural_errors +
+            self.abi_errors +
+            self.completeness_warnings +
+            self.cross_symbol_errors +
             self.ffi_hazards
         )
-    
+
     def error_count(self) -> int:
         """Count fatal and error diagnostics."""
         return sum(
-            1 for d in self.all_diagnostics() 
+            1 for d in self.all_diagnostics()
             if d.severity in ['error', 'fatal']
         )
-        
+
     def warning_count(self) -> int:
         """Count warning diagnostics."""
         return sum(
-            1 for d in self.all_diagnostics() 
+            1 for d in self.all_diagnostics()
             if d.severity == 'warning'
         )
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize report."""
         return {
@@ -4473,71 +4472,71 @@ class ValidationReport:
 class ArtifactValidator:
     """
     Validates ingested artifacts for correctness and consistency.
-    
+
     Performs structural, ABI, completeness, and semantic validation.
     """
-    
+
     def __init__(self):
         """Initialize validator."""
         pass
-        
+
     def validate(self, artifact: RawInterfaceArtifact) -> ValidationReport:
         """
         Perform complete validation of artifact.
-        
+
         Args:
             artifact: Artifact to validate
-            
+
         Returns:
             ValidationReport with results
         """
         report = ValidationReport(passed=True)
-        
+
         # Structural validation
         report.structural_errors.extend(self._validate_structure(artifact))
-        
+
         # ABI validation
         report.abi_errors.extend(self._validate_abi(artifact))
-        
+
         # Completeness validation
         report.completeness_warnings.extend(self._validate_completeness(artifact))
-        
+
         # Cross-symbol validation
         report.cross_symbol_errors.extend(self._validate_cross_symbols(artifact))
-        
+
         # FFI hazard detection
         report.ffi_hazards.extend(self._detect_ffi_hazards(artifact))
-        
+
         # Determine pass/fail
         report.passed = report.error_count() == 0
-        
+
         return report
-        
+
     def _validate_structure(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Validate structural consistency."""
         diagnostics = []
-        
+
         # Validate type definitions
         defined_types = set(artifact.type_definitions.keys())
-        
+
         # Check for undefined type references (simplified)
         for symbol in artifact.external_symbols:
             if symbol.function_signature:
                 for param in symbol.function_signature.parameters:
                     # Basic check - full implementation would be more thorough
                     pass
-        
+
         return diagnostics
-        
+
     def _validate_abi(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Validate ABI consistency."""
         diagnostics = []
-        
+
         # Validate structure layouts
         for type_name, type_info in artifact.type_definitions.items():
             if hasattr(type_info, 'record_layout') and type_info.record_layout:
                 layout = type_info.record_layout
-                
+
                 # Check structure size is multiple of alignment
                 if layout.size_bytes > 0 and layout.alignment_bytes > 0:
                     if layout.size_bytes % layout.alignment_bytes != 0:
@@ -4548,15 +4547,15 @@ class ArtifactValidator:
                                        f"alignment {layout.alignment_bytes}",
                             category='validation'
                         ))
-                
+
                 # Check field offsets
                 sorted_fields = sorted(layout.fields, key=lambda f: f.offset_bytes)
                 for i in range(len(sorted_fields) - 1):
                     current = sorted_fields[i]
                     next_field = sorted_fields[i + 1]
-                    
+
                     current_end = current.offset_bytes + current.size_bytes
-                    
+
                     # Check for overlaps in structs
                     if layout.kind == 'struct' and next_field.offset_bytes < current_end:
                         diagnostics.append(Diagnostic(
@@ -4565,18 +4564,18 @@ class ArtifactValidator:
                             explanation=f"Field {next_field.name} at {next_field.offset_bytes} "
                                        f"overlaps {current.name} ending at {current_end}"
                         ))
-        
+
         return diagnostics
-        
+
     def _validate_completeness(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Validate completeness of information."""
         diagnostics = []
-        
+
         # Check for incomplete types that are used
         for symbol in artifact.external_symbols:
             if symbol.kind == 'function' and symbol.function_signature:
                 sig = symbol.function_signature
-                
+
                 # Check if return type info is missing
                 if not sig.return_type_info and sig.return_type != 'void':
                     diagnostics.append(Diagnostic(
@@ -4584,20 +4583,20 @@ class ArtifactValidator:
                         message=f"Function {symbol.name} missing return type info",
                         category='validation'
                     ))
-        
+
         return diagnostics
-        
+
     def _validate_cross_symbols(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Validate cross-symbol consistency."""
         diagnostics = []
-        
+
         # Check for duplicate symbol names
         symbol_map = {}
-        
+
         for symbol in artifact.external_symbols:
             if symbol.name in symbol_map:
                 existing = symbol_map[symbol.name]
-                
+
                 if existing.kind != symbol.kind:
                     diagnostics.append(Diagnostic(
                         severity='error',
@@ -4607,13 +4606,13 @@ class ArtifactValidator:
                     ))
             else:
                 symbol_map[symbol.name] = symbol
-        
+
         return diagnostics
-        
+
     def _detect_ffi_hazards(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Detect FFI hazards."""
         diagnostics = []
-        
+
         for symbol in artifact.external_symbols:
             # Check for variadic functions
             if symbol.function_signature and symbol.function_signature.is_variadic:
@@ -4624,7 +4623,7 @@ class ArtifactValidator:
                     suggestion="Provide non-variadic wrapper function",
                     category='ffi_hazard'
                 ))
-            
+
             # Check for function-like macros
             if symbol.macro_info and symbol.macro_info.is_function_like:
                 diagnostics.append(Diagnostic(
@@ -4634,7 +4633,7 @@ class ArtifactValidator:
                     suggestion="Provide static inline or regular function",
                     category='ffi_hazard'
                 ))
-        
+
         return diagnostics
 
 # ============================================================================
@@ -4654,43 +4653,43 @@ class IncludeEdge:
 
 class IncludeDependencyGraph:
     """Graph of header include relationships."""
-    
+
     def __init__(self):
         self.edges: List[IncludeEdge] = []
         self.nodes: Set[str] = set()
-    
+
     def add_include(self, includer: str, included: str, line: int = 0):
         """Add an include edge."""
         self.edges.append(IncludeEdge(includer, included, line))
         self.nodes.add(includer)
         self.nodes.add(included)
-    
+
     def get_dependencies(self, header: str) -> List[str]:
         """Get immediate dependencies of a header."""
         return [
             edge.included for edge in self.edges
             if edge.includer == header
         ]
-    
+
     def get_transitive_dependencies(self, header: str) -> Set[str]:
         """Get all transitive dependencies."""
         deps = set()
         to_visit = [header]
         visited = set()
-        
+
         while to_visit:
             current = to_visit.pop()
             if current in visited:
                 continue
             visited.add(current)
-            
+
             for dep in self.get_dependencies(current):
                 if dep not in deps:
                     deps.add(dep)
                     to_visit.append(dep)
-        
+
         return deps
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize graph."""
         return {
@@ -4709,16 +4708,16 @@ class IncludeDependencyGraph:
 class HeaderClassification:
     """
     Classification of a header file.
-    
+
     Determines if header is public, system, or internal.
     """
-    
+
     path: Path
     is_public: bool = False
     is_system: bool = False
     is_generated: bool = False
     is_internal: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize classification."""
         return {
@@ -4731,29 +4730,29 @@ class HeaderClassification:
 
 def classify_header(header: Path) -> HeaderClassification:
     """Classify a header based on its path."""
-    
+
     classification = HeaderClassification(path=header)
-    
+
     path_str = str(header).replace('\\', '/')
-    
+
     # Check if system header (simplified heuristic)
     if '/usr/include' in path_str or '/usr/local/include' in path_str:
         classification.is_system = True
         return classification
-    
+
     # Check if in include/ directory (public)
     if 'include' in header.parts:
         classification.is_public = True
-    
+
     # Check if internal
     if 'internal' in header.parts or 'private' in header.parts:
         classification.is_internal = True
         classification.is_public = False
-    
+
     # Check if generated
     if header.name.startswith('config.') or 'generated' in header.parts:
         classification.is_generated = True
-    
+
     return classification
 
 # ============================================================================
@@ -4768,10 +4767,10 @@ class SymbolOccurrence:
 
 class SymbolRegistry:
     """Registry for deduplicating symbols."""
-    
+
     def __init__(self):
         self.symbols: Dict[str, List[SymbolOccurrence]] = {}
-    
+
     def register(
         self,
         symbol: ExternalSymbol,
@@ -4779,28 +4778,28 @@ class SymbolRegistry:
     ) -> bool:
         """
         Register a symbol occurrence.
-        
+
         Returns:
             True if this is the first occurrence (primary)
         """
         name = symbol.name
-        
+
         if name not in self.symbols:
             self.symbols[name] = []
             self.symbols[name].append(SymbolOccurrence(location, symbol))
             return True  # Primary
-        
+
         # Add as alternative occurrence
         self.symbols[name].append(SymbolOccurrence(location, symbol))
         return False  # Not primary
-    
+
     def get_primary_symbols(self) -> List[ExternalSymbol]:
         """Get primary (first) occurrence of each symbol."""
         return [
             occurrences[0].definition
             for occurrences in self.symbols.values()
         ]
-    
+
     def get_all_occurrences(self, name: str) -> List[SymbolOccurrence]:
         """Get all occurrences of a symbol."""
         return self.symbols.get(name, [])
@@ -4811,10 +4810,10 @@ class SymbolRegistry:
 
 class VirtualHeaderGenerator:
     """Generates virtual headers for multi-header ingestion."""
-    
+
     def __init__(self):
         self.temp_dir: Optional[Path] = None
-    
+
     def generate(
         self,
         header_files: List[Path],
@@ -4822,37 +4821,37 @@ class VirtualHeaderGenerator:
     ) -> Path:
         """
         Generate virtual header including all target headers.
-        
+
         Args:
             header_files: Headers to include
             include_paths: Include search paths
-            
+
         Returns:
             Path to generated virtual header
         """
         # Create temporary directory
         self.temp_dir = Path(tempfile.mkdtemp(prefix='pfcv_virtual_'))
-        
+
         virtual_header = self.temp_dir / 'virtual_header.h'
-        
+
         with open(virtual_header, 'w') as f:
             f.write("// Auto-generated virtual header for PFCV ingestion\n")
             f.write("// DO NOT EDIT - This file is temporary\n\n")
-            
+
             for header in header_files:
                 # Try to make path relative to include paths
                 include_name = self._make_include_path(header, include_paths)
                 f.write(f'#include "{include_name}"\n')
-        
+
         return virtual_header
-    
+
     def _make_include_path(
         self,
         header: Path,
         include_paths: List[Path]
     ) -> str:
         """Make include path relative to include directories."""
-        
+
         # Try each include path
         for include_path in include_paths:
             try:
@@ -4860,10 +4859,10 @@ class VirtualHeaderGenerator:
                 return str(relative)
             except ValueError:
                 continue
-        
+
         # Fall back to absolute path
         return str(header)
-    
+
     def cleanup(self):
         """Clean up temporary directory."""
         if self.temp_dir and self.temp_dir.exists():
@@ -4880,13 +4879,13 @@ class VirtualHeaderGenerator:
 @dataclass
 class ProfileSection:
     """Profiling data for a code section."""
-    
+
     name: str
     start_time: float
     end_time: float
     duration: float
     call_count: int = 1
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize profile section."""
         return {
@@ -4898,18 +4897,18 @@ class ProfileSection:
 
 class Profiler:
     """Performance profiler for ingestion."""
-    
+
     def __init__(self, enabled: bool = True):
         """
         Initialize profiler.
-        
+
         Args:
             enabled: Whether profiling is enabled
         """
         self.enabled = enabled
         self.sections: Dict[str, ProfileSection] = {}
         self.stack: List[Tuple[str, float]] = []
-    
+
     def start_phase(self, phase_name: str):
         """Start timing a phase (alias for compat)."""
         if not self.enabled: return
@@ -4940,24 +4939,24 @@ class Profiler:
     def section(self, name: str):
         """
         Profile a code section.
-        
+
         Args:
             name: Section name
         """
         if not self.enabled:
             yield
             return
-        
+
         start = time.time()
         self.stack.append((name, start))
-        
+
         try:
             yield
         finally:
             end = time.time()
             section_name, section_start = self.stack.pop()
             duration = end - section_start
-            
+
             if section_name in self.sections:
                 existing = self.sections[section_name]
                 existing.duration += duration
@@ -4970,17 +4969,17 @@ class Profiler:
                     end_time=end,
                     duration=duration
                 )
-    
+
     def get_report(self) -> Dict[str, Any]:
         """Generate profiling report."""
         total_time = sum(s.duration for s in self.sections.values())
-        
+
         sorted_sections = sorted(
             self.sections.values(),
             key=lambda s: s.duration,
             reverse=True
         )
-        
+
         return {
             'total_time': total_time,
             'sections': [s.to_dict() for s in sorted_sections],
@@ -4993,11 +4992,11 @@ class Profiler:
     def print_report(self):
         """Print formatted profiling report."""
         report = self.get_report()
-        
+
         print("\nProfiling Report:")
         print(f"  Total Time: {report['total_time']:.3f}s")
         print("\n  Breakdown:")
-        
+
         for section in report['sections']:
             percentage = report['section_percentages'][section['name']]
             print(f"    {section['name']:20s}: {section['duration']:.3f}s ({percentage:5.1f}%)")
@@ -5009,21 +5008,21 @@ class Profiler:
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for ingestion run."""
-    
+
     total_duration: float
     parsing_duration: float
     extraction_duration: float
     validation_duration: float
-    
+
     memory_peak_mb: float
     symbols_extracted: int
-    
+
     cache_hit_rate: float = 0.0
-    
+
     def throughput(self) -> float:
         """Calculate symbols per second."""
         return self.symbols_extracted / self.total_duration if self.total_duration > 0 else 0
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize metrics."""
         return {
@@ -5051,41 +5050,41 @@ import sys
 class IngestionConfig:
     """
     Config for ingestion process.
-    
+
     High-level configuration accepted by orchestrator.
     """
-    
+
     # Required inputs
     header_files: List[Path]
-    
+
     # Compilation settings
     include_paths: List[Path] = field(default_factory=list)
     macro_definitions: Dict[str, str] = field(default_factory=dict)
     target_triple: str = ""
     abi_flags: List[str] = field(default_factory=list)
     language_standard: str = "c11"
-    
+
     # Compiler settings
     compiler_name: str = "clang"
     compiler_version: str = ""
-    
+
     # Caching
     enable_cache: bool = True
     cache_dir: Optional[Path] = None
     force_full_ingestion: bool = False
-    
+
     # Validation
     enable_validation: bool = True
     fail_on_validation_errors: bool = False
-    
+
     # Output
     output_path: Optional[Path] = None
     output_format: str = "json"
-    
+
     # Diagnostics
     verbose: bool = False
     max_diagnostics: int = 100
-    
+
     def to_compilation_context(self) -> CompilationContext:
         """Convert to CompilationContext."""
         return CompilationContext(
@@ -5105,27 +5104,27 @@ class IngestionConfig:
 
 class IngestionState:
     """Tracks ingestion progress and state."""
-    
+
     def __init__(self):
         self.current_stage: str = "not_started"
         self.stage_start_time: float = 0.0
         self.total_headers: int = 0
         self.processed_headers: int = 0
         self.extracted_symbols: int = 0
-        
+
         self.stages_completed: List[str] = []
         self.errors_occurred: bool = False
-    
+
     def enter_stage(self, stage_name: str):
         """Enter a new stage."""
         self.current_stage = stage_name
         self.stage_start_time = time.time()
-    
+
     def exit_stage(self):
         """Exit current stage."""
         if self.current_stage not in self.stages_completed:
             self.stages_completed.append(self.current_stage)
-    
+
     def progress_percentage(self) -> float:
         """Compute overall progress percentage."""
         total_stages = 8
@@ -5138,10 +5137,10 @@ class IngestionState:
 class IngestionOrchestrator:
     """
     Main ingestion orchestrator.
-    
+
     Coordinates all ingestion stages and provides unified interface.
     """
-    
+
     def __init__(
         self,
         frontend: Optional[CompilerFrontend] = None,
@@ -5152,7 +5151,7 @@ class IngestionOrchestrator:
     ):
         """
         Initialize orchestrator with profiling.
-        
+
         Args:
             enable_profiling: Enable performance profiling
         """
@@ -5160,23 +5159,23 @@ class IngestionOrchestrator:
         self.cache = cache
         self.validator = validator or ArtifactValidator()
         self.diagnostic_collector = diagnostic_collector or DiagnosticCollector()
-        
+
         self.state = IngestionState()
         self.virtual_header_gen = VirtualHeaderGenerator()
         self.symbol_registry = SymbolRegistry()
         self.profiler = Profiler(enabled=enable_profiling)
-        
+
         # Performance tracking
         self._memory_tracking_enabled = False
         self._start_memory: int = 0
-    
+
     def ingest(self, config: IngestionConfig) -> RawInterfaceArtifact:
         """
         Execute complete ingestion pipeline with profiling.
-        
+
         Args:
             config: Ingestion configuration
-            
+
         Returns:
             Final artifact
         """
@@ -5184,13 +5183,13 @@ class IngestionOrchestrator:
         if self.profiler.enabled:
             tracemalloc.start()
             self._memory_tracking_enabled = True
-        
+
         try:
             with self.profiler.section('total_ingestion'):
                 artifact = self._ingest_internal(config)
-            
+
             return artifact
-            
+
         finally:
             if self._memory_tracking_enabled:
                 tracemalloc.stop()
@@ -5200,22 +5199,22 @@ class IngestionOrchestrator:
         try:
             with self.profiler.section('initialization'):
                 self._initialize(config)
-            
+
             context = config.to_compilation_context()
-            
+
                         dependency_graph = IncludeDependencyGraph()
             header_classifications = {}
-            
+
             # Build dependency graph and classify headers
             for header in config.header_files:
                 self._build_dependency_graph(header, config.include_paths, dependency_graph)
                 header_classifications[str(header)] = classify_header(header)
-            
+
             virtual_header_path = None
             if len(config.header_files) > 1:
                 try:
                     virtual_header_path = self.virtual_header_gen.generate(
-                        config.header_files, 
+                        config.header_files,
                         config.include_paths
                     )
                     context.header_files = [virtual_header_path]
@@ -5224,24 +5223,24 @@ class IngestionOrchestrator:
                         f"Virtual header generation failed: {e}. Falling back to individual parsing.",
                         category='configuration'
                     )
-            
+
             with self.profiler.section('parsing'):
                 self.state.enter_stage("parsing")
                 if not self.frontend:
                     raise ToolchainError("Compiler frontend not available")
-                
+
                 compilation_unit = self.frontend.parse_headers(context)
                 self.state.exit_stage()
-            
+
             with self.profiler.section('extraction'):
                 self.state.enter_stage("extraction")
                 raw_symbols = self.frontend.extract_symbols(compilation_unit)
-                
+
                                 extracted_symbols = self._deduplicate_symbols(raw_symbols)
-                
+
                 self.state.extracted_symbols = len(extracted_symbols)
                 self.state.exit_stage()
-            
+
             with self.profiler.section('artifact_generation'):
                 self.state.enter_stage("artifact_generation")
                 artifact = RawInterfaceArtifact(
@@ -5254,11 +5253,11 @@ class IngestionOrchestrator:
                     header_classifications=header_classifications
                 )
                 self.state.exit_stage()
-            
+
             # Clean up virtual header
             if virtual_header_path:
                 self.virtual_header_gen.cleanup()
-            
+
             if config.enable_validation:
                 with self.profiler.section('validation'):
                     self.state.enter_stage("validation")
@@ -5268,44 +5267,44 @@ class IngestionOrchestrator:
                         d.message for d in validation_report.all_diagnostics()
                         if d.severity in ['error', 'fatal']
                     ]
-                    
+
                     for diag in validation_report.all_diagnostics():
                         self.diagnostic_collector.report.add_diagnostic(diag)
-                    
+
                     self.state.exit_stage()
-                    
+
                     if not validation_report.passed and config.fail_on_validation_errors:
                         raise ValidationError("Artifact validation failed")
-            
+
             if config.output_path:
                 with self.profiler.section('serialization'):
                     self.state.enter_stage("output")
                     artifact.save(config.output_path)
                     self.state.exit_stage()
-            
+
             self.diagnostic_collector.report.symbols_extracted = len(extracted_symbols)
-            
+
             return artifact
 
         except Exception as e:
             self.state.errors_occurred = True
-            
+
             if isinstance(e, (IngestionError, ValidationError)):
                 raise
-            
+
             # Wrap unexpected errors
             raise IngestionError(f"Unexpected error during ingestion: {e}") from e
 
     def get_performance_metrics(self) -> PerformanceMetrics:
         """Get performance metrics for last ingestion."""
         report = self.profiler.get_report()
-        
+
         # Extract memory usage
         memory_peak_mb = 0.0
         if self._memory_tracking_enabled:
             current, peak = tracemalloc.get_traced_memory()
             memory_peak_mb = peak / 1024 / 1024
-        
+
         # Build metrics
         metrics = PerformanceMetrics(
             total_duration=report['total_time'],
@@ -5315,7 +5314,7 @@ class IngestionOrchestrator:
             memory_peak_mb=memory_peak_mb,
             symbols_extracted=self.state.extracted_symbols
         )
-        
+
         return metrics
 
     def _get_section_duration(self, report: Dict[str, Any], section_name: str) -> float:
@@ -5324,39 +5323,38 @@ class IngestionOrchestrator:
             if section['name'] == section_name:
                 return section['duration']
         return 0.0
-    
+
     def _initialize(self, config: IngestionConfig):
         """Initialize ingestion."""
         self.state.enter_stage("initialization")
-        
+
         # Validate configuration
         errors = self._validate_config(config)
         if errors:
             for error in errors:
                 self.diagnostic_collector.add_fatal(error, category='configuration')
             raise ConfigError(f"Invalid configuration: {errors[0]}")
-        
+
         # Initialize cache if enabled
         if config.enable_cache and config.cache_dir:
             self.cache = IngestionCache(config.cache_dir)
-        
+
         self.state.total_headers = len(config.header_files)
         self.state.exit_stage()
-    
+
     def _validate_config(self, config: IngestionConfig) -> List[str]:
         """Validate ingestion configuration."""
         errors = []
-        
+
         if not config.header_files:
             errors.append("No header files specified")
-        
+
         for header in config.header_files:
             if not header.exists():
                 errors.append(f"Header not found: {header}")
-        
+
         return errors
-    
-    
+
     def _build_dependency_graph(
         self,
         header: Path,
@@ -5365,26 +5363,26 @@ class IngestionOrchestrator:
     ):
         """
         Build include dependency graph for a header.
-        
+
         Simple regex-based scanner to find direct includes.
         Does not handle preprocessor conditionals fully.
         """
         import re
-        
+
         try:
             with open(header, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
-                
+
             include_pattern = re.compile(r'^\s*#\s*include\s*["<](.+)[">]')
-            
+
             for i, line in enumerate(lines):
                 match = include_pattern.match(line)
                 if match:
                     included_name = match.group(1)
-                    
+
                     # Resolve included file
                     resolved_path = self._resolve_include(included_name, include_paths, header.parent)
-                    
+
                     if resolved_path:
                         graph.add_include(str(header), str(resolved_path), i + 1)
         except Exception:
@@ -5402,30 +5400,30 @@ class IngestionOrchestrator:
         candidate = current_dir / name
         if candidate.exists():
             return candidate
-            
+
         # Try include paths
         for path in include_paths:
             candidate = path / name
             if candidate.exists():
                 return candidate
-                
+
         return None
 
     def _deduplicate_symbols(self, symbols: List[ExternalSymbol]) -> List[ExternalSymbol]:
         """
         Deduplicate extracted symbols.
-        
+
         Uses SymbolRegistry to handle multiple occurrences.
         """
         unique_symbols = []
-        
+
         # Reset registry for this run
         self.symbol_registry = SymbolRegistry()
-        
+
         for symbol in symbols:
             if self.symbol_registry.register(symbol, symbol.source_location):
                 unique_symbols.append(symbol)
-                
+
         return unique_symbols
 
     def get_report(self) -> IngestionReport:
@@ -5442,14 +5440,14 @@ def main():
         description='Native Interface Ingestion Tool (PFCV Module 04)',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument(
         'headers',
         nargs='+',
         type=Path,
         help='Header files to ingest'
     )
-    
+
     parser.add_argument(
         '-I', '--include',
         dest='include_paths',
@@ -5458,7 +5456,7 @@ def main():
         default=[],
         help='Include search paths'
     )
-    
+
     parser.add_argument(
         '-D', '--define',
         dest='macros',
@@ -5466,34 +5464,34 @@ def main():
         default=[],
         help='Preprocessor definitions (NAME or NAME=VALUE)'
     )
-    
+
     parser.add_argument(
         '--target',
         dest='target_triple',
         default='',
         help='Target triple (e.g., x86_64-pc-linux-gnu)'
     )
-    
+
     parser.add_argument(
         '-o', '--output',
         type=Path,
         help='Output file for artifact'
     )
-    
+
     parser.add_argument(
         '--no-cache',
         action='store_true',
         help='Disable caching'
     )
-    
+
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Verbose output'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Parse macro definitions
     macro_defs = {}
     for macro in args.macros:
@@ -5502,7 +5500,7 @@ def main():
             macro_defs[name] = value
         else:
             macro_defs[macro] = ''
-    
+
     # Build configuration
     config = IngestionConfig(
         header_files=args.headers,
@@ -5513,26 +5511,26 @@ def main():
         output_path=args.output,
         verbose=args.verbose
     )
-    
+
     # Execute ingestion
     orchestrator = IngestionOrchestrator()
-    
+
     try:
         artifact = orchestrator.ingest(config)
-        
+
         print(f"✓ Ingestion successful")
         print(f"  Symbols extracted: {len(artifact.external_symbols)}")
-        
+
         if config.output_path:
             print(f"  Artifact saved: {config.output_path}")
-        
+
         # Print summary
         report = orchestrator.get_report()
         if report.warning_count() > 0:
             print(f"  Warnings: {report.warning_count()}")
-        
+
         sys.exit(0)
-        
+
     except IngestionError as e:
         print(f"✗ Ingestion failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -5548,7 +5546,7 @@ def main():
 @dataclass
 class StructuredDocumentation:
     """Structured documentation extracted from comments."""
-    
+
     brief: Optional[str] = None
     detailed: Optional[str] = None
     parameters: Dict[str, str] = field(default_factory=dict)
@@ -5575,27 +5573,27 @@ class StructuredDocumentation:
 def parse_doxygen_comment(comment: str) -> StructuredDocumentation:
     """
     Parse Doxygen-style comment.
-    
+
     Args:
         comment: Raw comment text
-        
+
     Returns:
         Structured documentation
     """
     doc = StructuredDocumentation()
-    
+
     lines = comment.split('\n')
     current_content = []
-    
+
     for line in lines:
         line = line.strip()
-        
+
         # Strip generic comment markers if present (simple heuristic)
         if line.startswith('* '):
             line = line[2:]
         elif line.startswith('/*') or line.startswith('*/') or line == '*':
             continue
-            
+
         if line.startswith('@brief'):
             doc.brief = line[6:].strip()
         elif line.startswith('@param'):
@@ -5614,9 +5612,9 @@ def parse_doxygen_comment(comment: str) -> StructuredDocumentation:
         else:
             if line:
                 current_content.append(line)
-    
+
     doc.detailed = '\n'.join(current_content).strip() if current_content else None
-    
+
     return doc
 
 # ============================================================================
@@ -5625,7 +5623,7 @@ def parse_doxygen_comment(comment: str) -> StructuredDocumentation:
 
 class MarkdownGenerator:
     """Generates Markdown documentation from artifact."""
-    
+
     def generate(
         self,
         artifact: RawInterfaceArtifact,
@@ -5633,19 +5631,19 @@ class MarkdownGenerator:
     ):
         """
         Generate complete Markdown documentation.
-        
+
         Args:
             artifact: Ingested artifact
             output_dir: Output directory
         """
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Generate index
         self._generate_index(artifact, output_dir / 'README.md')
-        
+
         # Generate API reference
         self._generate_api_reference(artifact, output_dir / 'api_reference.md')
-    
+
     def _generate_index(
         self,
         artifact: RawInterfaceArtifact,
@@ -5655,16 +5653,16 @@ class MarkdownGenerator:
         with open(output, 'w') as f:
             f.write("# Native Interface Documentation\n\n")
             f.write(f"Generated: {artifact.generation_timestamp}\n\n")
-            
+
             f.write("## Overview\n\n")
             f.write("This documentation describes the native interface.\n\n")
-            
+
             f.write("## Statistics\n\n")
             f.write(f"- Total Symbols: {len(artifact.external_symbols)}\n")
-            
+
             functions = sum(1 for s in artifact.external_symbols if s.kind == 'function')
             f.write(f"- Functions: {functions}\n")
-    
+
     def _generate_api_reference(
         self,
         artifact: RawInterfaceArtifact,
@@ -5673,34 +5671,34 @@ class MarkdownGenerator:
         """Generate API reference."""
         with open(output, 'w') as f:
             f.write("# API Reference\n\n")
-            
+
             functions = [s for s in artifact.external_symbols if s.kind == 'function']
-            
+
             if functions:
                 f.write("## Functions\n\n")
                 for func in sorted(functions, key=lambda x: x.name):
                     self._write_function_doc(f, func)
-    
+
     def _write_function_doc(self, f, symbol: ExternalSymbol):
         """Write documentation for a function."""
         f.write(f"### {symbol.name}\n\n")
-        
+
         if symbol.function_signature:
             sig = symbol.function_signature
-            
+
             f.write("**Declaration:**\n```c\n")
             f.write(f"{sig.return_type} {symbol.name}(")
             params = [f"{p.param_type} {p.name}" for p in sig.parameters]
             f.write(", ".join(params))
             f.write(");\n```\n\n")
-            
+
             if sig.parameters:
                 f.write("**Parameters:**\n\n")
                 for param in sig.parameters:
                     f.write(f"- `{param.name}` ({param.param_type})\n")
-            
+
             f.write(f"\n**Returns:** `{sig.return_type}`\n\n")
-        
+
         f.write("---\n\n")
 
 # ============================================================================
@@ -5709,11 +5707,11 @@ class MarkdownGenerator:
 
 class DocumentationOrchestrator:
     """Orchestrates documentation generation."""
-    
+
     def __init__(self):
         """Initialize documentation orchestrator."""
         self.markdown_generator = MarkdownGenerator()
-    
+
     def generate_all(
         self,
         artifact: RawInterfaceArtifact,
@@ -5722,7 +5720,7 @@ class DocumentationOrchestrator:
     ):
         """
         Generate documentation in requested formats.
-        
+
         Args:
             artifact: Ingested artifact
             output_dir: Output directory
@@ -5730,7 +5728,7 @@ class DocumentationOrchestrator:
         """
         if formats is None:
             formats = ['markdown']
-        
+
         if 'markdown' in formats:
             md_dir = output_dir / 'markdown'
             self.markdown_generator.generate(artifact, md_dir)
@@ -5787,15 +5785,15 @@ def execute_native_ingestion_stage(
 ) -> RawInterfaceArtifact:
     """
     Execute native interface ingestion (Module 02 Stage 1).
-    
+
     This is the primary integration point for Module 02.
-    
+
     Args:
         verification_context: Verification context from Module 02
-        
+
     Returns:
         RawInterfaceArtifact ready for next stage
-        
+
     Raises:
         IngestionError: If ingestion fails
     """
@@ -5807,15 +5805,15 @@ def execute_native_ingestion_stage(
         enable_cache=getattr(verification_context, 'enable_cache', True),
         cache_dir=getattr(verification_context, 'cache_dir', None)
     )
-    
+
     # Execute ingestion
     orchestrator = IngestionOrchestrator()
     artifact = orchestrator.ingest(config)
-    
+
     # Store results in context
     if hasattr(verification_context, 'native_artifact'):
         verification_context.native_artifact = artifact
-    
+
     return artifact
 
 # ============================================================================
