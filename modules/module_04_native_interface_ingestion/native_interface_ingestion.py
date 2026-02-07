@@ -19,6 +19,12 @@ Prompt: 20/20
 Status: complete
 """
 
+import sys
+import os
+import ctypes
+import ctypes.util
+import subprocess
+import glob
 import json
 import hashlib
 import time
@@ -225,9 +231,8 @@ class ProvenanceInfo:
         return data
 
 # ============================================================================
-# DIAGNOSTICS ()
+# DIAGNOSTIC SYSTEM ()
 # ============================================================================
-
 @dataclass
 class Diagnostic:
     """
@@ -2981,19 +2986,6 @@ def get_module_info() -> Dict[str, str]:
     }
 
 # ============================================================================
-# CLANG FRONTEND INTEGRATION ()
-# ============================================================================
-
-import sys
-import os
-import ctypes
-import ctypes.util
-import glob
-from enum import IntEnum
-from pathlib import Path
-import subprocess
-
-# ============================================================================
 # LIBCLANG BINDINGS (MINIMAL SUBSET)
 # ============================================================================
 
@@ -3086,7 +3078,7 @@ def _load_libclang():
             
     if names:
         # Only print diagnostics if we actually had candidates but all failed
-        print(f"DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
+        print("DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
             
     return None
 
@@ -5002,9 +4994,9 @@ class Profiler:
         """Print formatted profiling report."""
         report = self.get_report()
         
-        print(f"\nProfiling Report:")
+        print("\nProfiling Report:")
         print(f"  Total Time: {report['total_time']:.3f}s")
-        print(f"\n  Breakdown:")
+        print("\n  Breakdown:")
         
         for section in report['sections']:
             percentage = report['section_percentages'][section['name']]
