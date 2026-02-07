@@ -29,6 +29,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libclang-14-dev llvm-14-dev
+          # Create symlink to standard library path for robust discovery
+          sudo ln -sf /usr/lib/llvm-14/lib/libclang.so.1 /usr/lib/libclang.so
+          sudo ln -sf /usr/lib/llvm-14/lib/libclang.so.1 /usr/lib/libclang-14.so
+          echo "Verifying libclang installation:"
+          ls -l /usr/lib/llvm-14/lib/libclang*
+          ls -l /usr/lib/libclang*
 
       - name: Install dependencies
         run: |

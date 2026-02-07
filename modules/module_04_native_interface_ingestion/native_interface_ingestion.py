@@ -2985,7 +2985,10 @@ def get_module_info() -> Dict[str, str]:
 # ============================================================================
 
 import sys
+import os
 import ctypes
+import ctypes.util
+import glob
 from enum import IntEnum
 
 # ============================================================================
@@ -3026,6 +3029,19 @@ def _load_libclang():
             names.extend(glob.glob('/usr/lib/x86_64-linux-gnu/libclang-*.so*'))
             names.extend(glob.glob('/usr/lib/llvm-*/lib/libclang.so*'))
             names.extend(glob.glob('/usr/lib/libclang.so*'))
+
+    # 2.5 platform specific via LD_LIBRARY_PATH (Linux)
+    if sys.platform.startswith('linux'):
+        ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+        for path in ld_path.split(':'):
+            if not path: continue
+            for lib in ['libclang.so', 'libclang.so.1', 'libclang-14.so.1']:
+                full_path = Path(path) / lib
+                if full_path.exists():
+                     try:
+                         return ctypes.CDLL(str(full_path))
+                     except OSError:
+                         pass
 
     # 3. Try to find via python 'clang' package (if installed)
     # This is often the most reliable way if the pip package bundles binaries
