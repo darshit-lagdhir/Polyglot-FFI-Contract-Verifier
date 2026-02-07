@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "4/20"
-__status__ = "layout_extraction"
+__prompt__ = "6/20"
+__status__ = "enum_extraction"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -160,6 +160,26 @@ class ExternalSymbol:
 # ============================================================================
 
 @dataclass
+class EnumeratorInfo:
+    """
+    Information about a single enumerator (enum constant).
+    
+    Captures both signed and unsigned interpretations of the value.
+    """
+    
+    name: str
+    value_signed: int  # Signed interpretation
+    value_unsigned: int  # Unsigned interpretation (for large values)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize enumerator info."""
+        return {
+            'name': self.name,
+            'value_signed': self.value_signed,
+            'value_unsigned': self.value_unsigned
+        }
+
+@dataclass
 class TypeInfo:
     """
     Complete type information extracted from compiler.
@@ -208,6 +228,14 @@ class TypeInfo:
     
         record_layout: Optional['RecordLayout'] = None
     
+        enum_enumerators: List['EnumeratorInfo'] = field(default_factory=list)
+    enum_underlying_type: Optional[str] = None
+    enum_is_signed: Optional[bool] = None
+    enum_min_value: Optional[int] = None
+    enum_max_value: Optional[int] = None
+    enum_is_bitmask: bool = False
+    enum_is_sequential: bool = False
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
         data = {
@@ -248,6 +276,18 @@ class TypeInfo:
         
         if self.record_layout:
             data['record_layout'] = self.record_layout.to_dict()
+        
+        # Enum metadata
+        if self.enum_enumerators:
+            data['enum'] = {
+                'enumerators': [e.to_dict() for e in self.enum_enumerators],
+                'underlying_type': self.enum_underlying_type,
+                'is_signed': self.enum_is_signed,
+                'min_value': self.enum_min_value,
+                'max_value': self.enum_max_value,
+                'is_bitmask': self.enum_is_bitmask,
+                'is_sequential': self.enum_is_sequential
+            }
         
         return data
 
@@ -347,6 +387,224 @@ class RecordLayout:
             'is_packed': self.is_packed,
             'is_anonymous': self.is_anonymous
         }
+
+# ============================================================================
+# ENUM EXTRACTOR ()
+# ============================================================================
+
+class EnumExtractor:
+    """
+    Extracts complete enumeration information from Clang AST.
+    
+    Handles enumerator value extraction, underlying type detection,
+    signedness analysis, and value range computation.
+    """
+    
+    def __init__(self, type_extractor: 'TypeExtractor'):
+        """
+        Initialize enum extractor.
+        
+        Args:
+            type_extractor: TypeExtractor for underlying type resolution
+        """
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        self.type_extractor = type_extractor
+    
+    def extract_enum_info(
+        self,
+        enum_cursor: 'CXIDE',
+        enum_type: 'CXType'
+    ) -> Dict[str, Any]:
+        """
+        Extract complete enum information.
+        
+        Args:
+            enum_cursor: Enum declaration cursor
+            enum_type: Enum type
+            
+        Returns:
+            Dictionary with enum metadata
+        """
+        # Extract enumerators
+        enumerators = self._extract_enumerators(enum_cursor)
+        
+        # Extract underlying type
+        underlying_type_cx = libclang.clang_getEnumDeclIntegerType(enum_cursor)
+        underlying_type_spelling = self.type_extractor._get_type_spelling(underlying_type_cx)
+        
+        # Determine signedness
+        is_signed = self._is_signed_type(underlying_type_cx)
+        
+        # Compute value range
+        if enumerators:
+            if is_signed:
+                values = [e.value_signed for e in enumerators]
+            else:
+                values = [e.value_unsigned for e in enumerators]
+            
+            min_value = min(values)
+            max_value = max(values)
+        else:
+            min_value = None
+            max_value = None
+        
+        # Detect bitmask pattern
+        is_bitmask = self._is_bitmask_enum(enumerators, is_signed)
+        
+        # Detect sequential pattern
+        is_sequential = self._is_sequential_enum(enumerators, is_signed)
+        
+        return {
+            'enumerators': enumerators,
+            'underlying_type': underlying_type_spelling,
+            'is_signed': is_signed,
+            'min_value': min_value,
+            'max_value': max_value,
+            'is_bitmask': is_bitmask,
+            'is_sequential': is_sequential
+        }
+    
+    def _extract_enumerators(self, enum_cursor: 'CXIDE') -> List[EnumeratorInfo]:
+        """
+        Extract all enumerators from an enum.
+        
+        Args:
+            enum_cursor: Enum declaration cursor
+            
+        Returns:
+            List of EnumeratorInfo
+        """
+        enumerators = []
+        
+        # Visitor to collect enum constants
+        def enumerator_visitor(child_cursor, parent_cursor, client_data):
+            if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.ENUM_CONSTANT_DECL:
+                return CXChildVisitResult.CONTINUE
+            
+            try:
+                enumerator = self._extract_enumerator(child_cursor)
+                enumerators.append(enumerator)
+            except Exception:
+                pass
+            
+            return CXChildVisitResult.CONTINUE
+        
+        visitor_func = CXIDEVisitor(enumerator_visitor)
+        libclang.clang_visitChildren(enum_cursor, visitor_func, None)
+        
+        return enumerators
+    
+    def _extract_enumerator(self, constant_cursor: 'CXIDE') -> EnumeratorInfo:
+        """
+        Extract a single enumerator.
+        
+        Args:
+            constant_cursor: Enum constant cursor
+            
+        Returns:
+            EnumeratorInfo
+        """
+        # Get enumerator name
+        name_cxstr = libclang.clang_getIDESpelling(constant_cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        # Get signed value
+        value_signed = libclang.clang_getEnumConstantDeclValue(constant_cursor)
+        
+        # Get unsigned value
+        value_unsigned = libclang.clang_getEnumConstantDeclUnsignedValue(constant_cursor)
+        
+        return EnumeratorInfo(
+            name=name,
+            value_signed=value_signed,
+            value_unsigned=value_unsigned
+        )
+    
+    def _is_signed_type(self, cxtype: 'CXType') -> bool:
+        """
+        Determine if a type is signed.
+        
+        Args:
+            cxtype: Type to check
+            
+        Returns:
+            True if signed, False if unsigned
+        """
+        kind = cxtype.kind
+        
+        # Unsigned types
+        if kind in [
+            CXTypeKind.UCHAR, CXTypeKind.USHORT, CXTypeKind.UINT,
+            CXTypeKind.ULONG, CXTypeKind.ULONGLONG, CXTypeKind.CHAR_U
+        ]:
+            return False
+        
+        # Signed types (default for most integer types)
+        return True
+    
+    def _is_bitmask_enum(
+        self,
+        enumerators: List[EnumeratorInfo],
+        is_signed: bool
+    ) -> bool:
+        """
+        Detect if enum is a bitmask (all values are powers of 2).
+        
+        Args:
+            enumerators: List of enumerators
+            is_signed: Whether enum is signed
+            
+        Returns:
+            True if bitmask pattern detected
+        """
+        if not enumerators:
+            return False
+        
+        for enum in enumerators:
+            value = enum.value_signed if is_signed else enum.value_unsigned
+            
+            # Skip zero (common in bitmasks)
+            if value == 0:
+                continue
+            
+            # Check if power of 2: (value & (value - 1)) == 0
+            if value < 0 or (value & (value - 1)) != 0:
+                return False
+        
+        return True
+    
+    def _is_sequential_enum(
+        self,
+        enumerators: List[EnumeratorInfo],
+        is_signed: bool
+    ) -> bool:
+        """
+        Detect if enum has sequential values (0, 1, 2, ... or similar).
+        
+        Args:
+            enumerators: List of enumerators
+            is_signed: Whether enum is signed
+            
+        Returns:
+            True if sequential pattern detected
+        """
+        if len(enumerators) < 2:
+            return False
+        
+        values = [
+            (e.value_signed if is_signed else e.value_unsigned)
+            for e in enumerators
+        ]
+        
+        # Check if consecutive
+        sorted_values = sorted(values)
+        for i in range(len(sorted_values) - 1):
+            if sorted_values[i + 1] != sorted_values[i] + 1:
+                return False
+        
+        return True
 
 # ============================================================================
 # RECORD LAYOUT EXTRACTOR ()
@@ -567,10 +825,15 @@ class TypeExtractor:
         # Cache for extracted types
         self._type_cache: Dict[str, TypeInfo] = {}
         self._record_extractor: Optional['RecordLayoutExtractor'] = None
+        self._enum_extractor: Optional['EnumExtractor'] = None
     
     def set_record_extractor(self, extractor: 'RecordLayoutExtractor'):
         """Set record layout extractor (avoid circular dependency)."""
         self._record_extractor = extractor
+        
+    def set_enum_extractor(self, extractor: 'EnumExtractor'):
+        """Set enum extractor (avoid circular dependency)."""
+        self._enum_extractor = extractor
     
     def extract_type(self, cxtype: 'CXType') -> TypeInfo:
         """
@@ -741,8 +1004,16 @@ class TypeExtractor:
         # in ClangFrontend. This method sets up basic record info.
     
     def _extract_enum_info(self, cxtype: 'CXType', type_info: TypeInfo):
-        """Extract enum type information."""
-        # Underlying integer type (requires declaration cursor, simplified for now)
+        """
+        Extract enum type information.
+        
+        Enhanced in  to extract complete enum metadata.
+        
+        Important: Full extraction requires cursor, which is not available from
+        CXType alone. Enum extraction happens when processing cursors in
+        ClangFrontend. This method sets up basic enum info.
+        """
+        # Placeholder - full extraction in ClangFrontend with cursor access
         type_info.underlying_type = 'int'  # Default assumption
 
 # ============================================================================
@@ -1083,6 +1354,7 @@ class CXIDEKind(IntEnum):
     ENUM_DECL = 5
     FUNCTION_DECL = 8
     VAR_DECL = 9
+    ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
 
 class CXLinkageKind(IntEnum):
@@ -1210,6 +1482,15 @@ if LIBCLANG_AVAILABLE:
         libclang.clang_Type_getNumFields.argtypes = [CXType]
     libclang.clang_Type_getNumFields.restype = ctypes.c_int
 
+        libclang.clang_getEnumDeclIntegerType.argtypes = [CXIDE]
+    libclang.clang_getEnumDeclIntegerType.restype = CXType
+    
+    libclang.clang_getEnumConstantDeclValue.argtypes = [CXIDE]
+    libclang.clang_getEnumConstantDeclValue.restype = ctypes.c_longlong
+    
+    libclang.clang_getEnumConstantDeclUnsignedValue.argtypes = [CXIDE]
+    libclang.clang_getEnumConstantDeclUnsignedValue.restype = ctypes.c_ulonglong
+
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
     """Convert CXString to Python string and dispose."""
@@ -1274,7 +1555,10 @@ class ClangFrontend(CompilerFrontend):
         
                 self._type_extractor = TypeExtractor()
         self._record_extractor = RecordLayoutExtractor(self._type_extractor)
+        self._enum_extractor = EnumExtractor(self._type_extractor)
+        
         self._type_extractor.set_record_extractor(self._record_extractor)
+        self._type_extractor.set_enum_extractor(self._enum_extractor)
     
     @property
     def compiler_name(self) -> str:
@@ -1502,9 +1786,25 @@ class ClangFrontend(CompilerFrontend):
                 # Extract detailed layout
                 layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
                 symbol_type_info.record_layout = layoutValue
+            except Exception:
+                pass
+        
+                if kind == CXIDEKind.ENUM_DECL:
+            try:
+                # Extract basic type info first
+                symbol_type_info = self._type_extractor.extract_type(cursor_type)
                 
-                # Update symbol type spelling if needed or add to a type map
-                # For now, we just ensure the layout is available in the type info
+                # Extract detailed enum info
+                enum_meta = self._enum_extractor.extract_enum_info(cursor, cursor_type)
+                
+                # Update TypeInfo with enum metadata
+                symbol_type_info.enum_enumerators = enum_meta['enumerators']
+                symbol_type_info.enum_underlying_type = enum_meta['underlying_type']
+                symbol_type_info.enum_is_signed = enum_meta['is_signed']
+                symbol_type_info.enum_min_value = enum_meta['min_value']
+                symbol_type_info.enum_max_value = enum_meta['max_value']
+                symbol_type_info.enum_is_bitmask = enum_meta['is_bitmask']
+                symbol_type_info.enum_is_sequential = enum_meta['is_sequential']
             except Exception:
                 pass
         

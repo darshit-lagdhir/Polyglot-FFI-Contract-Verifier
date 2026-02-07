@@ -39,7 +39,9 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
         FieldInfo,
     PaddingInfo,
     RecordLayout,
-    RecordLayoutExtractor
+    RecordLayoutExtractor,
+        EnumeratorInfo,
+    EnumExtractor
 )
 
 # ============================================================================
@@ -55,8 +57,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '4/20'
-        assert info['status'] == 'layout_extraction'
+        assert info['prompt'] == '6/20'
+        assert info['status'] == 'enum_extraction'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -799,9 +801,204 @@ class TestRecordLayoutExtractor:
         assert extractor.type_extractor == type_extractor
 
 # ============================================================================
+# TEST: ENUM EXTRACTION ()
+# ============================================================================
+
+class TestEnumeratorInfo:
+    """Test enumerator information structure."""
+    
+    def test_enumerator_creation(self):
+        """Test creating enumerator info."""
+        enum = EnumeratorInfo(
+            name='RED',
+            value_signed=0,
+            value_unsigned=0
+        )
+        
+        assert enum.name == 'RED'
+        assert enum.value_signed == 0
+        assert enum.value_unsigned == 0
+    
+    def test_enumerator_with_negative_value(self):
+        """Test enumerator with negative value."""
+        enum = EnumeratorInfo(
+            name='ERROR',
+            value_signed=-1,
+            value_unsigned=0xFFFFFFFFFFFFFFFF  # Two's complement
+        )
+        
+        assert enum.value_signed == -1
+        assert enum.value_unsigned > 0
+    
+    def test_enumerator_serialization(self):
+        """Test enumerator serialization."""
+        enum = EnumeratorInfo(
+            name='FLAG_A',
+            value_signed=1,
+            value_unsigned=1
+        )
+        
+        data = enum.to_dict()
+        
+        assert data['name'] == 'FLAG_A'
+        assert data['value_signed'] == 1
+        assert data['value_unsigned'] == 1
+
+class TestEnumTypeInfo:
+    """Test TypeInfo with enum metadata."""
+    
+    def test_enum_type_creation(self):
+        """Test creating enum type info."""
+        tinfo = TypeInfo(
+            name='Color',
+            canonical_name='enum Color',
+            kind='enum',
+            size_bytes=4,
+            alignment_bytes=4,
+            enum_underlying_type='int',
+            enum_is_signed=True
+        )
+        
+        assert tinfo.kind == 'enum'
+        assert tinfo.enum_underlying_type == 'int'
+        assert tinfo.enum_is_signed is True
+    
+    def test_enum_with_enumerators(self):
+        """Test enum with enumerators."""
+        enum1 = EnumeratorInfo('A', 0, 0)
+        enum2 = EnumeratorInfo('B', 1, 1)
+        
+        tinfo = TypeInfo(
+            name='Letters',
+            canonical_name='enum Letters',
+            kind='enum',
+            enum_enumerators=[enum1, enum2],
+            enum_min_value=0,
+            enum_max_value=1
+        )
+        
+        assert len(tinfo.enum_enumerators) == 2
+        assert tinfo.enum_min_value == 0
+        assert tinfo.enum_max_value == 1
+    
+    def test_bitmask_enum(self):
+        """Test bitmask enum detection."""
+        tinfo = TypeInfo(
+            name='Flags',
+            canonical_name='enum Flags',
+            kind='enum',
+            enum_is_bitmask=True
+        )
+        
+        assert tinfo.enum_is_bitmask is True
+    
+    def test_sequential_enum(self):
+        """Test sequential enum detection."""
+        tinfo = TypeInfo(
+            name='Status',
+            canonical_name='enum Status',
+            kind='enum',
+            enum_is_sequential=True
+        )
+        
+        assert tinfo.enum_is_sequential is True
+    
+    def test_enum_serialization(self):
+        """Test enum type serialization."""
+        enum1 = EnumeratorInfo('X', 10, 10)
+        enum2 = EnumeratorInfo('Y', 20, 20)
+        
+        tinfo = TypeInfo(
+            name='Coords',
+            canonical_name='enum Coords',
+            kind='enum',
+            size_bytes=4,
+            enum_enumerators=[enum1, enum2],
+            enum_underlying_type='int',
+            enum_is_signed=True,
+            enum_min_value=10,
+            enum_max_value=20
+        )
+        
+        data = tinfo.to_dict()
+        
+        assert 'enum' in data
+        assert len(data['enum']['enumerators']) == 2
+        assert data['enum']['underlying_type'] == 'int'
+        assert data['enum']['min_value'] == 10
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestEnumExtractor:
+    """Test enum extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating enum extractor."""
+        type_extractor = TypeExtractor()
+        extractor = EnumExtractor(type_extractor)
+        
+        assert extractor is not None
+        assert extractor.type_extractor == type_extractor
+    
+    def test_bitmask_detection_powers_of_2(self):
+        """Test bitmask detection with powers of 2."""
+        extractor = EnumExtractor(TypeExtractor())
+        
+        enums = [
+            EnumeratorInfo('A', 1, 1),
+            EnumeratorInfo('B', 2, 2),
+            EnumeratorInfo('C', 4, 4),
+            EnumeratorInfo('D', 8, 8)
+        ]
+        
+        is_bitmask = extractor._is_bitmask_enum(enums, False)
+        assert is_bitmask is True
+    
+    def test_bitmask_detection_non_powers(self):
+        """Test bitmask detection with non-powers of 2."""
+        extractor = EnumExtractor(TypeExtractor())
+        
+        enums = [
+            EnumeratorInfo('A', 0, 0),
+            EnumeratorInfo('B', 1, 1),
+            EnumeratorInfo('C', 2, 2),
+            EnumeratorInfo('D', 3, 3)  # Not power of 2
+        ]
+        
+        is_bitmask = extractor._is_bitmask_enum(enums, False)
+        assert is_bitmask is False
+    
+    def test_sequential_detection_consecutive(self):
+        """Test sequential detection with consecutive values."""
+        extractor = EnumExtractor(TypeExtractor())
+        
+        enums = [
+            EnumeratorInfo('A', 0, 0),
+            EnumeratorInfo('B', 1, 1),
+            EnumeratorInfo('C', 2, 2),
+            EnumeratorInfo('D', 3, 3)
+        ]
+        
+        is_seq = extractor._is_sequential_enum(enums, True)
+        assert is_seq is True
+    
+    def test_sequential_detection_gaps(self):
+        """Test sequential detection with gaps."""
+        extractor = EnumExtractor(TypeExtractor())
+        
+        enums = [
+            EnumeratorInfo('A', 0, 0),
+            EnumeratorInfo('B', 1, 1),
+            EnumeratorInfo('C', 5, 5),  # Gap
+            EnumeratorInfo('D', 6, 6)
+        ]
+        
+        is_seq = extractor._is_sequential_enum(enums, True)
+        assert is_seq is False
+
+# ============================================================================
 # MEDIUM LEVEL TESTING: 80-100 TESTS TARGET
-# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) = 51 tests
-# Progress: 51 components minimum for medium level
+# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) = 79 tests
+# Progress: 79 components minimum for medium level
 # ============================================================================
 
 if __name__ == '__main__':
