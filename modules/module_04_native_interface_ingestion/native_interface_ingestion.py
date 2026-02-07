@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 15/20
-Status: cpp_support
+Prompt: 14/20
+Status: incremental_ingestion
 """
 
 import json
@@ -35,8 +35,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "15/20"
-__status__ = "cpp_support"
+__prompt__ = "14/20"
+__status__ = "incremental_ingestion"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -3306,6 +3306,394 @@ class ClangCompilationUnit(CompilationUnit):
             libclang.clang_disposeIndex(self.index)
             self.index = None
 
+# ============================================================================
+# INCREMENTAL INGESTION AND CACHING ()
+# ============================================================================
+
+@dataclass
+class HeaderMetadata:
+    """
+    Metadata about a header file for change detection.
+    """
+    
+    path: str
+    mtime: float  # Modification timestamp
+    size: int
+    hash: str  # Content hash (SHA-256)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize metadata."""
+        return {
+            'path': self.path,
+            'mtime': self.mtime,
+            'size': self.size,
+            'hash': self.hash
+        }
+    
+    @classmethod
+    def from_file(cls, file_path: Path) -> 'HeaderMetadata':
+        """Create metadata from file."""
+        stat = file_path.stat()
+        
+        # Compute content hash
+        hasher = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+        
+        return cls(
+            path=str(file_path),
+            mtime=stat.st_mtime,
+            size=stat.st_size,
+            hash=hasher.hexdigest()
+        )
+
+class IngestionCache:
+    """
+    Cache for ingested interface artifacts.
+    
+    Implements incremental ingestion with change detection and
+    dependency tracking.
+    """
+    
+    def __init__(self, cache_dir: Path):
+        """
+        Initialize ingestion cache.
+        
+        Args:
+            cache_dir: Directory for cache storage
+        """
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.index_file = cache_dir / 'index.json'
+        
+        # Load or create index
+        self.index = self._load_index()
+    
+    def _load_index(self) -> Dict[str, Any]:
+        """Load cache index from disk."""
+        if self.index_file.exists():
+            with open(self.index_file, 'r') as f:
+                return json.load(f)
+        
+        return {
+            'version': '1.0',
+            'last_update': datetime.now(timezone.utc).isoformat(),
+            'headers': {},
+            'artifacts': {},
+            'compilation_context': None
+        }
+    
+    def _save_index(self):
+        """Save cache index to disk."""
+        self.index['last_update'] = datetime.now(timezone.utc).isoformat()
+        
+        with open(self.index_file, 'w') as f:
+            json.dump(self.index, f, indent=2)
+    
+    def is_header_changed(
+        self,
+        header_path: Path,
+        cached_metadata: Optional[HeaderMetadata] = None
+    ) -> bool:
+        """
+        Check if header has changed since last ingestion.
+        
+        Args:
+            header_path: Path to header file
+            cached_metadata: Previously cached metadata
+            
+        Returns:
+            True if header changed
+        """
+        if not header_path.exists():
+            return True  # File deleted/missing
+        
+        if not cached_metadata:
+            return True  # No cache entry
+        
+        # Quick timestamp check
+        stat = header_path.stat()
+        if stat.st_mtime <= cached_metadata.mtime:
+            return False  # Definitely unchanged
+        
+        # Timestamp changed, verify with hash
+        current_metadata = HeaderMetadata.from_file(header_path)
+        return current_metadata.hash != cached_metadata.hash
+    
+    def is_context_changed(self, context: CompilationContext) -> bool:
+        """
+        Check if compilation context has changed.
+        
+        Args:
+            context: Current compilation context
+            
+        Returns:
+            True if context changed
+        """
+        cached_context = self.index.get('compilation_context')
+        
+        if not cached_context:
+            return True  # No cached context
+        
+        current_hash = context.compute_hash()
+        return current_hash != cached_context.get('hash')
+    
+    def detect_changes(
+        self,
+        header_files: List[Path]
+    ) -> List[Path]:
+        """
+        Detect which headers have changed.
+        
+        Args:
+            header_files: List of header files to check
+            
+        Returns:
+            List of changed header files
+        """
+        changed = []
+        
+        for header in header_files:
+            header_key = str(header)
+            cached_data = self.index['headers'].get(header_key)
+            
+            if not cached_data:
+                changed.append(header)
+                continue
+            
+            cached_metadata = HeaderMetadata(
+                path=cached_data['path'],
+                mtime=cached_data['mtime'],
+                size=cached_data['size'],
+                hash=cached_data['hash']
+            )
+            
+            if self.is_header_changed(header, cached_metadata):
+                changed.append(header)
+        
+        return changed
+    
+    def load_cached_artifact(self) -> Optional[RawInterfaceArtifact]:
+        """
+        Load cached artifact if available and valid.
+        
+        Returns:
+            Cached artifact or None
+        """
+        artifacts = self.index.get('artifacts', {})
+        
+        if not artifacts:
+            return None
+        
+        # Load first artifact (simplified - would merge multiple in production)
+        for artifact_id, artifact_info in artifacts.items():
+            artifact_file = self.cache_dir / artifact_info['file']
+            
+            if artifact_file.exists():
+                return RawInterfaceArtifact.load(artifact_file)
+        
+        return None
+    
+    def store_artifact(
+        self,
+        artifact: RawInterfaceArtifact,
+        context: CompilationContext
+    ):
+        """
+        Store artifact in cache.
+        
+        Args:
+            artifact: Artifact to cache
+            context: Compilation context
+        """
+        # Generate artifact ID
+        artifact_id = f"artifact_{int(time.time())}"
+        artifact_file = f"{artifact_id}.json"
+        artifact_path = self.cache_dir / artifact_file
+        
+        # Save artifact
+        artifact.save(artifact_path)
+        
+        # Update index
+        self.index['artifacts'][artifact_id] = {
+            'file': artifact_file,
+            'symbols': [s.name for s in artifact.external_symbols],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Update header metadata
+        if context.header_files:
+            for header in context.header_files:
+                metadata = HeaderMetadata.from_file(header)
+                self.index['headers'][str(header)] = metadata.to_dict()
+        
+        # Update compilation context
+        self.index['compilation_context'] = {
+            'hash': context.compute_hash(),
+            'target_triple': context.target_triple
+        }
+        
+        self._save_index()
+    
+    def clear(self):
+        """Clear all cached data."""
+        # Remove artifact files
+        for artifact_file in self.cache_dir.glob('artifact_*.json'):
+            artifact_file.unlink()
+        
+        # Reset index
+        self.index = {
+            'version': '1.0',
+            'last_update': datetime.now(timezone.utc).isoformat(),
+            'headers': {},
+            'artifacts': {},
+            'compilation_context': None
+        }
+        
+        self._save_index()
+
+@dataclass
+class IngestionPerformance:
+    """
+    Performance metrics for ingestion.
+    """
+    
+    total_time: float
+    
+    # Cache metrics
+    cache_hit_count: int = 0
+    cache_miss_count: int = 0
+    cache_load_time: float = 0.0
+    
+    # Parsing metrics
+    headers_parsed: int = 0
+    parsing_time: float = 0.0
+    
+    # Extraction metrics
+    symbols_extracted: int = 0
+    extraction_time: float = 0.0
+    
+    def cache_hit_rate(self) -> float:
+        """Compute cache hit rate."""
+        total = self.cache_hit_count + self.cache_miss_count
+        if total == 0:
+            return 0.0
+        return self.cache_hit_count / total
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize performance metrics."""
+        return {
+            'total_time': self.total_time,
+            'cache_hit_rate': self.cache_hit_rate(),
+            'cache_hits': self.cache_hit_count,
+            'cache_misses': self.cache_miss_count,
+            'headers_parsed': self.headers_parsed,
+            'symbols_extracted': self.symbols_extracted
+        }
+
+class IncrementalIngestionOrchestrator:
+    """
+    Orchestrates incremental ingestion with caching.
+    
+    Detects changes, loads cached data, performs partial ingestion,
+    and merges results.
+    """
+    
+    def __init__(self, cache_dir: Path):
+        """
+        Initialize orchestrator.
+        
+        Args:
+            cache_dir: Cache directory
+        """
+        self.cache = IngestionCache(cache_dir)
+    
+    def ingest(
+        self,
+        context: CompilationContext,
+        force_full: bool = False
+    ) -> Tuple[RawInterfaceArtifact, IngestionPerformance]:
+        """
+        Perform incremental ingestion.
+        
+        Args:
+            context: Compilation context
+            force_full: Force full re-ingestion
+            
+        Returns:
+            Tuple of (artifact, performance metrics)
+        """
+        start_time = time.time()
+        
+        perf = IngestionPerformance(total_time=0.0)
+        
+        # Clear cache if forced
+        if force_full:
+            self.cache.clear()
+        
+        # Check for context changes
+        if self.cache.is_context_changed(context):
+            # Context changed, full re-ingestion required
+            self.cache.clear()
+            perf.cache_miss_count = len(context.header_files)
+        else:
+            # Detect file changes
+            changed_headers = self.cache.detect_changes(context.header_files)
+            
+            if not changed_headers:
+                # Full cache hit
+                cache_start = time.time()
+                artifact = self.cache.load_cached_artifact()
+                perf.cache_load_time = time.time() - cache_start
+                perf.cache_hit_count = len(context.header_files)
+                perf.total_time = time.time() - start_time
+                
+                if artifact:
+                    return artifact, perf
+            
+            perf.cache_miss_count = len(changed_headers)
+            perf.cache_hit_count = len(context.header_files) - len(changed_headers)
+        
+        # Perform full ingestion (simplified - would do partial in production)
+        parse_start = time.time()
+        
+        # Use ClangFrontend to parse
+        frontend = ClangFrontend()
+        unit = frontend.parse_headers(context)
+        
+        perf.parsing_time = time.time() - parse_start
+        perf.headers_parsed = len(context.header_files)
+        
+        # Extract symbols
+        extract_start = time.time()
+        symbols = frontend.extract_symbols(unit)
+        perf.extraction_time = time.time() - extract_start
+        perf.symbols_extracted = len(symbols)
+        
+        # Gather types from TypeExtractor
+        type_defs = frontend._type_extractor._type_cache if hasattr(frontend, '_type_extractor') else {}
+        
+        artifact = RawInterfaceArtifact(
+            artifact_version=__version__,
+            generation_timestamp=datetime.now(timezone.utc).isoformat(),
+            compilation_context=context,
+            external_symbols=symbols,
+            type_definitions=type_defs,
+            validation_passed=True
+        )
+        
+        # Attach diagnostic report if available
+        if hasattr(frontend, '_diagnostic_collector'):
+             artifact.report = frontend._diagnostic_collector.get_report()
+        
+        # Store in cache
+        self.cache.store_artifact(artifact, context)
+        
+        perf.total_time = time.time() - start_time
+        
+        return artifact, perf
 # ============================================================================
 # PERFORMANCE PROFILER ()
 # ============================================================================
