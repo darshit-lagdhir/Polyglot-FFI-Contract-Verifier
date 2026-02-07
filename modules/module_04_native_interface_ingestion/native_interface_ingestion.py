@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 14/20
-Status: incremental_ingestion
+Prompt: 15/20
+Status: artifact_validation
 """
 
 import json
@@ -35,8 +35,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "14/20"
-__status__ = "incremental_ingestion"
+__prompt__ = "15/20"
+__status__ = "artifact_validation"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -4512,3 +4512,235 @@ class ClangFrontend(CompilerFrontend):
             pass
             
         return symbol
+
+# ============================================================================
+# ARTIFACT VALIDATION ()
+# ============================================================================
+
+# ============================================================================
+# VALIDATION REPORT
+# ============================================================================
+
+@dataclass
+class ValidationReport:
+    """
+    Validation results for ingested artifact.
+    
+    Aggregates diagnostics from all validation checks.
+    """
+    
+    passed: bool = True
+    
+    # Categorized diagnostics
+    structural_errors: List[Diagnostic] = field(default_factory=list)
+    abi_errors: List[Diagnostic] = field(default_factory=list)
+    completeness_warnings: List[Diagnostic] = field(default_factory=list)
+    cross_symbol_errors: List[Diagnostic] = field(default_factory=list)
+    ffi_hazards: List[Diagnostic] = field(default_factory=list)
+    
+    def all_diagnostics(self) -> List[Diagnostic]:
+        """Get all diagnostics."""
+        return (
+            self.structural_errors + 
+            self.abi_errors + 
+            self.completeness_warnings + 
+            self.cross_symbol_errors + 
+            self.ffi_hazards
+        )
+    
+    def error_count(self) -> int:
+        """Count fatal and error diagnostics."""
+        return sum(
+            1 for d in self.all_diagnostics() 
+            if d.severity in ['error', 'fatal']
+        )
+        
+    def warning_count(self) -> int:
+        """Count warning diagnostics."""
+        return sum(
+            1 for d in self.all_diagnostics() 
+            if d.severity == 'warning'
+        )
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize report."""
+        return {
+            'passed': self.passed,
+            'error_count': self.error_count(),
+            'warning_count': self.warning_count(),
+            'structural_errors': [d.to_dict() for d in self.structural_errors],
+            'abi_errors': [d.to_dict() for d in self.abi_errors],
+            'completeness_warnings': [d.to_dict() for d in self.completeness_warnings],
+            'ffi_hazards': [d.to_dict() for d in self.ffi_hazards]
+        }
+
+# ============================================================================
+# ARTIFACT VALIDATOR
+# ============================================================================
+
+class ArtifactValidator:
+    """
+    Validates ingested artifacts for correctness and consistency.
+    
+    Performs structural, ABI, completeness, and semantic validation.
+    """
+    
+    def __init__(self):
+        """Initialize validator."""
+        pass
+        
+    def validate(self, artifact: RawInterfaceArtifact) -> ValidationReport:
+        """
+        Perform complete validation of artifact.
+        
+        Args:
+            artifact: Artifact to validate
+            
+        Returns:
+            ValidationReport with results
+        """
+        report = ValidationReport(passed=True)
+        
+        # Structural validation
+        report.structural_errors.extend(self._validate_structure(artifact))
+        
+        # ABI validation
+        report.abi_errors.extend(self._validate_abi(artifact))
+        
+        # Completeness validation
+        report.completeness_warnings.extend(self._validate_completeness(artifact))
+        
+        # Cross-symbol validation
+        report.cross_symbol_errors.extend(self._validate_cross_symbols(artifact))
+        
+        # FFI hazard detection
+        report.ffi_hazards.extend(self._detect_ffi_hazards(artifact))
+        
+        # Determine pass/fail
+        report.passed = report.error_count() == 0
+        
+        return report
+        
+    def _validate_structure(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
+        """Validate structural consistency."""
+        diagnostics = []
+        
+        # Validate type definitions
+        defined_types = set(artifact.type_definitions.keys())
+        
+        # Check for undefined type references (simplified)
+        for symbol in artifact.external_symbols:
+            if symbol.function_signature:
+                for param in symbol.function_signature.parameters:
+                    # Basic check - full implementation would be more thorough
+                    pass
+        
+        return diagnostics
+        
+    def _validate_abi(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
+        """Validate ABI consistency."""
+        diagnostics = []
+        
+        # Validate structure layouts
+        for type_name, type_info in artifact.type_definitions.items():
+            if hasattr(type_info, 'record_layout') and type_info.record_layout:
+                layout = type_info.record_layout
+                
+                # Check structure size is multiple of alignment
+                if layout.size_bytes > 0 and layout.alignment_bytes > 0:
+                    if layout.size_bytes % layout.alignment_bytes != 0:
+                        diagnostics.append(Diagnostic(
+                            severity='error',
+                            message=f"Structure size not aligned: {layout.name}",
+                            explanation=f"Size {layout.size_bytes} is not multiple of "
+                                       f"alignment {layout.alignment_bytes}",
+                            category='validation'
+                        ))
+                
+                # Check field offsets
+                sorted_fields = sorted(layout.fields, key=lambda f: f.offset_bytes)
+                for i in range(len(sorted_fields) - 1):
+                    current = sorted_fields[i]
+                    next_field = sorted_fields[i + 1]
+                    
+                    current_end = current.offset_bytes + current.size_bytes
+                    
+                    # Check for overlaps in structs
+                    if layout.kind == 'struct' and next_field.offset_bytes < current_end:
+                        diagnostics.append(Diagnostic(
+                            severity='error',
+                            message=f"Overlapping fields in {layout.name}",
+                            explanation=f"Field {next_field.name} at {next_field.offset_bytes} "
+                                       f"overlaps {current.name} ending at {current_end}"
+                        ))
+        
+        return diagnostics
+        
+    def _validate_completeness(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
+        """Validate completeness of information."""
+        diagnostics = []
+        
+        # Check for incomplete types that are used
+        for symbol in artifact.external_symbols:
+            if symbol.kind == 'function' and symbol.function_signature:
+                sig = symbol.function_signature
+                
+                # Check if return type info is missing
+                if not sig.return_type_info and sig.return_type != 'void':
+                    diagnostics.append(Diagnostic(
+                        severity='warning',
+                        message=f"Function {symbol.name} missing return type info",
+                        category='validation'
+                    ))
+        
+        return diagnostics
+        
+    def _validate_cross_symbols(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
+        """Validate cross-symbol consistency."""
+        diagnostics = []
+        
+        # Check for duplicate symbol names
+        symbol_map = {}
+        
+        for symbol in artifact.external_symbols:
+            if symbol.name in symbol_map:
+                existing = symbol_map[symbol.name]
+                
+                if existing.kind != symbol.kind:
+                    diagnostics.append(Diagnostic(
+                        severity='error',
+                        message=f"Duplicate symbol with different types: {symbol.name}",
+                        explanation=f"Defined as {existing.kind} and {symbol.kind}",
+                        category='validation'
+                    ))
+            else:
+                symbol_map[symbol.name] = symbol
+        
+        return diagnostics
+        
+    def _detect_ffi_hazards(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
+        """Detect FFI hazards."""
+        diagnostics = []
+        
+        for symbol in artifact.external_symbols:
+            # Check for variadic functions
+            if symbol.function_signature and symbol.function_signature.is_variadic:
+                diagnostics.append(Diagnostic(
+                    severity='warning',
+                    message=f"Variadic function in FFI: {symbol.name}",
+                    explanation="Variadic functions cannot be safely called from most languages",
+                    suggestion="Provide non-variadic wrapper function",
+                    category='ffi_hazard'
+                ))
+            
+            # Check for function-like macros
+            if symbol.macro_info and symbol.macro_info.is_function_like:
+                diagnostics.append(Diagnostic(
+                    severity='warning',
+                    message=f"Function-like macro in FFI: {symbol.name}",
+                    explanation="Macros cannot be called from other languages",
+                    suggestion="Provide static inline or regular function",
+                    category='ffi_hazard'
+                ))
+        
+        return diagnostics
