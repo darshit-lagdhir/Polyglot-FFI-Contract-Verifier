@@ -15,15 +15,15 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 1/20
-Status: Foundation
+Prompt: 9/20
+Status: typedef_resolution
 """
 
 import json
 import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "7/20"
-__status__ = "function_extraction"
+__prompt__ = "9/20"
+__status__ = "typedef_resolution"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -138,6 +138,8 @@ class ExternalSymbol:
     
         function_signature: Optional['FunctionSignature'] = None
     
+        global_variable_info: Optional['GlobalVariableInfo'] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
         data = {
@@ -157,6 +159,9 @@ class ExternalSymbol:
             
         if self.function_signature:
             data['function_signature'] = self.function_signature.to_dict()
+            
+        if self.global_variable_info:
+            data['global_variable_info'] = self.global_variable_info.to_dict()
         
         return data
 
@@ -237,6 +242,65 @@ class FunctionSignature:
         return data
 
 @dataclass
+class GlobalVariableInfo:
+    """
+    Complete information about a global variable.
+    
+    Captures type, size, alignment, mutability, threading, and visibility.
+    """
+    
+    variable_type: str  # Type spelling
+    type_info: Optional['TypeInfo'] = None
+    
+    # Size and alignment
+    size_bytes: int = 0
+    alignment_bytes: int = 0
+    
+    # Mutability qualifiers
+    is_const: bool = False
+    is_volatile: bool = False
+    is_restrict: bool = False
+    
+    # Thread-local storage
+    is_thread_local: bool = False
+    
+    # Linkage and visibility
+    visibility: Optional[str] = None  # 'default', 'hidden', 'protected', 'invalid'
+    
+    # Attributes
+    section: Optional[str] = None  # Memory section name
+    explicit_alignment: Optional[int] = None  # Explicit alignment attribute
+    
+    # Definition status
+    is_definition: bool = False  # True if this is a definition, not just declaration
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize global variable info."""
+        data = {
+            'variable_type': self.variable_type,
+            'size_bytes': self.size_bytes,
+            'alignment_bytes': self.alignment_bytes,
+            'is_const': self.is_const,
+            'is_volatile': self.is_volatile,
+            'is_thread_local': self.is_thread_local,
+            'is_definition': self.is_definition
+        }
+        
+        if self.type_info:
+            data['type_info'] = self.type_info.to_dict()
+        
+        if self.visibility:
+            data['visibility'] = self.visibility
+        
+        if self.section:
+            data['section'] = self.section
+        
+        if self.explicit_alignment:
+            data['explicit_alignment'] = self.explicit_alignment
+        
+        return data
+
+@dataclass
 class EnumeratorInfo:
     """
     Information about a single enumerator (enum constant).
@@ -254,6 +318,35 @@ class EnumeratorInfo:
             'name': self.name,
             'value_signed': self.value_signed,
             'value_unsigned': self.value_unsigned
+        }
+
+@dataclass
+class TypedefInfo:
+    """
+    Information about a typedef.
+    
+    Captures the typedef name, underlying type, canonical type,
+    and complete resolution chain.
+    """
+    
+    typedef_name: str           # The typedef identifier
+    underlying_type: str        # Direct underlying type
+    canonical_type: str         # Fully resolved canonical type
+    typedef_chain: List[str]    # Complete chain: [name, ..., canonical]
+    
+    # Completeness
+    is_forward_declaration: bool = False
+    is_incomplete: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize typedef info."""
+        return {
+            'typedef_name': self.typedef_name,
+            'underlying_type': self.underlying_type,
+            'canonical_type': self.canonical_type,
+            'typedef_chain': self.typedef_chain,
+            'is_forward_declaration': self.is_forward_declaration,
+            'is_incomplete': self.is_incomplete
         }
 
 @dataclass
@@ -313,6 +406,11 @@ class TypeInfo:
     enum_is_bitmask: bool = False
     enum_is_sequential: bool = False
     
+        typedef_info: Optional[TypedefInfo] = None
+    
+    # Simplified typedef chain (for quick access)
+    typedef_chain: List[str] = field(default_factory=list)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type info to dictionary."""
         data = {
@@ -365,6 +463,12 @@ class TypeInfo:
                 'is_bitmask': self.enum_is_bitmask,
                 'is_sequential': self.enum_is_sequential
             }
+            
+        if self.typedef_info:
+            data['typedef_info'] = self.typedef_info.to_dict()
+            
+        if self.typedef_chain:
+            data['typedef_chain'] = self.typedef_chain
         
         return data
 
@@ -383,11 +487,11 @@ class FieldInfo:
     name: str
     field_type: str  # Type name (e.g., 'int', 'struct Point*')
     offset_bytes: int  # Byte offset from structure base
-    size_bytes: int
-    alignment_bytes: int
+    offset_bits: int = 0  # Exact bit offset
+    size_bytes: int = 0
+    alignment_bytes: int = 0
     
-    # Bitfield properties (basic detection, full handling in later prompts)
-    is_bitfield: bool = False
+        is_bitfield: bool = False
     bitfield_width: Optional[int] = None
     
     # Complete type information
@@ -399,6 +503,7 @@ class FieldInfo:
             'name': self.name,
             'field_type': self.field_type,
             'offset_bytes': self.offset_bytes,
+            'offset_bits': self.offset_bits,
             'size_bytes': self.size_bytes,
             'alignment_bytes': self.alignment_bytes
         }
@@ -464,6 +569,137 @@ class RecordLayout:
             'is_packed': self.is_packed,
             'is_anonymous': self.is_anonymous
         }
+
+# ============================================================================
+# GLOBAL VARIABLE EXTRACTOR ()
+# ============================================================================
+
+class GlobalVariableExtractor:
+    """
+    Extracts complete global variable information from Clang AST.
+    
+    Handles mutability analysis, thread-local detection, visibility queries,
+    and attribute extraction.
+    """
+    
+    def __init__(self, type_extractor: 'TypeExtractor'):
+        """
+        Initialize global variable extractor.
+        
+        Args:
+            type_extractor: TypeExtractor for variable type resolution
+        """
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        self.type_extractor = type_extractor
+    
+    def extract_global_variable(
+        self,
+        var_cursor: 'CXIDE'
+    ) -> GlobalVariableInfo:
+        """
+        Extract complete global variable information.
+        
+        Args:
+            var_cursor: Variable declaration cursor
+            
+        Returns:
+            Complete GlobalVariableInfo
+        """
+        # Get variable type
+        var_type = libclang.clang_getIDEType(var_cursor)
+        type_spelling = self.type_extractor._get_type_spelling(var_type)
+        
+        # Get size and alignment
+        size = libclang.clang_Type_getSizeOf(var_type)
+        alignment = libclang.clang_Type_getAlignOf(var_type)
+        
+        # Detect mutability qualifiers
+        is_const = bool(libclang.clang_isConstQualifiedType(var_type))
+        is_volatile = bool(libclang.clang_isVolatileQualifiedType(var_type))
+        is_restrict = bool(libclang.clang_isRestrictQualifiedType(var_type))
+        
+        # Detect thread-local storage
+        is_thread_local = self._detect_thread_local(var_cursor)
+        
+        # Get visibility
+        visibility = self._get_visibility(var_cursor)
+        
+        # Check if definition
+        if hasattr(libclang, 'clang_isIDEDefinition'):
+            is_definition = bool(libclang.clang_isIDEDefinition(var_cursor))
+        else:
+            # Fallback: check spelling equality with logical name which is weak
+            # Better fallback: use clang_getIDEDefinition and compare cursors
+            is_definition = False # Default
+        
+        # Create variable info
+        var_info = GlobalVariableInfo(
+            variable_type=type_spelling,
+            size_bytes=max(0, size),
+            alignment_bytes=max(0, alignment),
+            is_const=is_const,
+            is_volatile=is_volatile,
+            is_restrict=is_restrict,
+            is_thread_local=is_thread_local,
+            visibility=visibility,
+            is_definition=is_definition
+        )
+        
+        # Extract complete type info
+        try:
+            var_info.type_info = self.type_extractor.extract_type(var_type)
+        except Exception:
+            pass
+        
+        return var_info
+    
+    def _detect_thread_local(self, cursor: 'CXIDE') -> bool:
+        """
+        Detect if variable is thread-local.
+        
+        Args:
+            cursor: Variable cursor
+            
+        Returns:
+            True if thread-local
+        """
+        # Check display name for thread-local keywords
+        display_name_cxstr = libclang.clang_getIDEDisplayName(cursor)
+        display_name = clang_string_to_python(display_name_cxstr)
+        
+        # Look for TLS keywords
+        tls_keywords = ['__thread', 'thread_local', '_Thread_local', '__declspec(thread)']
+        for keyword in tls_keywords:
+            if keyword in display_name:
+                return True
+        
+        return False
+    
+    def _get_visibility(self, cursor: 'CXIDE') -> str:
+        """
+        Get symbol visibility.
+        
+        Args:
+            cursor: Variable cursor
+            
+        Returns:
+            Visibility string
+        """
+        if not hasattr(libclang, 'clang_getIDEVisibility'):
+            return 'unknown'
+            
+        visibility = libclang.clang_getIDEVisibility(cursor)
+        
+        visibility_map = {
+            CXVisibilityKind.DEFAULT: 'default',
+            CXVisibilityKind.HIDDEN: 'hidden',
+            CXVisibilityKind.PROTECTED: 'protected',
+            CXVisibilityKind.INVALID: 'invalid'
+        }
+        
+        return visibility_map.get(visibility, 'unknown')
 
 # ============================================================================
 # FUNCTION SIGNATURE EXTRACTOR ()
@@ -1026,17 +1262,21 @@ class RecordLayoutExtractor:
         size = libclang.clang_Type_getSizeOf(field_type)
         alignment = libclang.clang_Type_getAlignOf(field_type)
         
-        # Detect bitfield (offset not byte-aligned or negative size)
-        is_bitfield = (offset_bits % 8 != 0) or (size < 0)
+                is_bitfield = bool(libclang.clang_IDE_isBitField(field_cursor))
+        bit_width = None
+        if is_bitfield:
+            bit_width = libclang.clang_getFieldDeclBitWidth(field_cursor)
         
         # Create field info
         field_info = FieldInfo(
             name=name,
             field_type=type_spelling,
             offset_bytes=offset_bytes,
+            offset_bits=max(0, offset_bits),
             size_bytes=max(0, size),
             alignment_bytes=max(0, alignment),
-            is_bitfield=is_bitfield
+            is_bitfield=is_bitfield,
+            bitfield_width=bit_width
         )
         
         # Extract complete type info (recursive)
@@ -1093,6 +1333,141 @@ class RecordLayoutExtractor:
                 )
                 layout.padding_regions.append(padding)
 
+class TypedefResolver:
+    """
+    Resolves typedef chains and tracks typedef definitions.
+    
+    Handles typedef chain traversal, circular typedef detection,
+    and typedef provenance tracking.
+    """
+
+    def __init__(self, type_extractor: 'TypeExtractor'):
+        """
+        Initialize typedef resolver.
+        
+        Args:
+            type_extractor: TypeExtractor for type queries
+        """
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        self.type_extractor = type_extractor
+        
+        # Cache of resolved typedefs
+        self._typedef_cache: Dict[str, TypedefInfo] = {}
+
+    def resolve_typedef_chain(self, typedef_type: 'CXType') -> List[str]:
+        """
+        Resolve complete typedef chain to canonical type.
+        
+        Args:
+            typedef_type: Typedef type to resolve
+            
+        Returns:
+            List of type names from typedef to canonical
+            
+        Raises:
+            CircularTypedefError: If circular typedef detected
+        """
+        chain = []
+        visited = set()
+        current_type = typedef_type
+        
+        # Traverse typedef chain
+        max_depth = 100  # Prevent infinite loops
+        depth = 0
+        
+        while current_type.kind == CXTypeKind.TYPEDEF and depth < max_depth:
+            type_spelling = self.type_extractor._get_type_spelling(current_type)
+            
+            # Detect circular reference
+            if type_spelling in visited:
+                raise CircularTypedefError(
+                    f"Circular typedef detected: {type_spelling} appears multiple times in chain"
+                )
+            
+            visited.add(type_spelling)
+            chain.append(type_spelling)
+            
+            # Get underlying type via declaration
+            decl = libclang.clang_getTypeDeclaration(current_type)
+            if decl.kind == CXIDEKind.NO_DECL_FOUND:
+                break
+                
+            current_type = libclang.clang_getTypedefDeclUnderlyingType(decl)
+            depth += 1
+        
+        # Add final canonical type
+        canonical_type = libclang.clang_getCanonicalType(typedef_type)
+        canonical_spelling = self.type_extractor._get_type_spelling(canonical_type)
+        
+        if not chain or chain[-1] != canonical_spelling:
+            chain.append(canonical_spelling)
+        
+        return chain
+
+    def extract_typedef_info(self, typedef_cursor: 'CXIDE') -> 'TypedefInfo':
+        """
+        Extract complete typedef information from typedef declaration.
+        
+        Args:
+            typedef_cursor: Typedef declaration cursor
+            
+        Returns:
+            TypedefInfo with complete chain
+        """
+        # Get typedef name
+        name_cxstr = libclang.clang_getIDESpelling(typedef_cursor)
+        typedef_name = clang_string_to_python(name_cxstr)
+        
+        # Check cache
+        if typedef_name in self._typedef_cache:
+            return self._typedef_cache[typedef_name]
+        
+        # Get underlying type
+        underlying_type_cx = libclang.clang_getTypedefDeclUnderlyingType(typedef_cursor)
+        underlying_type_spelling = self.type_extractor._get_type_spelling(underlying_type_cx)
+        
+        # Get canonical type
+        canonical_type_cx = libclang.clang_getCanonicalType(underlying_type_cx)
+        canonical_type_spelling = self.type_extractor._get_type_spelling(canonical_type_cx)
+        
+        # Resolve complete chain
+        try:
+            typedef_chain = self.resolve_typedef_chain(libclang.clang_getIDEType(typedef_cursor))
+        except CircularTypedefError:
+            typedef_chain = [typedef_name, "<circular>"]
+        
+        # Check if incomplete
+        size = libclang.clang_Type_getSizeOf(underlying_type_cx)
+        is_incomplete = (size < 0)
+        
+        # Create typedef info
+        typedef_info = TypedefInfo(
+            typedef_name=typedef_name,
+            underlying_type=underlying_type_spelling,
+            canonical_type=canonical_type_spelling,
+            typedef_chain=typedef_chain,
+            is_incomplete=is_incomplete
+        )
+        
+        # Cache
+        self._typedef_cache[typedef_name] = typedef_info
+        
+        return typedef_info
+
+    def is_typedef_type(self, cxtype: 'CXType') -> bool:
+        """
+        Check if a type is a typedef.
+        
+        Args:
+            cxtype: Type to check
+            
+        Returns:
+            True if typedef
+        """
+        return cxtype.kind == CXTypeKind.TYPEDEF
+
 # ============================================================================
 # TYPE EXTRACTOR ()
 # ============================================================================
@@ -1114,6 +1489,7 @@ class TypeExtractor:
         self._type_cache: Dict[str, TypeInfo] = {}
         self._record_extractor: Optional['RecordLayoutExtractor'] = None
         self._enum_extractor: Optional['EnumExtractor'] = None
+        self._typedef_resolver: Optional['TypedefResolver'] = None
     
     def set_record_extractor(self, extractor: 'RecordLayoutExtractor'):
         """Set record layout extractor (avoid circular dependency)."""
@@ -1122,6 +1498,10 @@ class TypeExtractor:
     def set_enum_extractor(self, extractor: 'EnumExtractor'):
         """Set enum extractor (avoid circular dependency)."""
         self._enum_extractor = extractor
+
+    def set_typedef_resolver(self, resolver: 'TypedefResolver'):
+        """Set typedef resolver (avoid circular dependency)."""
+        self._typedef_resolver = resolver
     
     def extract_type(self, cxtype: 'CXType') -> TypeInfo:
         """
@@ -1179,6 +1559,17 @@ class TypeExtractor:
             self._extract_record_info(cxtype, type_info)
         elif kind == 'enum':
             self._extract_enum_info(cxtype, type_info)
+                if kind == 'typedef' and self._typedef_resolver:
+            try:
+                typedef_chain = self._typedef_resolver.resolve_typedef_chain(cxtype)
+                type_info.typedef_chain = typedef_chain
+                
+                # If we have a cursor for this typedef, we can extract more info
+                decl_cursor = libclang.clang_getTypeDeclaration(cxtype)
+                if decl_cursor.kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
+                    type_info.typedef_info = self._typedef_resolver.extract_typedef_info(decl_cursor)
+            except CircularTypedefError:
+                type_info.typedef_chain = [type_spelling, "<circular>"]
         
         # Cache and return
         self._type_cache[type_spelling] = type_info
@@ -1249,7 +1640,8 @@ class TypeExtractor:
             type_info.array_size = size if size >= 0 else None
         else:
             type_info.array_size = None
-    
+            
+
     def _extract_function_info(self, cxtype: 'CXType', type_info: TypeInfo):
         """Extract function type information."""
         # Return type
@@ -1320,7 +1712,7 @@ class RawInterfaceArtifact:
     # Artifact metadata
     artifact_version: str = "1.0"
     generation_timestamp: str = field(
-        default_factory=lambda: datetime.utcnow().isoformat()
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     
     # Compilation context used for ingestion
@@ -1533,6 +1925,10 @@ class ValidationError(IngestionError):
     """Error validating extracted interface."""
     pass
 
+class CircularTypedefError(IngestionError):
+    """Error raised when circular typedef chain detected."""
+    pass
+
 # ============================================================================
 # MODULE METADATA
 # ============================================================================
@@ -1560,17 +1956,37 @@ from enum import IntEnum
 # ============================================================================
 
 # Attempt to load libclang
-try:
+def _load_libclang():
+    """Attempt to load libclang library with fallback search paths."""
     if sys.platform == 'win32':
-        libclang = ctypes.CDLL('libclang.dll')
+        names = ['libclang.dll']
     elif sys.platform == 'darwin':
-        libclang = ctypes.CDLL('libclang.dylib')
+        names = ['libclang.dylib']
     else:
-        libclang = ctypes.CDLL('libclang.so')
-    LIBCLANG_AVAILABLE = True
-except OSError:
-    LIBCLANG_AVAILABLE = False
-    libclang = None
+        names = ['libclang.so', 'libclang.so.1']
+    
+    # Try standard loading first
+    for name in names:
+        try:
+            return ctypes.CDLL(name)
+        except OSError:
+            continue
+            
+    # Fallback for Windows: check if libclang python package is installed
+    if sys.platform == 'win32':
+        try:
+            import clang.native
+            base_path = Path(clang.native.__file__).parent
+            lib_path = base_path / 'libclang.dll'
+            if lib_path.exists():
+                return ctypes.CDLL(str(lib_path))
+        except (ImportError, AttributeError, OSError):
+            pass
+            
+    return None
+
+libclang = _load_libclang()
+LIBCLANG_AVAILABLE = libclang is not None
 
 # Opaque types
 class CXIndex(ctypes.Structure):
@@ -1645,6 +2061,8 @@ class CXIDEKind(IntEnum):
     PARM_DECL = 10
     ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
+    TYPE_ALIAS_DECL = 301
+    NO_DECL_FOUND = 501
 
 class CXLinkageKind(IntEnum):
     INVALID = 0
@@ -1665,16 +2083,31 @@ class CXLanguageKind(IntEnum):
     C_PLUS_PLUS = 2
 
 # Function prototypes
+class CXVisibilityKind(IntEnum):
+    INVALID = 0
+    HIDDEN = 1
+    PROTECTED = 2
+    DEFAULT = 3
+
+# Function prototypes
 if LIBCLANG_AVAILABLE:
+    def bind(name, argtypes=None, restype=None):
+        try:
+            func = getattr(libclang, name)
+            if argtypes is not None:
+                func.argtypes = argtypes
+            if restype is not None:
+                func.restype = restype
+            return func
+        except AttributeError:
+            return None
+
     # Index management
-    libclang.clang_createIndex.argtypes = [ctypes.c_int, ctypes.c_int]
-    libclang.clang_createIndex.restype = ctypes.POINTER(CXIndex)
-    
-    libclang.clang_disposeIndex.argtypes = [ctypes.POINTER(CXIndex)]
-    libclang.clang_disposeIndex.restype = None
+    bind('clang_createIndex', [ctypes.c_int, ctypes.c_int], ctypes.POINTER(CXIndex))
+    bind('clang_disposeIndex', [ctypes.POINTER(CXIndex)], None)
     
     # Translation unit parsing
-    libclang.clang_parseTranslationUnit.argtypes = [
+    bind('clang_parseTranslationUnit', [
         ctypes.POINTER(CXIndex),
         ctypes.c_char_p,
         ctypes.POINTER(ctypes.c_char_p),
@@ -1682,34 +2115,23 @@ if LIBCLANG_AVAILABLE:
         ctypes.c_void_p,
         ctypes.c_uint,
         ctypes.c_uint
-    ]
-    libclang.clang_parseTranslationUnit.restype = ctypes.POINTER(CXTranslationUnit)
+    ], ctypes.POINTER(CXTranslationUnit))
     
-    libclang.clang_disposeTranslationUnit.argtypes = [ctypes.POINTER(CXTranslationUnit)]
-    libclang.clang_disposeTranslationUnit.restype = None
+    bind('clang_disposeTranslationUnit', [ctypes.POINTER(CXTranslationUnit)], None)
     
     # IDE operations
-    libclang.clang_getTranslationUnitIDE.argtypes = [ctypes.POINTER(CXTranslationUnit)]
-    libclang.clang_getTranslationUnitIDE.restype = CXIDE
-    
-    libclang.clang_getIDEKind.argtypes = [CXIDE]
-    libclang.clang_getIDEKind.restype = ctypes.c_int
-    
-    libclang.clang_getIDESpelling.argtypes = [CXIDE]
-    libclang.clang_getIDESpelling.restype = CXString
-    
-    libclang.clang_getIDELinkage.argtypes = [CXIDE]
-    libclang.clang_getIDELinkage.restype = ctypes.c_int
-    
-    libclang.clang_getIDELanguage.argtypes = [CXIDE]
-    libclang.clang_getIDELanguage.restype = ctypes.c_int
+    bind('clang_getTranslationUnitIDE', [ctypes.POINTER(CXTranslationUnit)], CXIDE)
+    bind('clang_getIDEKind', [CXIDE], ctypes.c_int)
+    bind('clang_getIDESpelling', [CXIDE], CXString)
+    bind('clang_getIDELinkage', [CXIDE], ctypes.c_int)
+    bind('clang_getIDELanguage', [CXIDE], ctypes.c_int)
+    bind('clang_getIDEDisplayName', [CXIDE], CXString)
+    bind('clang_getIDEVisibility', [CXIDE], ctypes.c_int)
+    bind('clang_isIDEDefinition', [CXIDE], ctypes.c_int)
     
     # String operations
-    libclang.clang_getCString.argtypes = [CXString]
-    libclang.clang_getCString.restype = ctypes.c_char_p
-    
-    libclang.clang_disposeString.argtypes = [CXString]
-    libclang.clang_disposeString.restype = None
+    bind('clang_getCString', [CXString], ctypes.c_char_p)
+    bind('clang_disposeString', [CXString], None)
     
     # Visitor
     CXIDEVisitor = ctypes.CFUNCTYPE(
@@ -1719,93 +2141,41 @@ if LIBCLANG_AVAILABLE:
         ctypes.c_void_p
     )
     
-    libclang.clang_visitChildren.argtypes = [
+    bind('clang_visitChildren', [
         CXIDE,
         CXIDEVisitor,
         ctypes.c_void_p
-    ]
-    libclang.clang_visitChildren.restype = ctypes.c_uint
+    ], ctypes.c_uint)
 
-        libclang.clang_getIDEType.argtypes = [CXIDE]
-    libclang.clang_getIDEType.restype = CXType
-    
-    libclang.clang_getCanonicalType.argtypes = [CXType]
-    libclang.clang_getCanonicalType.restype = CXType
-    
-    libclang.clang_getTypeSpelling.argtypes = [CXType]
-    libclang.clang_getTypeSpelling.restype = CXString
-    
-    libclang.clang_Type_getSizeOf.argtypes = [CXType]
-    libclang.clang_Type_getSizeOf.restype = ctypes.c_longlong
-    
-    libclang.clang_Type_getAlignOf.argtypes = [CXType]
-    libclang.clang_Type_getAlignOf.restype = ctypes.c_longlong
+        bind('clang_getIDEType', [CXIDE], CXType)
+    bind('clang_getCanonicalType', [CXType], CXType)
+    bind('clang_getTypeSpelling', [CXType], CXString)
+    bind('clang_Type_getSizeOf', [CXType], ctypes.c_longlong)
+    bind('clang_Type_getAlignOf', [CXType], ctypes.c_longlong)
+    bind('clang_getResultType', [CXType], CXType)
+    bind('clang_isFunctionTypeVariadic', [CXType], ctypes.c_uint)
+    bind('clang_getFunctionTypeCallingConv', [CXType], ctypes.c_int)
+    bind('clang_isConstQualifiedType', [CXType], ctypes.c_int)
+    bind('clang_isVolatileQualifiedType', [CXType], ctypes.c_int)
+    bind('clang_isRestrictQualifiedType', [CXType], ctypes.c_int)
+    bind('clang_getPointeeType', [CXType], CXType)
+    bind('clang_getArrayElementType', [CXType], CXType)
+    bind('clang_getArraySize', [CXType], ctypes.c_longlong)
+    bind('clang_getNumArgTypes', [CXType], ctypes.c_int)
+    bind('clang_getArgType', [CXType, ctypes.c_uint], CXType)
 
-    libclang.clang_getResultType.argtypes = [CXType]
-    libclang.clang_getResultType.restype = CXType
-    
-    libclang.clang_isFunctionTypeVariadic.argtypes = [CXType]
-    libclang.clang_isFunctionTypeVariadic.restype = ctypes.c_uint
-    
-    libclang.clang_getFunctionTypeCallingConv.argtypes = [CXType]
-    libclang.clang_getFunctionTypeCallingConv.restype = ctypes.c_int
-    
-    libclang.clang_isConstQualifiedType.argtypes = [CXType]
-    libclang.clang_isConstQualifiedType.restype = ctypes.c_int
-    
-    libclang.clang_isVolatileQualifiedType.argtypes = [CXType]
-    libclang.clang_isVolatileQualifiedType.restype = ctypes.c_int
-    
-    libclang.clang_isRestrictQualifiedType.argtypes = [CXType]
-    libclang.clang_isRestrictQualifiedType.restype = ctypes.c_int
-    
-    libclang.clang_getPointeeType.argtypes = [CXType]
-    libclang.clang_getPointeeType.restype = CXType
-    
-    libclang.clang_getArrayElementType.argtypes = [CXType]
-    libclang.clang_getArrayElementType.restype = CXType
-    
-    libclang.clang_getArraySize.argtypes = [CXType]
-    libclang.clang_getArraySize.restype = ctypes.c_longlong
-    
-    libclang.clang_getResultType.argtypes = [CXType]
-    libclang.clang_getResultType.restype = CXType
-    
-    libclang.clang_getNumArgTypes.argtypes = [CXType]
-    libclang.clang_getNumArgTypes.restype = ctypes.c_int
-    
-    libclang.clang_getArgType.argtypes = [CXType, ctypes.c_uint]
-    libclang.clang_getArgType.restype = CXType
-    
-    libclang.clang_isFunctionTypeVariadic.argtypes = [CXType]
-    libclang.clang_isFunctionTypeVariadic.restype = ctypes.c_int
-    
-    libclang.clang_getFunctionTypeCallingConv.argtypes = [CXType]
-    libclang.clang_getFunctionTypeCallingConv.restype = ctypes.c_int
-    
-    libclang.clang_isConstQualifiedType.argtypes = [CXType]
-    libclang.clang_isConstQualifiedType.restype = ctypes.c_int
-    
-    libclang.clang_isVolatileQualifiedType.argtypes = [CXType]
-    libclang.clang_isVolatileQualifiedType.restype = ctypes.c_int
-    
-    libclang.clang_isRestrictQualifiedType.argtypes = [CXType]
-    libclang.clang_isRestrictQualifiedType.restype = ctypes.c_int
+        bind('clang_IDE_getOffsetOfField', [CXIDE], ctypes.c_longlong)
+    bind('clang_Type_getNumFields', [CXType], ctypes.c_int)
+    bind('clang_IDE_isBitField', [CXIDE], ctypes.c_uint)
+    bind('clang_getFieldDeclBitWidth', [CXIDE], ctypes.c_int)
 
-        libclang.clang_IDE_getOffsetOfField.argtypes = [CXIDE]
-    libclang.clang_IDE_getOffsetOfField.restype = ctypes.c_longlong
+        bind('clang_getEnumDeclIntegerType', [CXIDE], CXType)
+    bind('clang_getEnumConstantDeclValue', [CXIDE], ctypes.c_longlong)
+    bind('clang_getEnumConstantDeclUnsignedValue', [CXIDE], ctypes.c_ulonglong)
     
-        libclang.clang_Type_getNumFields.argtypes = [CXType]
-    libclang.clang_Type_getNumFields.restype = ctypes.c_int
-
-        libclang.clang_getEnumDeclIntegerType.argtypes = [CXIDE]
-    libclang.clang_getEnumDeclIntegerType.restype = CXType
-    
-    libclang.clang_getEnumConstantDeclValue.argtypes = [CXIDE]
-    libclang.clang_getEnumConstantDeclValue.restype = ctypes.c_longlong
-    
-    libclang.clang_getEnumConstantDeclUnsignedValue.argtypes = [CXIDE]
-    libclang.clang_getEnumConstantDeclUnsignedValue.restype = ctypes.c_ulonglong
+        bind('clang_getTypeDeclaration', [CXType], CXIDE)
+    bind('clang_getTypedefDeclUnderlyingType', [CXIDE], CXType)
+    bind('clang_getTypedefName', [CXType], CXString)
 
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
@@ -1873,9 +2243,12 @@ class ClangFrontend(CompilerFrontend):
         self._record_extractor = RecordLayoutExtractor(self._type_extractor)
         self._enum_extractor = EnumExtractor(self._type_extractor)
         self._function_extractor = FunctionSignatureExtractor(self._type_extractor)
+        self._variable_extractor = GlobalVariableExtractor(self._type_extractor)
+        self._typedef_resolver = TypedefResolver(self._type_extractor)
         
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
+        self._type_extractor.set_typedef_resolver(self._typedef_resolver)
     
     @property
     def compiler_name(self) -> str:
@@ -2055,7 +2428,8 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.STRUCT_DECL,
             CXIDEKind.UNION_DECL,
             CXIDEKind.ENUM_DECL,
-            CXIDEKind.TYPEDEF_DECL
+            CXIDEKind.TYPEDEF_DECL,
+            CXIDEKind.TYPE_ALIAS_DECL
         ]:
             return None
         
@@ -2078,7 +2452,8 @@ class ClangFrontend(CompilerFrontend):
             CXIDEKind.STRUCT_DECL: 'struct',
             CXIDEKind.UNION_DECL: 'union',
             CXIDEKind.ENUM_DECL: 'enum',
-            CXIDEKind.TYPEDEF_DECL: 'typedef'
+            CXIDEKind.TYPEDEF_DECL: 'typedef',
+            CXIDEKind.TYPE_ALIAS_DECL: 'typedef'
         }
         
         symbol_kind = kind_map.get(kind, 'unknown')
@@ -2129,6 +2504,26 @@ class ClangFrontend(CompilerFrontend):
             try:
                 signature = self._function_extractor.extract_function_signature(cursor)
                 symbol.function_signature = signature
+            except Exception:
+                pass
+                
+                if symbol_kind == 'variable':
+            try:
+                var_info = self._variable_extractor.extract_global_variable(cursor)
+                symbol.global_variable_info = var_info
+            except Exception:
+                pass
+        
+                if kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
+            try:
+                # Use resolver to get complete info
+                typedef_info = self._typedef_resolver.extract_typedef_info(cursor)
+                
+                # Update symbol kind to 'typedef' (already handled in kind_map but being explicit)
+                symbol.kind = 'typedef'
+                
+                # Make sure the type_info in TypeExtractor is also updated
+                self._type_extractor.extract_type(cursor_type)
             except Exception:
                 pass
         

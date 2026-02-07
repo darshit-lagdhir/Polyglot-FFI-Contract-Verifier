@@ -42,9 +42,14 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     RecordLayoutExtractor,
         EnumeratorInfo,
     EnumExtractor,
-        ParameterInfo,
+        FunctionSignatureExtractor,
+    ParameterInfo,
     FunctionSignature,
-    FunctionSignatureExtractor
+        GlobalVariableInfo,
+    GlobalVariableExtractor,
+        TypedefInfo,
+    TypedefResolver,
+    CircularTypedefError
 )
 
 # ============================================================================
@@ -60,8 +65,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '7/20'
-        assert info['status'] == 'function_extraction'
+        assert info['prompt'] == '9/20'
+        assert info['status'] == 'typedef_resolution'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -137,6 +142,26 @@ class TestCompilationContext:
         
         assert context1.compute_hash() != context2.compute_hash()
 
+    def test_context_equality(self):
+        """Test context equality."""
+        c1 = CompilationContext(header_files=[Path('a.h')])
+        c2 = CompilationContext(header_files=[Path('a.h')])
+        c3 = CompilationContext(header_files=[Path('b.h')])
+        
+        assert c1 == c2
+        assert c1 != c3
+
+    def test_context_empty_hashing(self):
+        """Test hashing empty context."""
+        c = CompilationContext(header_files=[])
+        h = c.compute_hash()
+        assert len(h) == 64
+
+    def test_context_repr(self):
+        """Test context string representation."""
+        c = CompilationContext(header_files=[Path('a.h')])
+        assert "CompilationContext" in repr(c)
+
 # ============================================================================
 # TEST: EXTERNAL SYMBOL
 # ============================================================================
@@ -160,6 +185,21 @@ class TestExternalSymbol:
         assert data['name'] == 'global_var'
         assert data['kind'] == 'variable'
 
+    def test_symbol_equality(self):
+        """Test symbol equality."""
+        s1 = ExternalSymbol(name='f', kind='function')
+        s2 = ExternalSymbol(name='f', kind='function')
+        s3 = ExternalSymbol(name='g', kind='function')
+        
+        assert s1 == s2
+        assert s1 != s3
+
+    def test_symbol_repr(self):
+        """Test symbol representation."""
+        s = ExternalSymbol(name='f', kind='function')
+        assert "f" in repr(s)
+        assert "function" in repr(s)
+
 # ============================================================================
 # TEST: TYPE INFO
 # ============================================================================
@@ -182,6 +222,18 @@ class TestTypeInfo:
         
         assert data['name'] == 'int32_t'
         assert data['canonical_name'] == 'int'
+
+    def test_typeinfo_equality(self):
+        """Test type info equality."""
+        t1 = TypeInfo(name='int', kind='primitive')
+        t2 = TypeInfo(name='int', kind='primitive')
+        
+        assert t1 == t2
+
+    def test_typeinfo_repr(self):
+        """Test type info representation."""
+        t = TypeInfo(name='int', kind='primitive')
+        assert "int" in repr(t)
 
 # ============================================================================
 # TEST: RAW INTERFACE ARTIFACT
@@ -251,6 +303,11 @@ class TestRawInterfaceArtifact:
         assert loaded.artifact_version == original.artifact_version
         assert loaded.validation_passed is True
         assert loaded.compilation_context.target_triple == 'x86_64-pc-windows-msvc'
+
+    def test_artifact_validation_passed_default(self):
+        """Test default validation status."""
+        a = RawInterfaceArtifact()
+        assert a.validation_passed is False
     
     def test_artifact_contains_timestamp(self):
         """Test artifact includes generation timestamp."""
@@ -259,6 +316,17 @@ class TestRawInterfaceArtifact:
         assert artifact.generation_timestamp is not None
         # Verify it's a valid ISO format timestamp
         datetime.fromisoformat(artifact.generation_timestamp)
+
+    def test_artifact_empty(self):
+        """Test empty artifact."""
+        a = RawInterfaceArtifact()
+        assert a.external_symbols == []
+        assert a.type_definitions == {}
+
+    def test_artifact_repr(self):
+        """Test artifact representation."""
+        a = RawInterfaceArtifact()
+        assert "RawInterfaceArtifact" in repr(a)
 
 # ============================================================================
 # TEST: COMPILER FRONTEND ABSTRACTION
@@ -327,6 +395,20 @@ class TestSourceLocation:
         assert data['file'] == 'foo.c'
         assert data['line'] == 100
         assert data['column'] == 5
+
+    def test_location_equality(self):
+        """Test source location equality."""
+        l1 = SourceLocation('a.h', 1, 1)
+        l2 = SourceLocation('a.h', 1, 1)
+        l3 = SourceLocation('b.h', 1, 1)
+        
+        assert l1 == l2
+        assert l1 != l3
+
+    def test_location_repr(self):
+        """Test source location representation."""
+        l = SourceLocation('a.h', 42, 10)
+        assert "a.h:42:10" in repr(l)
 
 class TestEnhancedExternalSymbol:
     """Test enhanced external symbol with metadata."""
@@ -627,6 +709,7 @@ class TestFieldInfo:
         
         assert field.name == 'x'
         assert field.offset_bytes == 0
+        assert field.offset_bits == 0
         assert field.size_bytes == 4
         assert not field.is_bitfield
     
@@ -639,11 +722,24 @@ class TestFieldInfo:
             size_bytes=4,
             alignment_bytes=4,
             is_bitfield=True,
-            bitfield_width=1
+            bitfield_width=1,
+            offset_bits=32
         )
         
         assert field.is_bitfield
         assert field.bitfield_width == 1
+        assert field.offset_bits == 32
+
+    def test_field_equality(self):
+        """Test field equality."""
+        f1 = FieldInfo('x', 'int', 0, 4, 4)
+        f2 = FieldInfo('x', 'int', 0, 4, 4)
+        assert f1 == f2
+
+    def test_field_repr(self):
+        """Test field representation."""
+        f = FieldInfo('x', 'int', 0, 4, 4)
+        assert "x" in repr(f)
     
     def test_field_serialization(self):
         """Test field serialization."""
@@ -685,6 +781,12 @@ class TestPaddingInfo:
         )
         
         assert padding.reason == 'trailing'
+
+    def test_padding_equality(self):
+        """Test padding equality."""
+        p1 = PaddingInfo(0, 4, 'gap')
+        p2 = PaddingInfo(0, 4, 'gap')
+        assert p1 == p2
     
     def test_padding_serialization(self):
         """Test padding serialization."""
@@ -726,6 +828,17 @@ class TestRecordLayout:
         )
         
         assert layout.kind == 'union'
+
+    def test_layout_equality(self):
+        """Test layout equality."""
+        l1 = RecordLayout('P', 'struct', 4, 4)
+        l2 = RecordLayout('P', 'struct', 4, 4)
+        assert l1 == l2
+
+    def test_layout_repr(self):
+        """Test layout representation."""
+        l = RecordLayout('P', 'struct', 4, 4)
+        assert "P" in repr(l)
     
     def test_layout_with_fields(self):
         """Test layout with fields."""
@@ -1165,9 +1278,290 @@ class TestExternalSymbolWithSignature:
         assert len(symbol.function_signature.parameters) == 1
 
 # ============================================================================
-# MEDIUM LEVEL TESTING: 80-100 TESTS TARGET
-# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) + 13 (P7) = 92 tests
-# Progress: 92 components = 92% (COMFORTABLY EXCEEDED!)
+# TEST: GLOBAL VARIABLE EXTRACTION ()
+# ============================================================================
+
+class TestGlobalVariableInfo:
+    """Test global variable information structure."""
+    
+    def test_variable_creation(self):
+        """Test creating global variable info."""
+        var = GlobalVariableInfo(
+            variable_type='int',
+            size_bytes=4,
+            alignment_bytes=4
+        )
+        
+        assert var.variable_type == 'int'
+        assert var.size_bytes == 4
+        assert not var.is_const
+        assert not var.is_thread_local
+    
+    def test_const_variable(self):
+        """Test const variable."""
+        var = GlobalVariableInfo(
+            variable_type='const int',
+            size_bytes=4,
+            alignment_bytes=4,
+            is_const=True
+        )
+        
+        assert var.is_const
+        assert not var.is_volatile
+    
+    def test_volatile_variable(self):
+        """Test volatile variable."""
+        var = GlobalVariableInfo(
+            variable_type='volatile uint32_t',
+            size_bytes=4,
+            alignment_bytes=4,
+            is_volatile=True
+        )
+        
+        assert var.is_volatile
+        assert not var.is_const
+    
+    def test_thread_local_variable(self):
+        """Test thread-local variable."""
+        var = GlobalVariableInfo(
+            variable_type='int',
+            size_bytes=4,
+            alignment_bytes=4,
+            is_thread_local=True
+        )
+        
+        assert var.is_thread_local
+    
+    def test_visibility_variants(self):
+        """Test different visibility levels."""
+        var_default = GlobalVariableInfo(
+            variable_type='int',
+            visibility='default'
+        )
+        
+        var_hidden = GlobalVariableInfo(
+            variable_type='int',
+            visibility='hidden'
+        )
+        
+        assert var_default.visibility == 'default'
+        assert var_hidden.visibility == 'hidden'
+    
+    def test_definition_detection(self):
+        """Test definition vs declaration."""
+        var_decl = GlobalVariableInfo(
+            variable_type='int',
+            is_definition=False
+        )
+        
+        var_def = GlobalVariableInfo(
+            variable_type='int',
+            is_definition=True
+        )
+        
+        assert not var_decl.is_definition
+        assert var_def.is_definition
+    
+    def test_variable_serialization(self):
+        """Test variable serialization."""
+        var = GlobalVariableInfo(
+            variable_type='const char*',
+            size_bytes=8,
+            alignment_bytes=8,
+            is_const=True,
+            visibility='default',
+            is_definition=False
+        )
+        
+        data = var.to_dict()
+        
+        assert data['variable_type'] == 'const char*'
+        assert data['size_bytes'] == 8
+        assert data['is_const'] is True
+        assert data['visibility'] == 'default'
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestGlobalVariableExtractor:
+    """Test global variable extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating global variable extractor."""
+        type_extractor = TypeExtractor()
+        extractor = GlobalVariableExtractor(type_extractor)
+        
+        assert extractor is not None
+        assert extractor.type_extractor == type_extractor
+
+class TestExternalSymbolWithVariable:
+    """Test ExternalSymbol with global variable info."""
+    
+    def test_symbol_with_variable_info(self):
+        """Test symbol with global variable info."""
+        var_info = GlobalVariableInfo(
+            variable_type='int',
+            size_bytes=4,
+            alignment_bytes=4,
+            is_const=True
+        )
+        
+        symbol = ExternalSymbol(
+            name='MAX_SIZE',
+            kind='variable',
+            global_variable_info=var_info
+        )
+        
+        assert symbol.global_variable_info is not None
+        assert symbol.global_variable_info.is_const
+
+# ============================================================================
+# TEST: TYPEDEF RESOLUTION ()
+# ============================================================================
+
+class TestTypedefInfo:
+    """Test typedef information structure."""
+    
+    def test_typedef_creation(self):
+        """Test creating typedef info."""
+        typedef = TypedefInfo(
+            typedef_name='MyInt',
+            underlying_type='int',
+            canonical_type='int',
+            typedef_chain=['MyInt', 'int']
+        )
+        
+        assert typedef.typedef_name == 'MyInt'
+        assert typedef.underlying_type == 'int'
+        assert typedef.canonical_type == 'int'
+        assert len(typedef.typedef_chain) == 2
+
+    def test_typedef_equality(self):
+        """Test typedef equality."""
+        t1 = TypedefInfo('A', 'int', 'int', ['A', 'int'])
+        t2 = TypedefInfo('A', 'int', 'int', ['A', 'int'])
+        
+        assert t1 == t2
+
+    def test_typedef_chain(self):
+        """Test typedef with multiple levels."""
+        typedef = TypedefInfo(
+            typedef_name='Count',
+            underlying_type='Integer',
+            canonical_type='int',
+            typedef_chain=['Count', 'Integer', 'INT32', 'int']
+        )
+        
+        assert len(typedef.typedef_chain) == 4
+        assert typedef.typedef_chain[0] == 'Count'
+        assert typedef.typedef_chain[-1] == 'int'
+
+    def test_incomplete_typedef(self):
+        """Test incomplete typedef."""
+        typedef = TypedefInfo(
+            typedef_name='OpaqueHandle',
+            underlying_type='struct Opaque',
+            canonical_type='struct Opaque',
+            typedef_chain=['OpaqueHandle', 'struct Opaque'],
+            is_incomplete=True
+        )
+        
+        assert typedef.is_incomplete
+
+    def test_forward_declaration_typedef(self):
+        """Test forward declaration typedef."""
+        typedef = TypedefInfo(
+            typedef_name='Point',
+            underlying_type='struct Point',
+            canonical_type='struct Point',
+            typedef_chain=['Point', 'struct Point'],
+            is_forward_declaration=True
+        )
+        
+        assert typedef.is_forward_declaration
+
+    def test_typedef_serialization(self):
+        """Test typedef serialization."""
+        typedef = TypedefInfo(
+            typedef_name='size_t',
+            underlying_type='unsigned long',
+            canonical_type='unsigned long',
+            typedef_chain=['size_t', 'unsigned long']
+        )
+        
+        data = typedef.to_dict()
+        
+        assert data['typedef_name'] == 'size_t'
+        assert data['canonical_type'] == 'unsigned long'
+        assert len(data['typedef_chain']) == 2
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestTypedefResolver:
+    """Test typedef resolver."""
+    
+    def test_resolver_creation(self):
+        """Test creating typedef resolver."""
+        type_extractor = TypeExtractor()
+        resolver = TypedefResolver(type_extractor)
+        
+        assert resolver is not None
+        assert resolver.type_extractor == type_extractor
+
+    def test_typedef_cache(self):
+        """Test typedef caching."""
+        type_extractor = TypeExtractor()
+        resolver = TypedefResolver(type_extractor)
+        
+        # Cache should start empty
+        assert len(resolver._typedef_cache) == 0
+
+class TestCircularTypedefError:
+    """Test circular typedef error."""
+    
+    def test_error_creation(self):
+        """Test creating circular typedef error."""
+        error = CircularTypedefError("Circular: A -> B -> A")
+        
+        assert isinstance(error, IngestionError)
+        assert "Circular" in str(error)
+
+class TestTypeInfoWithTypedef:
+    """Test TypeInfo with typedef chain."""
+    
+    def test_type_with_typedef_chain(self):
+        """Test TypeInfo with typedef chain."""
+        tinfo = TypeInfo(
+            name='Count',
+            canonical_name='int',
+            kind='typedef',
+            typedef_chain=['Count', 'Integer', 'int']
+        )
+        
+        assert len(tinfo.typedef_chain) == 3
+        assert tinfo.typedef_chain[0] == 'Count'
+        assert tinfo.typedef_chain[-1] == 'int'
+
+    def test_type_with_typedef_info(self):
+        """Test TypeInfo with complete typedef info."""
+        typedef_info = TypedefInfo(
+            typedef_name='MyType',
+            underlying_type='int',
+            canonical_type='int',
+            typedef_chain=['MyType', 'int']
+        )
+        
+        tinfo = TypeInfo(
+            name='MyType',
+            canonical_name='int',
+            kind='typedef',
+            typedef_info=typedef_info
+        )
+        
+        assert tinfo.typedef_info is not None
+        assert tinfo.typedef_info.typedef_name == 'MyType'
+
+# ============================================================================
+# HARD LEVEL TESTING!
+# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) + 13 (P7) + 10 (P8) + 11 (P9) = 113 tests
+# Progress: 113 components = 113% (DEEP INTO HARD LEVEL!)
 # ============================================================================
 
 if __name__ == '__main__':

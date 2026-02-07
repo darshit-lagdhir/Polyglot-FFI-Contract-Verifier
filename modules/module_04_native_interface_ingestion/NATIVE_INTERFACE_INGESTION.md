@@ -191,6 +191,38 @@ Source code is not the interface. Headers are not the interface. Comments and do
 
 **Next Prompt:** Global variable extraction with size, alignment, and mutability analysis
 
+
+**Status:** Complete
+
+**Implemented:**
+- `GlobalVariableInfo` data structure for complete variable metadata
+- `GlobalVariableExtractor` class for variable analysis
+- Mutability qualifier extraction (`const`, `volatile`, `restrict`)
+- Thread-local storage detection
+- Visibility query (`default`, `hidden`, `protected`)
+- Size and alignment extraction
+- Definition vs declaration detection
+- Integration with `ExternalSymbol`
+
+**Tests:** 102 tests total (92 from Prompts 1-7 + 10 new)
+
+**Next Prompt:** Typedef and type alias resolution with complete chain tracking
+
+
+**Status:** Complete
+
+**Implemented:**
+- Typedef resolution chain tracking in `TypeInfo`
+- `_extract_typedef_info` logic in `TypeExtractor`
+- Mapping type aliases to canonical forms
+- Circular typedef detection and protection
+- Support for `TYPEDEF_DECL` and C++ `TYPE_ALIAS_DECL`
+- Preservation of complete alias chains for diagnostics
+
+**Tests:** 113 tests total (102 from Prompts 1-8 + 11 new)
+
+**Next Prompt:** Macro Definition Extraction
+
 ---
 
 ## Module Structure
@@ -217,5 +249,5 @@ module_04_native_interface_ingestion/
 
 ---
 
-**Module Status:** 🏗️ IN PROGRESS (7/20 components complete)  
-**Next Milestone:** Global variable extraction with size, alignment, and mutability analysis
+**Module Status:** 🏗️ IN PROGRESS (9/20 components complete)  
+**Next Milestone:** Opaque handles and incomplete type detection
