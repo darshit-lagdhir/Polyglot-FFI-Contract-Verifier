@@ -15,13 +15,15 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 16/20
-Status: ingestion_orchestrator
+Prompt: 17/20
+Status: multi_header_orchestration
 """
 
 import json
 import hashlib
 import time
+import tempfile
+import shutil
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
@@ -35,8 +37,8 @@ from typing import List, Dict, Optional, Any, Set, Tuple, Union
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "16/20"
-__status__ = "ingestion_orchestrator"
+__prompt__ = "17/20"
+__status__ = "multi_header_orchestration"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -2742,6 +2744,9 @@ class RawInterfaceArtifact:
     # Type definitions
     type_definitions: Dict[str, TypeInfo] = field(default_factory=dict)
     
+        dependency_graph: Optional['IncludeDependencyGraph'] = None
+    header_classifications: Dict[str, 'HeaderClassification'] = field(default_factory=dict)
+    
     # Symbol dependency graph
     symbol_dependencies: Dict[str, List[str]] = field(default_factory=dict)
     
@@ -2769,6 +2774,14 @@ class RawInterfaceArtifact:
             'external_symbols': [s.to_dict() for s in self.external_symbols],
             'type_definitions': {
                 k: v.to_dict() for k, v in self.type_definitions.items()
+            },
+            'dependency_graph': (
+                self.dependency_graph.to_dict()
+                if self.dependency_graph
+                else None
+            ),
+            'header_classifications': {
+                k: v.to_dict() for k, v in self.header_classifications.items()
             },
             'symbol_dependencies': self.symbol_dependencies,
             'validation_status': {
@@ -4746,6 +4759,238 @@ class ArtifactValidator:
         return diagnostics
 
 # ============================================================================
+# MULTI-HEADER SUPPORT ()
+# ============================================================================
+
+# ============================================================================
+# INCLUDE DEPENDENCY GRAPH
+# ============================================================================
+
+@dataclass
+class IncludeEdge:
+    """Edge in include dependency graph."""
+    includer: str
+    included: str
+    line: int
+
+class IncludeDependencyGraph:
+    """Graph of header include relationships."""
+    
+    def __init__(self):
+        self.edges: List[IncludeEdge] = []
+        self.nodes: Set[str] = set()
+    
+    def add_include(self, includer: str, included: str, line: int = 0):
+        """Add an include edge."""
+        self.edges.append(IncludeEdge(includer, included, line))
+        self.nodes.add(includer)
+        self.nodes.add(included)
+    
+    def get_dependencies(self, header: str) -> List[str]:
+        """Get immediate dependencies of a header."""
+        return [
+            edge.included for edge in self.edges
+            if edge.includer == header
+        ]
+    
+    def get_transitive_dependencies(self, header: str) -> Set[str]:
+        """Get all transitive dependencies."""
+        deps = set()
+        to_visit = [header]
+        visited = set()
+        
+        while to_visit:
+            current = to_visit.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            
+            for dep in self.get_dependencies(current):
+                if dep not in deps:
+                    deps.add(dep)
+                    to_visit.append(dep)
+        
+        return deps
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize graph."""
+        return {
+            'nodes': list(self.nodes),
+            'edges': [
+                {'includer': e.includer, 'included': e.included, 'line': e.line}
+                for e in self.edges
+            ]
+        }
+
+# ============================================================================
+# HEADER CLASSIFICATION
+# ============================================================================
+
+@dataclass
+class HeaderClassification:
+    """
+    Classification of a header file.
+    
+    Determines if header is public, system, or internal.
+    """
+    
+    path: Path
+    is_public: bool = False
+    is_system: bool = False
+    is_generated: bool = False
+    is_internal: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize classification."""
+        return {
+            'path': str(self.path),
+            'is_public': self.is_public,
+            'is_system': self.is_system,
+            'is_generated': self.is_generated,
+            'is_internal': self.is_internal
+        }
+
+def classify_header(header: Path) -> HeaderClassification:
+    """Classify a header based on its path."""
+    
+    classification = HeaderClassification(path=header)
+    
+    path_str = str(header).replace('\\', '/')
+    
+    # Check if system header (simplified heuristic)
+    if '/usr/include' in path_str or '/usr/local/include' in path_str:
+        classification.is_system = True
+        return classification
+    
+    # Check if in include/ directory (public)
+    if 'include' in header.parts:
+        classification.is_public = True
+    
+    # Check if internal
+    if 'internal' in header.parts or 'private' in header.parts:
+        classification.is_internal = True
+        classification.is_public = False
+    
+    # Check if generated
+    if header.name.startswith('config.') or 'generated' in header.parts:
+        classification.is_generated = True
+    
+    return classification
+
+# ============================================================================
+# SYMBOL DEDUPLICATION
+# ============================================================================
+
+@dataclass
+class SymbolOccurrence:
+    """Single occurrence of a symbol."""
+    location: Optional[SourceLocation]
+    definition: ExternalSymbol
+
+class SymbolRegistry:
+    """Registry for deduplicating symbols."""
+    
+    def __init__(self):
+        self.symbols: Dict[str, List[SymbolOccurrence]] = {}
+    
+    def register(
+        self,
+        symbol: ExternalSymbol,
+        location: Optional[SourceLocation] = None
+    ) -> bool:
+        """
+        Register a symbol occurrence.
+        
+        Returns:
+            True if this is the first occurrence (primary)
+        """
+        name = symbol.name
+        
+        if name not in self.symbols:
+            self.symbols[name] = []
+            self.symbols[name].append(SymbolOccurrence(location, symbol))
+            return True  # Primary
+        
+        # Add as alternative occurrence
+        self.symbols[name].append(SymbolOccurrence(location, symbol))
+        return False  # Not primary
+    
+    def get_primary_symbols(self) -> List[ExternalSymbol]:
+        """Get primary (first) occurrence of each symbol."""
+        return [
+            occurrences[0].definition
+            for occurrences in self.symbols.values()
+        ]
+    
+    def get_all_occurrences(self, name: str) -> List[SymbolOccurrence]:
+        """Get all occurrences of a symbol."""
+        return self.symbols.get(name, [])
+
+# ============================================================================
+# VIRTUAL HEADER GENERATOR
+# ============================================================================
+
+class VirtualHeaderGenerator:
+    """Generates virtual headers for multi-header ingestion."""
+    
+    def __init__(self):
+        self.temp_dir: Optional[Path] = None
+    
+    def generate(
+        self,
+        header_files: List[Path],
+        include_paths: List[Path]
+    ) -> Path:
+        """
+        Generate virtual header including all target headers.
+        
+        Args:
+            header_files: Headers to include
+            include_paths: Include search paths
+            
+        Returns:
+            Path to generated virtual header
+        """
+        # Create temporary directory
+        self.temp_dir = Path(tempfile.mkdtemp(prefix='pfcv_virtual_'))
+        
+        virtual_header = self.temp_dir / 'virtual_header.h'
+        
+        with open(virtual_header, 'w') as f:
+            f.write("// Auto-generated virtual header for PFCV ingestion\n")
+            f.write("// DO NOT EDIT - This file is temporary\n\n")
+            
+            for header in header_files:
+                # Try to make path relative to include paths
+                include_name = self._make_include_path(header, include_paths)
+                f.write(f'#include "{include_name}"\n')
+        
+        return virtual_header
+    
+    def _make_include_path(
+        self,
+        header: Path,
+        include_paths: List[Path]
+    ) -> str:
+        """Make include path relative to include directories."""
+        
+        # Try each include path
+        for include_path in include_paths:
+            try:
+                relative = header.relative_to(include_path)
+                return str(relative)
+            except ValueError:
+                continue
+        
+        # Fall back to absolute path
+        return str(header)
+    
+    def cleanup(self):
+        """Clean up temporary directory."""
+        if self.temp_dir and self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+# ============================================================================
 # INGESTION ORCHESTRATOR ()
 # ============================================================================
 import argparse
@@ -4872,6 +5117,8 @@ class IngestionOrchestrator:
         self.diagnostic_collector = diagnostic_collector or DiagnosticCollector()
         
         self.state = IngestionState()
+        self.virtual_header_gen = VirtualHeaderGenerator()
+        self.symbol_registry = SymbolRegistry()
     
     def ingest(self, config: IngestionConfig) -> RawInterfaceArtifact:
         """
@@ -4893,6 +5140,30 @@ class IngestionOrchestrator:
             # Build compilation context
             context = config.to_compilation_context()
             
+                        dependency_graph = IncludeDependencyGraph()
+            header_classifications = {}
+            
+            # Build dependency graph and classify headers
+            for header in config.header_files:
+                self._build_dependency_graph(header, config.include_paths, dependency_graph)
+                header_classifications[str(header)] = classify_header(header)
+            
+            # Generate virtual header if multiple headers
+            virtual_header_path = None
+            if len(config.header_files) > 1:
+                try:
+                    virtual_header_path = self.virtual_header_gen.generate(
+                        config.header_files, 
+                        config.include_paths
+                    )
+                    # Use virtual header for parsing
+                    context.header_files = [virtual_header_path]
+                except Exception as e:
+                    self.diagnostic_collector.add_warning(
+                        f"Virtual header generation failed: {e}. Falling back to individual parsing.",
+                        category='configuration'
+                    )
+            
             # Stage 2: Parsing
             self.state.enter_stage("parsing")
             
@@ -4906,8 +5177,11 @@ class IngestionOrchestrator:
             # Stage 3: Extraction
             self.state.enter_stage("extraction")
             
-            symbols = self.frontend.extract_symbols(compilation_unit)
-            self.state.extracted_symbols = len(symbols)
+            raw_symbols = self.frontend.extract_symbols(compilation_unit)
+            
+                        extracted_symbols = self._deduplicate_symbols(raw_symbols)
+            
+            self.state.extracted_symbols = len(extracted_symbols)
             
             self.state.exit_stage()
             
@@ -4918,11 +5192,17 @@ class IngestionOrchestrator:
                 artifact_version=__version__,
                 generation_timestamp=datetime.now(timezone.utc).isoformat(),
                 compilation_context=context,
-                external_symbols=symbols,
-                type_definitions=self.frontend._type_extractor._type_cache if hasattr(self.frontend, '_type_extractor') else {}
+                external_symbols=extracted_symbols,
+                type_definitions=self.frontend._type_extractor._type_cache if hasattr(self.frontend, '_type_extractor') else {},
+                dependency_graph=dependency_graph,
+                header_classifications=header_classifications
             )
             
             self.state.exit_stage()
+            
+            # Clean up virtual header
+            if virtual_header_path:
+                self.virtual_header_gen.cleanup()
             
             # Stage 5: Validation
             if config.enable_validation:
@@ -4951,7 +5231,7 @@ class IngestionOrchestrator:
                 self.state.exit_stage()
             
             # Update report statistics
-            self.diagnostic_collector.report.symbols_extracted = len(symbols)
+            self.diagnostic_collector.report.symbols_extracted = len(extracted_symbols)
             
             return artifact
             
@@ -4995,6 +5275,78 @@ class IngestionOrchestrator:
         
         return errors
     
+    
+    def _build_dependency_graph(
+        self,
+        header: Path,
+        include_paths: List[Path],
+        graph: IncludeDependencyGraph
+    ):
+        """
+        Build include dependency graph for a header.
+        
+        Simple regex-based scanner to find direct includes.
+        Does not handle preprocessor conditionals fully.
+        """
+        import re
+        
+        try:
+            with open(header, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+                
+            include_pattern = re.compile(r'^\s*#\s*include\s*["<](.+)[">]')
+            
+            for i, line in enumerate(lines):
+                match = include_pattern.match(line)
+                if match:
+                    included_name = match.group(1)
+                    
+                    # Resolve included file
+                    resolved_path = self._resolve_include(included_name, include_paths, header.parent)
+                    
+                    if resolved_path:
+                        graph.add_include(str(header), str(resolved_path), i + 1)
+        except Exception:
+            # Ignore read errors
+            pass
+
+    def _resolve_include(
+        self,
+        name: str,
+        include_paths: List[Path],
+        current_dir: Path
+    ) -> Optional[Path]:
+        """Resolve include path."""
+        # Try relative to current file
+        candidate = current_dir / name
+        if candidate.exists():
+            return candidate
+            
+        # Try include paths
+        for path in include_paths:
+            candidate = path / name
+            if candidate.exists():
+                return candidate
+                
+        return None
+
+    def _deduplicate_symbols(self, symbols: List[ExternalSymbol]) -> List[ExternalSymbol]:
+        """
+        Deduplicate extracted symbols.
+        
+        Uses SymbolRegistry to handle multiple occurrences.
+        """
+        unique_symbols = []
+        
+        # Reset registry for this run
+        self.symbol_registry = SymbolRegistry()
+        
+        for symbol in symbols:
+            if self.symbol_registry.register(symbol, symbol.source_location):
+                unique_symbols.append(symbol)
+                
+        return unique_symbols
+
     def get_report(self) -> IngestionReport:
         """Get final ingestion report."""
         return self.diagnostic_collector.get_report()

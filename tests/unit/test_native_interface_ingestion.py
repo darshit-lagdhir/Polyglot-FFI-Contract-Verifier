@@ -72,7 +72,12 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     ArtifactValidator,
         IngestionConfig,
     IngestionState,
-    IngestionOrchestrator
+    IngestionOrchestrator,
+        IncludeDependencyGraph,
+    HeaderClassification,
+    classify_header,
+    SymbolRegistry,
+    VirtualHeaderGenerator
 )
 
 @pytest.fixture
@@ -2763,6 +2768,120 @@ class TestIngestionOrchestrator:
 # Target: 100+ tests for hard level
 # Progress: 193 components = 193% (EXCEPTIONAL MASTERY!)
 # ============================================================================
+
+# ============================================================================
+# MULTI-HEADER SUPPORT TESTS ()
+# ============================================================================
+
+class TestIncludeDependencyGraph:
+    """Test dependency graph."""
+    
+    def test_dependency_tracking(self):
+        """Test adding and tracking dependencies."""
+        graph = IncludeDependencyGraph()
+        
+        # Add simpler chain: A -> B -> C
+        graph.add_include('A.h', 'B.h')
+        graph.add_include('B.h', 'C.h')
+        
+        # Check immediate dependencies
+        assert 'B.h' in graph.get_dependencies('A.h')
+        
+        # Check transitive dependencies
+        deps = graph.get_transitive_dependencies('A.h')
+        assert 'B.h' in deps
+        assert 'C.h' in deps
+        assert len(deps) == 2
+
+    def test_serialization(self):
+        """Test graph serialization."""
+        graph = IncludeDependencyGraph()
+        graph.add_include('A.h', 'B.h')
+        data = graph.to_dict()
+        assert len(data['nodes']) == 2
+        assert len(data['edges']) == 1
+
+class TestHeaderClassification:
+    """Test header classification."""
+    
+    def test_classification(self, tmp_path):
+        """Test header classification logic."""
+        # System check
+        path = Path('/usr/include/stdlib.h')
+        cls = classify_header(path)
+        assert cls.is_system
+        
+        # Public check
+        path = tmp_path / 'include' / 'api.h'
+        cls = classify_header(path)
+        assert cls.is_public
+        
+        # Internal check
+        path = tmp_path / 'internal' / 'impl.h'
+        cls = classify_header(path)
+        assert cls.is_internal
+        
+        # Generated check
+        path = tmp_path / 'generated' / 'gen.h'
+        cls = classify_header(path)
+        assert cls.is_generated
+
+class TestSymbolRegistry:
+    """Test symbol deduplication registry."""
+    
+    def test_deduplication(self):
+        """Test symbol registry deduplication."""
+        registry = SymbolRegistry()
+        
+        sym1 = ExternalSymbol(name='func', kind='function')
+        sym2 = ExternalSymbol(name='func', kind='function') # Duplicate
+        sym3 = ExternalSymbol(name='other', kind='variable')
+        
+        # First registration
+        assert registry.register(sym1) is True
+        
+        # Duplicate registration
+        assert registry.register(sym2) is False
+        
+        # Different symbol
+        assert registry.register(sym3) is True
+        
+        # Check primary symbols
+        primary = registry.get_primary_symbols()
+        assert len(primary) == 2
+        names = {s.name for s in primary}
+        assert 'func' in names
+        assert 'other' in names
+
+class TestVirtualHeaderGenerator:
+    """Test virtual header generation."""
+    
+    def test_generation(self, tmp_path):
+        """Test generating virtual header."""
+        gen = VirtualHeaderGenerator()
+        
+        # Setup headers
+        h1 = tmp_path / 'header1.h'
+        h1.write_text('// h1', encoding='utf-8')
+        h2 = tmp_path / 'header2.h'
+        h2.write_text('// h2', encoding='utf-8')
+        
+        include_paths = [tmp_path]
+        
+        # Generate
+        vheader = gen.generate([h1, h2], include_paths)
+        
+        try:
+            assert vheader.exists()
+            content = vheader.read_text(encoding='utf-8')
+            
+            # Since both are in tmp_path which is in include_paths
+            # _make_include_path should return relative paths
+            assert '#include "header1.h"' in content
+            assert '#include "header2.h"' in content
+        finally:
+            gen.cleanup()
+            assert not vheader.exists()
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
