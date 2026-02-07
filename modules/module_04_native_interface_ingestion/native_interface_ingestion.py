@@ -3027,7 +3027,24 @@ def _load_libclang():
             names.extend(glob.glob('/usr/lib/llvm-*/lib/libclang.so*'))
             names.extend(glob.glob('/usr/lib/libclang.so*'))
 
-    # 3. Try loading all candidates
+    # 3. Try to find via python 'clang' package (if installed)
+    # This is often the most reliable way if the pip package bundles binaries
+    try:
+        import clang.native
+        if hasattr(clang.native, '__file__'):
+            base_path = Path(clang.native.__file__).parent
+            # Check for common binary names
+            for bin_name in ['libclang.dll', 'libclang.dylib', 'libclang.so', 'libclang.so.1']:
+                lib_path = base_path / bin_name
+                if lib_path.exists():
+                    try:
+                        return ctypes.CDLL(str(lib_path))
+                    except OSError:
+                        pass
+    except (ImportError, AttributeError, OSError):
+        pass
+
+    # 4. Try loading all candidates
     for name in names:
         try:
             return ctypes.CDLL(name)

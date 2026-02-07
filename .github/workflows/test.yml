@@ -38,6 +38,8 @@ jobs:
       
       - name: Run all tests
         timeout-minutes: 15
+        env:
+          LD_LIBRARY_PATH: /usr/lib/llvm-14/lib
         run: |
           pytest -v -c config/pytest.ini --timeout=30
   
