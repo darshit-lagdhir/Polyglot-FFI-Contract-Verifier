@@ -3001,6 +3001,15 @@ def _load_libclang():
         names = ['libclang.dylib']
     else:
         names = ['libclang.so', 'libclang.so.1']
+        
+        # Enhanced CI search paths for Linux
+        if sys.platform.startswith('linux'):
+            # Common Ubuntu/Debian LLVM paths
+            for ver in range(10, 19):
+                names.append(f'/usr/lib/llvm-{ver}/lib/libclang.so.1')
+            
+            names.append('/usr/lib/x86_64-linux-gnu/libclang-14.so.1')
+            names.append('/usr/lib/x86_64-linux-gnu/libclang.so.1')
     
     # Try standard loading first
     for name in names:
