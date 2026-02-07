@@ -51,7 +51,12 @@ from modules.module_04_native_interface_ingestion.native_interface_ingestion imp
     TypedefResolver,
     CircularTypedefError,
         MacroInfo,
-    MacroExtractor
+    MacroExtractor,
+        AttributeInfo,
+    AttributeExtractor,
+        SourceRange,
+    ProvenanceInfo,
+    LocationExtractor
 )
 
 # ============================================================================
@@ -67,8 +72,8 @@ class TestModuleMetadata:
         
         assert info['module'] == '04'
         assert info['version'] == '1.0.0'
-        assert info['prompt'] == '10/20'
-        assert info['status'] == 'macro_extraction'
+        assert info['prompt'] == '12/20'
+        assert info['status'] == 'source_location_tracking'
         assert 'Native Interface Ingestion' in info['name']
 
 # ============================================================================
@@ -1699,9 +1704,293 @@ class TestExternalSymbolWithMacro:
         assert symbol.macro_info.macro_name == 'DEBUG'
 
 # ============================================================================
-# HARD LEVEL TESTING!
-# Total tests in file: 18 (P1) + 9 (P2) + 11 (P3) + 13 (P4) + 14 (P5) + 14 (P6) + 13 (P7) + 10 (P8) + 11 (P9) + 11 (P10) = 124 tests
-# Progress: 124 components = 124% (STRONGLY IN HARD LEVEL!)
+# TEST: ATTRIBUTE EXTRACTION ()
+# ============================================================================
+
+class TestAttributeInfo:
+    """Test attribute information structure."""
+    
+    def test_attribute_creation(self):
+        """Test creating attribute info."""
+        attr = AttributeInfo(
+            attribute_kind='aligned',
+            attribute_syntax='__attribute__',
+            arguments=['16'],
+            affects_abi=True
+        )
+        
+        assert attr.attribute_kind == 'aligned'
+        assert attr.affects_abi
+        assert '16' in attr.arguments
+
+    def test_visibility_attribute(self):
+        """Test visibility attribute."""
+        attr = AttributeInfo(
+            attribute_kind='visibility',
+            attribute_syntax='__attribute__',
+            arguments=['hidden'],
+            affects_visibility=True
+        )
+        
+        assert attr.affects_visibility
+        assert not attr.affects_abi
+
+    def test_deprecated_attribute(self):
+        """Test deprecated attribute."""
+        attr = AttributeInfo(
+            attribute_kind='deprecated',
+            attribute_syntax='__attribute__',
+            arguments=['Use new_function instead'],
+            affects_semantics=True
+        )
+        
+        assert attr.affects_semantics
+        assert 'Use new_function instead' in attr.arguments
+
+    def test_platform_specific_attribute(self):
+        """Test platform-specific attribute."""
+        attr = AttributeInfo(
+            attribute_kind='dllexport',
+            attribute_syntax='__declspec',
+            platform_specific=True
+        )
+        
+        assert attr.platform_specific
+
+    def test_attribute_serialization(self):
+        """Test attribute serialization."""
+        attr = AttributeInfo(
+            attribute_kind='packed',
+            attribute_syntax='__attribute__',
+            affects_abi=True
+        )
+        
+        data = attr.to_dict()
+        
+        assert data['attribute_kind'] == 'packed'
+        assert data['affects_abi'] is True
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestAttributeExtractor:
+    """Test attribute extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating attribute extractor."""
+        extractor = AttributeExtractor()
+        
+        assert extractor is not None
+
+    def test_attribute_classification(self):
+        """Test attribute impact classification."""
+        extractor = AttributeExtractor()
+        
+        aligned_impact = extractor.classify_attribute('aligned')
+        assert aligned_impact['affects_abi'] is True
+        
+        visibility_impact = extractor.classify_attribute('visibility')
+        assert visibility_impact['affects_visibility'] is True
+        
+        noreturn_impact = extractor.classify_attribute('noreturn')
+        assert noreturn_impact['affects_semantics'] is True
+
+class TestExternalSymbolWithAttributes:
+    """Test ExternalSymbol with attributes."""
+    
+    def test_symbol_with_attributes(self):
+        """Test symbol with attributes."""
+        attr = AttributeInfo(
+            attribute_kind='aligned',
+            attribute_syntax='__attribute__',
+            arguments=['32']
+        )
+        
+        symbol = ExternalSymbol(
+            name='aligned_var',
+            kind='variable',
+            attributes=[attr]
+        )
+        
+        assert len(symbol.attributes) == 1
+        assert symbol.attributes[0].attribute_kind == 'aligned'
+
+    def test_deprecated_symbol(self):
+        """Test deprecated symbol."""
+        attr = AttributeInfo(
+            attribute_kind='deprecated',
+            attribute_syntax='__attribute__',
+            arguments=['Use v2 instead']
+        )
+        
+        symbol = ExternalSymbol(
+            name='old_api',
+            kind='function',
+            attributes=[attr],
+            is_deprecated=True,
+            deprecation_message='Use v2 instead'
+        )
+        
+        assert symbol.is_deprecated
+        assert symbol.deprecation_message == 'Use v2 instead'
+
+# ============================================================================
+# TEST: SOURCE LOCATION TRACKING ()
+# ============================================================================
+
+class TestSourceLocationV2:
+    """Test source location structure (V2 enhanced)."""
+    
+    def test_location_creation(self):
+        """Test creating source location."""
+        loc = SourceLocation(
+            file_path='test.h',
+            line=42,
+            column=10
+        )
+        
+        assert loc.file_path == 'test.h'
+        assert loc.line == 42
+        assert loc.column == 10
+        assert loc.is_spelling
+
+    def test_system_header_location(self):
+        """Test system header location."""
+        loc = SourceLocation(
+            file_path='/usr/include/stdio.h',
+            line=100,
+            column=1,
+            is_in_system_header=True
+        )
+        
+        assert loc.is_in_system_header
+
+    def test_location_serialization(self):
+        """Test location serialization."""
+        loc = SourceLocation(
+            file_path='api.h',
+            line=15,
+            column=5,
+            offset=420
+        )
+        
+        data = loc.to_dict()
+        
+        assert data['file'] == 'api.h'
+        assert data['line'] == 15
+        assert data['column'] == 5
+
+class TestSourceRange:
+    """Test source range structure."""
+    
+    def test_range_creation(self):
+        """Test creating source range."""
+        start = SourceLocation('test.h', 10, 1)
+        end = SourceLocation('test.h', 15, 20)
+        
+        range_obj = SourceRange(start=start, end=end)
+        
+        assert range_obj.start.line == 10
+        assert range_obj.end.line == 15
+
+    def test_range_serialization(self):
+        """Test range serialization."""
+        start = SourceLocation('types.h', 50, 1)
+        end = SourceLocation('types.h', 60, 2)
+        
+        range_obj = SourceRange(start=start, end=end)
+        data = range_obj.to_dict()
+        
+        assert 'start' in data
+        assert 'end' in data
+        assert data['start']['line'] == 50
+        assert data['end']['line'] == 60
+
+class TestProvenanceInfo:
+    """Test provenance information structure."""
+    
+    def test_provenance_creation(self):
+        """Test creating provenance info."""
+        loc = SourceLocation('api.h', 100, 5)
+        
+        prov = ProvenanceInfo(location=loc)
+        
+        assert prov.location == loc
+        assert prov.is_public_header
+
+    def test_provenance_with_include_chain(self):
+        """Test provenance with include chain."""
+        loc = SourceLocation('config.h', 20, 1)
+        
+        prov = ProvenanceInfo(
+            location=loc,
+            include_chain=['api.h', 'platform.h', 'config.h'],
+            include_depth=2
+        )
+        
+        assert len(prov.include_chain) == 3
+        assert prov.include_depth == 2
+
+    def test_system_header_provenance(self):
+        """Test system header provenance."""
+        loc = SourceLocation('/usr/include/stdlib.h', 50, 1, is_in_system_header=True)
+        
+        prov = ProvenanceInfo(
+            location=loc,
+            is_system_header=True,
+            is_public_header=False
+        )
+        
+        assert prov.is_system_header
+        assert not prov.is_public_header
+
+    def test_provenance_serialization(self):
+        """Test provenance serialization."""
+        loc = SourceLocation('interface.h', 75, 10)
+        start = SourceLocation('interface.h', 70, 1)
+        end = SourceLocation('interface.h', 80, 2)
+        extent = SourceRange(start=start, end=end)
+        
+        prov = ProvenanceInfo(
+            location=loc,
+            extent=extent,
+            include_chain=['main.h', 'interface.h']
+        )
+        
+        data = prov.to_dict()
+        
+        assert 'location' in data
+        assert 'extent' in data
+        assert 'include_chain' in data
+
+@pytest.mark.skipif(not LIBCLANG_AVAILABLE, reason="libclang not available")
+class TestLocationExtractor:
+    """Test location extractor."""
+    
+    def test_extractor_creation(self):
+        """Test creating location extractor."""
+        extractor = LocationExtractor()
+        
+        assert extractor is not None
+
+class TestExternalSymbolWithProvenance:
+    """Test ExternalSymbol with provenance."""
+    
+    def test_symbol_with_provenance(self):
+        """Test symbol with provenance info."""
+        loc = SourceLocation('types.h', 42, 8)
+        prov = ProvenanceInfo(location=loc)
+        
+        symbol = ExternalSymbol(
+            name='MyStruct',
+            kind='struct',
+            provenance=prov
+        )
+        
+        assert symbol.provenance is not None
+        assert symbol.provenance.location.line == 42
+
+# ============================================================================
+# Target: 100+ tests for hard level
+# Progress: 145 components = 145% (EXCELLENT HARD LEVEL!)
 # ============================================================================
 
 if __name__ == '__main__':

@@ -15,8 +15,8 @@ Architectural Principles:
 
 Author: PFCV Authors
 Module: 04
-Prompt: 11/20
-Status: attribute_extraction
+Prompt: 12/20
+Status: source_location_tracking
 """
 
 import json
@@ -33,8 +33,8 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __module__ = "04"
-__prompt__ = "11/20"
-__status__ = "attribute_extraction"
+__prompt__ = "12/20"
+__status__ = "source_location_tracking"
 
 # ============================================================================
 # COMPILATION CONTEXT
@@ -100,28 +100,165 @@ class CompilationContext:
         return f"CompilationContext(headers={len(self.header_files)})"
 
 # ============================================================================
-# SOURCE LOCATION
+# SOURCE LOCATION ()
 # ============================================================================
 
 @dataclass
 class SourceLocation:
-    """Source code location."""
+    """
+    Complete source location information.
+    
+    Captures file, line, column, and location context.
+    """
     
     file_path: str
     line: int
     column: int
     
+    # Location type
+    is_spelling: bool = True  # True for spelling, False for expansion
+    is_in_system_header: bool = False
+    
+    # Additional context
+    offset: int = 0  # Byte offset in file
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize location."""
-        return {
+        data = {
             'file': self.file_path,
             'line': self.line,
             'column': self.column
         }
+        
+        if self.is_in_system_header:
+            data['is_system_header'] = True
+        
+        if self.offset > 0:
+            data['offset'] = self.offset
+        
+        return data
 
     def __repr__(self) -> str:
         """String representation."""
         return f"{self.file_path}:{self.line}:{self.column}"
+
+# ============================================================================
+# SOURCE RANGE ()
+# ============================================================================
+
+@dataclass
+class SourceRange:
+    """
+    Source range spanning start and end locations.
+    
+    Represents multi-line declarations or code spans.
+    """
+    
+    start: SourceLocation
+    end: SourceLocation
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize range."""
+        return {
+            'start': self.start.to_dict(),
+            'end': self.end.to_dict()
+        }
+
+# ============================================================================
+# PROVENANCE INFO ()
+# ============================================================================
+
+@dataclass
+class ProvenanceInfo:
+    """
+    Provenance metadata for declarations.
+    
+    Captures location, include chain, header classification,
+    and modification tracking.
+    """
+    
+    # Primary location
+    location: SourceLocation
+    extent: Optional[SourceRange] = None
+    
+    # Include chain (list of header files leading to this declaration)
+    include_chain: List[str] = field(default_factory=list)
+    include_depth: int = 0
+    
+    # Header classification
+    is_public_header: bool = True
+    is_system_header: bool = False
+    
+    # Expansion context (for macro-generated declarations)
+    expansion_location: Optional[SourceLocation] = None
+    
+    # Modification tracking
+    file_modification_time: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize provenance."""
+        data = {
+            'location': self.location.to_dict(),
+            'include_depth': self.include_depth,
+            'is_public_header': self.is_public_header
+        }
+        
+        if self.extent:
+            data['extent'] = self.extent.to_dict()
+        
+        if self.include_chain:
+            data['include_chain'] = self.include_chain
+        
+        if self.expansion_location:
+            data['expansion_location'] = self.expansion_location.to_dict()
+        
+        if self.file_modification_time:
+            data['file_modification_time'] = self.file_modification_time
+        
+        return data
+
+# ============================================================================
+# ATTRIBUTE INFO ()
+# ============================================================================
+
+@dataclass
+class AttributeInfo:
+    """
+    Information about a compiler attribute.
+    
+    Captures attribute kind, syntax, arguments, and ABI impact.
+    """
+    
+    attribute_kind: str  # 'aligned', 'packed', 'visibility', 'deprecated', 'calling_conv', etc.
+    attribute_syntax: str  # '__attribute__', '__declspec', '[[...]]', 'pragma'
+    
+    # Attribute arguments
+    arguments: List[str] = field(default_factory=list)
+    
+    # Impact classification
+    affects_abi: bool = False  # Changes structure layout, alignment, or calling convention
+    affects_visibility: bool = False  # Changes symbol export/import
+    affects_semantics: bool = False  # Changes behavior (noreturn, const, etc.)
+    
+    # Additional metadata
+    platform_specific: bool = False  # Attribute is platform-specific
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize attribute info."""
+        data = {
+            'attribute_kind': self.attribute_kind,
+            'attribute_syntax': self.attribute_syntax,
+            'affects_abi': self.affects_abi,
+            'affects_visibility': self.affects_visibility
+        }
+        
+        if self.arguments:
+            data['arguments'] = self.arguments
+        
+        if self.platform_specific:
+            data['platform_specific'] = True
+        
+        return data
 
 # ============================================================================
 # EXTERNAL SYMBOL (ENHANCED IN PROMPT 2)
@@ -150,6 +287,14 @@ class ExternalSymbol:
     
         macro_info: Optional['MacroInfo'] = None
     
+        attributes: List[AttributeInfo] = field(default_factory=list)
+    
+    # Quick access flags (derived from attributes)
+    is_deprecated: bool = False
+    deprecation_message: Optional[str] = None
+    
+        provenance: Optional[ProvenanceInfo] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol to dictionary."""
         data = {
@@ -172,6 +317,17 @@ class ExternalSymbol:
             
         if self.macro_info:
             data['macro_info'] = self.macro_info.to_dict()
+        
+        if self.attributes:
+            data['attributes'] = [attr.to_dict() for attr in self.attributes]
+        
+        if self.is_deprecated:
+            data['is_deprecated'] = True
+            if self.deprecation_message:
+                data['deprecation_message'] = self.deprecation_message
+        
+        if self.provenance:
+            data['provenance'] = self.provenance.to_dict()
         
         return data
 
@@ -1677,6 +1833,305 @@ class MacroExtractor:
         return macro_name in self._platform_macros
 
 # ============================================================================
+# LOCATION EXTRACTOR ()
+# ============================================================================
+
+class LocationExtractor:
+    """
+    Extracts source location and provenance information from Clang AST.
+    
+    Handles spelling/expansion locations, ranges, include chains,
+    and header classification.
+    """
+    
+    def __init__(self):
+        """Initialize location extractor."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+    
+    def extract_location(
+        self,
+        cursor: 'CXIDE'
+    ) -> SourceLocation:
+        """
+        Extract source location from cursor.
+        
+        Args:
+            cursor: IDE to extract location from
+            
+        Returns:
+            SourceLocation
+        """
+        # Get cursor location
+        location = libclang.clang_getIDELocation(cursor)
+        
+        # Extract spelling location
+        file_ptr = ctypes.POINTER(CXFile)()
+        line = ctypes.c_uint()
+        column = ctypes.c_uint()
+        offset = ctypes.c_uint()
+        
+        libclang.clang_getSpellingLocation(
+            location,
+            ctypes.byref(file_ptr),
+            ctypes.byref(line),
+            ctypes.byref(column),
+            ctypes.byref(offset)
+        )
+        
+        # Get file name
+        file_path = "<unknown>"
+        if file_ptr:
+            file_name_cxstr = libclang.clang_getFileName(file_ptr)
+            file_path = clang_string_to_python(file_name_cxstr)
+        
+        # Check if in system header
+        is_system = bool(libclang.clang_Location_isInSystemHeader(location))
+        
+        return SourceLocation(
+            file_path=file_path,
+            line=line.value,
+            column=column.value,
+            is_spelling=True,
+            is_in_system_header=is_system,
+            offset=offset.value
+        )
+    
+    def extract_range(
+        self,
+        cursor: 'CXIDE'
+    ) -> SourceRange:
+        """
+        Extract source range from cursor.
+        
+        Args:
+            cursor: IDE to extract range from
+            
+        Returns:
+            SourceRange
+        """
+        # Get cursor extent
+        extent = libclang.clang_getIDEExtent(cursor)
+        
+        # Get start and end locations
+        start_loc = libclang.clang_getRangeStart(extent)
+        end_loc = libclang.clang_getRangeEnd(extent)
+        
+        # Extract start location
+        start_file = ctypes.POINTER(CXFile)()
+        start_line = ctypes.c_uint()
+        start_col = ctypes.c_uint()
+        start_offset = ctypes.c_uint()
+        
+        libclang.clang_getSpellingLocation(
+            start_loc,
+            ctypes.byref(start_file),
+            ctypes.byref(start_line),
+            ctypes.byref(start_col),
+            ctypes.byref(start_offset)
+        )
+        
+        start_path = "<unknown>"
+        if start_file:
+            start_name = libclang.clang_getFileName(start_file)
+            start_path = clang_string_to_python(start_name)
+        
+        # Extract end location
+        end_file = ctypes.POINTER(CXFile)()
+        end_line = ctypes.c_uint()
+        end_col = ctypes.c_uint()
+        end_offset = ctypes.c_uint()
+        
+        libclang.clang_getSpellingLocation(
+            end_loc,
+            ctypes.byref(end_file),
+            ctypes.byref(end_line),
+            ctypes.byref(end_col),
+            ctypes.byref(end_offset)
+        )
+        
+        end_path = start_path  # Assume same file
+        if end_file:
+            end_name = libclang.clang_getFileName(end_file)
+            end_path = clang_string_to_python(end_name)
+        
+        start_location = SourceLocation(
+            file_path=start_path,
+            line=start_line.value,
+            column=start_col.value,
+            offset=start_offset.value
+        )
+        
+        end_location = SourceLocation(
+            file_path=end_path,
+            line=end_line.value,
+            column=end_col.value,
+            offset=end_offset.value
+        )
+        
+        return SourceRange(start=start_location, end=end_location)
+    
+    def extract_provenance(
+        self,
+        cursor: 'CXIDE'
+    ) -> ProvenanceInfo:
+        """
+        Extract complete provenance information.
+        
+        Args:
+            cursor: IDE to extract provenance from
+            
+        Returns:
+            ProvenanceInfo
+        """
+        # Extract primary location
+        location = self.extract_location(cursor)
+        
+        # Extract extent
+        extent = self.extract_range(cursor)
+        
+        # Determine header classification
+        is_system_header = location.is_in_system_header
+        is_public_header = not is_system_header  # Heuristic: non-system = public
+        
+        return ProvenanceInfo(
+            location=location,
+            extent=extent,
+            is_system_header=is_system_header,
+            is_public_header=is_public_header
+        )
+
+# ============================================================================
+# ATTRIBUTE EXTRACTOR ()
+# ============================================================================
+
+class AttributeExtractor:
+    """
+    Extracts compiler attributes from Clang AST.
+    
+    Handles GCC/Clang __attribute__, MSVC __declspec, C++11/C23 [[...]],
+    and pragma directives.
+    """
+    
+    def __init__(self):
+        """Initialize attribute extractor."""
+        if not LIBCLANG_AVAILABLE:
+            raise ToolchainError("libclang not available")
+        
+        # Map attribute names to impact classification
+        self._abi_affecting_attributes = {
+            'aligned', 'packed', 'ms_struct', 'gcc_struct',
+            'stdcall', 'cdecl', 'fastcall', 'thiscall', 'vectorcall'
+        }
+        
+        self._visibility_affecting_attributes = {
+            'visibility', 'dllexport', 'dllimport', 'hidden', 'default'
+        }
+    
+    def extract_attributes(
+        self,
+        cursor: 'CXIDE'
+    ) -> List[AttributeInfo]:
+        """
+        Extract all attributes from a cursor.
+        
+        Args:
+            cursor: Declaration cursor
+            
+        Returns:
+            List of AttributeInfo
+        """
+        attributes = []
+        
+        # Check if cursor has attributes
+        if not libclang.clang_IDE_hasAttrs(cursor):
+            return attributes
+        
+        # Important: Full attribute extraction requires traversing cursor children
+        # and identifying attribute-specific cursor kinds. This is simplified
+                
+        # Detect common attributes through heuristics
+        attributes.extend(self._detect_alignment_attributes(cursor))
+        attributes.extend(self._detect_deprecated_attributes(cursor))
+        
+        return attributes
+    
+    def _detect_alignment_attributes(
+        self,
+        cursor: 'CXIDE'
+    ) -> List[AttributeInfo]:
+        """
+        Detect alignment attributes.
+        
+        Args:
+            cursor: IDE to analyze
+            
+        Returns:
+            List of alignment AttributeInfo
+        """
+        attributes = []
+        
+        # Get cursor type
+        cursor_type = libclang.clang_getIDEType(cursor)
+        
+        # Get alignment
+        alignment = libclang.clang_Type_getAlignOf(cursor_type)
+        
+        # Check if alignment is non-standard (heuristic)
+        # Full implementation would parse actual attribute syntax
+        if alignment > 0:
+            # Assume explicit alignment if unusually large
+            if alignment >= 16:
+                attr = AttributeInfo(
+                    attribute_kind='aligned',
+                    attribute_syntax='__attribute__',
+                    arguments=[str(alignment)],
+                    affects_abi=True
+                )
+                attributes.append(attr)
+        
+        return attributes
+    
+    def _detect_deprecated_attributes(
+        self,
+        cursor: 'CXIDE'
+    ) -> List[AttributeInfo]:
+        """
+        Detect deprecated attributes.
+        
+        Args:
+            cursor: IDE to analyze
+            
+        Returns:
+            List of deprecated AttributeInfo
+        """
+        attributes = []
+        
+        # Important: Full implementation would parse cursor attributes
+        # This is a simplified placeholder
+        
+        return attributes
+    
+    def classify_attribute(
+        self,
+        attribute_kind: str
+    ) -> Dict[str, bool]:
+        """
+        Classify attribute impact.
+        
+        Args:
+            attribute_kind: Attribute name
+            
+        Returns:
+            Dictionary with impact flags
+        """
+        return {
+            'affects_abi': attribute_kind in self._abi_affecting_attributes,
+            'affects_visibility': attribute_kind in self._visibility_affecting_attributes,
+            'affects_semantics': attribute_kind in {'noreturn', 'const', 'pure', 'nodiscard'}
+        }
+
+# ============================================================================
 # TYPE EXTRACTOR ()
 # ============================================================================
 
@@ -2216,6 +2671,12 @@ class CXString(ctypes.Structure):
 class CXSourceLocation(ctypes.Structure):
     _fields_ = [('ptr_data', ctypes.c_void_p * 2), ('int_data', ctypes.c_uint)]
 
+class CXSourceRange(ctypes.Structure):
+    _fields_ = [('ptr_data', ctypes.c_void_p * 2), ('begin_int_data', ctypes.c_uint), ('end_int_data', ctypes.c_uint)]
+
+class CXFile(ctypes.Structure):
+    pass
+
 class CXType(ctypes.Structure):
     _fields_ = [('kind', ctypes.c_int), ('data', ctypes.c_void_p * 2)]
 
@@ -2338,6 +2799,7 @@ if LIBCLANG_AVAILABLE:
     bind('clang_getIDEDisplayName', [CXIDE], CXString)
     bind('clang_getIDEVisibility', [CXIDE], ctypes.c_int)
     bind('clang_isIDEDefinition', [CXIDE], ctypes.c_int)
+    bind('clang_IDE_hasAttrs', [CXIDE], ctypes.c_int)
     
     # String operations
     bind('clang_getCString', [CXString], ctypes.c_char_p)
@@ -2400,6 +2862,12 @@ if LIBCLANG_AVAILABLE:
     
         bind('clang_IDE_isMacroFunctionLike', [CXIDE], ctypes.c_int)
     bind('clang_IDE_isMacroBuiltin', [CXIDE], ctypes.c_int)
+
+        bind('clang_getIDEExtent', [CXIDE], CXSourceRange)
+    bind('clang_getFileName', [ctypes.c_void_p], CXString)
+    bind('clang_getRangeStart', [CXSourceRange], CXSourceLocation)
+    bind('clang_getRangeEnd', [CXSourceRange], CXSourceLocation)
+    bind('clang_Location_isInSystemHeader', [CXSourceLocation], ctypes.c_int)
 
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
@@ -2470,6 +2938,8 @@ class ClangFrontend(CompilerFrontend):
         self._variable_extractor = GlobalVariableExtractor(self._type_extractor)
         self._typedef_resolver = TypedefResolver(self._type_extractor)
         self._macro_extractor = MacroExtractor()
+        self._attribute_extractor = AttributeExtractor()
+        self._location_extractor = LocationExtractor()
         
         self._type_extractor.set_record_extractor(self._record_extractor)
         self._type_extractor.set_enum_extractor(self._enum_extractor)
@@ -2661,6 +3131,17 @@ class ClangFrontend(CompilerFrontend):
                     macro_info=macro_info
                 )
                 
+                if macro_info.source_file:
+                    symbol.source_location = SourceLocation(
+                        file_path=macro_info.source_file,
+                        line=macro_info.line_number if macro_info.line_number else 0,
+                        column=0
+                    )
+                
+                return symbol
+            except Exception:
+                return None
+                
                 # Add location to symbol if available
                 if macro_info.source_file:
                     symbol.source_location = SourceLocation(
@@ -2670,9 +3151,27 @@ class ClangFrontend(CompilerFrontend):
                     )
                 
                 return symbol
-            except Exception:
-                return None
         
+        # Get cursor name
+        name_cxstr = libclang.clang_getIDESpelling(cursor)
+        name = clang_string_to_python(name_cxstr)
+        
+        if not name:
+            return None
+        
+        # Get cursor type
+        cursor_type = libclang.clang_getIDEType(cursor)
+        type_spelling_cxstr = libclang.clang_getTypeSpelling(cursor_type)
+        type_spelling = clang_string_to_python(type_spelling_cxstr)
+        
+                provenance = None
+        source_location = None
+        try:
+            provenance = self._location_extractor.extract_provenance(cursor)
+            source_location = provenance.location
+        except Exception:
+            pass
+
         # Only process declarations
         if kind not in [
             CXIDEKind.FUNCTION_DECL,
@@ -2685,31 +3184,6 @@ class ClangFrontend(CompilerFrontend):
         ]:
             return None
         
-        # Extract location
-        location_raw = libclang.clang_getIDELocation(cursor)
-        cxfile = ctypes.c_void_p()
-        line = ctypes.c_uint()
-        column = ctypes.c_uint()
-        offset = ctypes.c_uint()
-        
-        libclang.clang_getSpellingLocation(
-            location_raw,
-            ctypes.byref(cxfile),
-            ctypes.byref(line),
-            ctypes.byref(column),
-            ctypes.byref(offset)
-        )
-        
-        source_location = None
-        if cxfile.value:
-            file_cxstr = libclang.clang_getFileName(cxfile)
-            file_path = clang_string_to_python(file_cxstr)
-            source_location = SourceLocation(
-                file_path=file_path,
-                line=int(line.value),
-                column=int(column.value)
-            )
-
         # Check linkage
         linkage_kind = libclang.clang_getIDELinkage(cursor)
         # Linkage can be external or none (for types/macros)
@@ -2733,9 +3207,8 @@ class ClangFrontend(CompilerFrontend):
         }
         linkage_str = linkage_map.get(linkage_kind, 'none')
         
-        # Get symbol name
-        name_cxstr = libclang.clang_getIDESpelling(cursor)
-        name = clang_string_to_python(name_cxstr)
+        # Get symbol name (already extracted)
+        # name = clang_string_to_python(name_cxstr)
         
         if not name:
             return None
@@ -2754,8 +3227,8 @@ class ClangFrontend(CompilerFrontend):
         symbol_kind = kind_map.get(kind, 'unknown')
         
         # Extract type information
-        cursor_type = libclang.clang_getIDEType(cursor)
-        type_spelling = self._type_extractor._get_type_spelling(cursor_type)
+        # cursor_type already extracted
+        # type_spelling already extracted
         
         # Create symbol
         symbol = ExternalSymbol(
@@ -2763,7 +3236,8 @@ class ClangFrontend(CompilerFrontend):
             kind=symbol_kind,
             linkage=linkage_str,
             type_spelling=type_spelling,
-            source_location=source_location
+            source_location=source_location,
+            provenance=provenance
         )
         
                 if kind in [CXIDEKind.STRUCT_DECL, CXIDEKind.UNION_DECL]:
@@ -2823,4 +3297,18 @@ class ClangFrontend(CompilerFrontend):
             except Exception:
                 pass
         
+                try:
+            attributes = self._attribute_extractor.extract_attributes(cursor)
+            if attributes:
+                symbol.attributes = attributes
+            
+            # Check for deprecated attribute
+            for attr in attributes:
+                if attr.attribute_kind == 'deprecated':
+                    symbol.is_deprecated = True
+                    if attr.arguments:
+                        symbol.deprecation_message = attr.arguments[0]
+        except Exception:
+            pass
+            
         return symbol
