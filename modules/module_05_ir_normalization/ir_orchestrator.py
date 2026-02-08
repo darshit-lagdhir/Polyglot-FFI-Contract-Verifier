@@ -300,16 +300,13 @@ class IROrchestrator:
             with open(self.config.input_artifact_path, 'r') as f:
                 self.raw_data = json.load(f)
             
+            from .module_04_bridge import Module04Bridge
+            self.bridge = Module04Bridge()
+            
             ctx = self.raw_data.get('compilation_context', {})
-            self.interface_unit = InterfaceUnit(
-                target_architecture=ctx.get('target_architecture', 'unknown'),
-                operating_system=ctx.get('operating_system', 'unknown'),
-                pointer_width=ctx.get('pointer_width', 64),
-                endianness=Endianness(ctx.get('endianness', 'little')),
-                abi_mode=ctx.get('abi_mode', 'unknown'),
-                compiler_family=ctx.get('compiler_family', 'unknown'),
-                compiler_version=ctx.get('compiler_version', 'unknown')
-            )
+            self.interface_unit = self.bridge._convert_context(ctx)
+            self.bridge.type_converter.set_pointer_width(self.interface_unit.pointer_width)
+            
         except Exception as e:
             raise ConfigError("input_preparation", f"Failed to load input: {e}")
             
@@ -324,51 +321,18 @@ class IROrchestrator:
         stage_start = time.time()
         self.reporter.start_stage("Type Normalization")
         
-        pipeline = TypeNormalizationPipeline(self.interface_unit)
+        # In a real integration, we use the bridge to convert types
         raw_types_data = self.raw_data.get('type_information', [])
-        raw_types = []
-        
-        for rd in raw_types_data:
-            kind_str = rd.get('scalar_kind')
-            scalar_k = ScalarKind(kind_str) if kind_str else None
-            arr_kind_str = rd.get('array_kind')
-            arr_k = ArrayKind(arr_kind_str) if arr_kind_str else None
-
-            rt = RawTypeData(
-                kind=rd.get('kind', 'scalar'),
-                name=rd.get('name', ''),
-                size_bytes=rd.get('size_bytes', 0),
-                alignment_bytes=rd.get('alignment_bytes', 0),
-                scalar_kind=scalar_k,
-                bit_width=rd.get('bit_width'),
-                is_signed=rd.get('is_signed'),
-                pointer_depth=rd.get('pointer_depth'),
-                target_type_name=rd.get('target_type_name'),
-                array_kind=arr_k,
-                element_type_name=rd.get('element_type_name'),
-                element_count=rd.get('element_count'),
-                is_typedef=rd.get('is_typedef', False),
-                typedef_target=rd.get('typedef_target')
-            )
-            for fd in rd.get('fields', []):
-                rt.fields.append(RawFieldData(
-                    name=fd.get('name'),
-                    type_name=fd.get('type_name', ''),
-                    byte_offset=fd.get('byte_offset', 0),
-                    size_bytes=fd.get('size_bytes', 0),
-                    alignment_bytes=fd.get('alignment_bytes', 1)
-                ))
-            raw_types.append(rt)
+        for t_data in raw_types_data:
+            self.bridge.deduplicator.get_or_create_type_id(t_data, self.bridge.type_converter)
             
-        normalized_types = pipeline.normalize_all_types(raw_types)
-        for t in normalized_types:
-            self.type_registry.register_type(t)
-            self.interface_unit.types.append(t)
+        # Symbols conversion will also trigger type conversion
+        # This will be completed in the next stage
             
-        self.state.types_normalized = len(normalized_types)
         duration = time.time() - stage_start
         self.state.stage_timings["type_normalization"] = duration
         self.state.stages_completed.append("type_normalization")
+        # We don't finalize the count here as symbol conversion adds more types
         self.reporter.complete_stage("Type Normalization", duration)
 
     def _stage_symbol_normalization(self):
@@ -377,34 +341,20 @@ class IROrchestrator:
         stage_start = time.time()
         self.reporter.start_stage("Symbol Normalization")
         
-        pipeline = SymbolNormalizationPipeline(
-            self.type_registry, self.typedef_resolver, self.interface_unit
-        )
-        
-        raw_funcs = self.raw_data.get('external_symbols', [])
-        normalized_count = 0
-        for rf in raw_funcs:
-            if rf.get('is_function', True):
-                raw_func = RawFunctionData(
-                    linkage_name=rf.get('linkage_name', ''),
-                    return_type_name=rf.get('return_type_name', 'void')
-                )
-                for pd in rf.get('parameters', []):
-                    raw_func.parameters.append(RawParameterData(
-                        name=pd.get('name'), type_name=pd.get('type_name', 'void')
-                    ))
-                func = pipeline.normalize_function(raw_func)
-                self.interface_unit.symbols.append(func)
-                normalized_count += 1
-            else:
-                raw_var = RawVariableData(
-                    linkage_name=rf.get('linkage_name', ''), type_name=rf.get('type_name', '')
-                )
-                var = pipeline.normalize_variable(raw_var)
-                self.interface_unit.symbols.append(var)
-                normalized_count += 1
+        raw_symbols = self.raw_data.get('external_symbols', [])
+        for s_data in raw_symbols:
+            symbol = self.bridge.symbol_converter.convert_symbol(s_data)
+            self.interface_unit.symbols.append(symbol)
+            
+        # Now register all types discovered during symbol/type conversion
+        for entity in self.bridge.deduplicator.entity_cache.values():
+            if entity.entity_id not in self.type_registry._types:
+                self.type_registry.register_type(entity)
+                self.interface_unit.types.append(entity)
                 
-        self.state.symbols_normalized = normalized_count
+        self.state.types_normalized = len(self.interface_unit.types)
+        self.state.symbols_normalized = len(self.interface_unit.symbols)
+        
         duration = time.time() - stage_start
         self.state.stage_timings["symbol_normalization"] = duration
         self.state.stages_completed.append("symbol_normalization")
@@ -424,7 +374,10 @@ class IROrchestrator:
         self.state.validation_errors = self.validation_report.total_errors()
         
         if not self.validation_report.passed and self.config.fail_on_validation_errors:
-            raise ValidationFailure("validation", f"Validation failed with {self.state.validation_errors} errors")
+            errors_summary = "\n".join(self.validation_report.all_errors()[:10])
+            if len(self.validation_report.all_errors()) > 10:
+                errors_summary += "\n... (more errors)"
+            raise ValidationFailure("validation", f"Validation failed with {self.state.validation_errors} errors:\n{errors_summary}")
         
         duration = time.time() - stage_start
         self.state.stage_timings["validation"] = duration
@@ -457,14 +410,25 @@ class IROrchestrator:
         stage_start = time.time()
         self.reporter.start_stage("Persistence")
         
+        # Save to cache first
         manager = IRArtifactManager(self.config.cache_dir)
         with open(self.config.input_artifact_path, 'rb') as f:
             source_hash = hashlib.sha256(f.read()).hexdigest()[:16]
             
-        artifact_path = manager.save_artifact(
+        cached_path = manager.save_artifact(
             self.artifact, source_hash, compress=self.config.compress_artifacts
         )
-        self.state.output_artifact_path = artifact_path
+        
+        # Deploy to output directory
+        import shutil
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Determine final filename
+        output_filename = cached_path.name
+        final_path = self.config.output_dir / output_filename
+        
+        shutil.copy2(cached_path, final_path)
+        self.state.output_artifact_path = final_path
         
         duration = time.time() - stage_start
         self.state.stage_timings["persistence"] = duration

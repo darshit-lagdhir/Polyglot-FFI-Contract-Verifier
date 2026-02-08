@@ -139,12 +139,36 @@ class TypeConverter:
             return self._convert_union(type_data)
         elif kind == 'enum':
             return self._convert_enum(type_data)
+        elif kind == 'function' or kind == 'function_pointer':
+            return self._convert_function_pointer(type_data)
         elif kind == 'typedef':
             # Handle typedef by resolving target
             target = type_data.get('target', {})
             return self.convert_type(target)
         else:
             raise UnsupportedTypeError(f"Unsupported type kind: {kind}")
+    
+    def _convert_function_pointer(self, type_data: Dict[str, Any]) -> FunctionPointerType:
+        ret_data = type_data.get('return_type', {'kind': 'scalar', 'name': 'void', 'size': 0})
+        ret_id = self.deduplicator.get_or_create_type_id(ret_data, self)
+        
+        fp = FunctionPointerType(
+            calling_convention=CallingConvention.CDECL, # Default for pointer types in M04
+            return_type_reference=ret_id,
+            is_variadic=type_data.get('is_variadic', False),
+            pointer_width=self.pointer_width
+        )
+        
+        for i, p_data in enumerate(type_data.get('parameters', [])):
+            pt_data = p_data.get('type', {})
+            pt_id = self.deduplicator.get_or_create_type_id(pt_data, self)
+            fp.add_parameter(ParameterEntity(
+                parameter_index=i,
+                parameter_name=p_data.get('name'),
+                type_reference=pt_id
+            ))
+            
+        return fp
     
     def _convert_scalar(self, type_data: Dict[str, Any]) -> ScalarType:
         name = type_data.get('name', '').lower()
