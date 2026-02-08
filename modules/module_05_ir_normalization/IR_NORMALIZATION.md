@@ -24,37 +24,37 @@ and FFI verification.
 **Status:** Complete  
 **Focus:** Explicit modeling of aggregate and complex types.
 
+---
+
+
+**Status:** Complete  
+**Focus:** Canonicalization framework and transformation logic.
+
 ### Implemented Components
 
-#### Aggregate Types
-- `ArrayType` - Modeling three distinct semantics:
-  - **Fixed-Size**: Total size = element_size × count
-  - **Incomplete**: Missing count, decays to pointer
-  - **Flexible Member**: C99/C11 zero-length trailing array
-- `StructureType` - Ordered fields with mandatory explicit padding
-  - Layout validation (overlap detection)
-  - Packing support
-- `UnionType` - Overlapping members
-  - Invariant enforcement (shared base offset)
+#### Normalization Framework
+- `TypeNormalizationPipeline` - Orchestrates the transformation from raw data to normalized entities.
+- `TypedefResolver` - Resolves multi-level typedef chains with cycle detection.
+- `RawTypeData` & `RawFieldData` - Input specifications for the normalization process.
 
-#### Symbolic and Indirected Types
-- `EnumerationType` - Symbolic integers with explicit backing scalar type
-- `FunctionPointerType` - First-class types with full calling convention and signature
-
-#### Type Management
-- `TypeRegistry` - Centralized resolution, registration, and reference validation
+#### Core Normalization Logic
+- **Scalar/Pointer/Array Normalization**: Handles base types and transitive indirection.
+- **Structure Normalization**: Performs **Explicit Padding Insertion** based on field offsets, identifying gaps for ABI safety.
+- **Union Normalization**: Enforces shared base offsets and size/alignment invariants.
+- **Enum Normalization**: Validates backing integer types and symbolic values.
+- **Cycle Detection**: Prevents infinite recursion in self-referential types (via `in_progress` tracking).
 
 ### Key Features
-- **Deterministic ID Generation**: All new types generate stable IDs from structural components.
-- **Layout Validation**: `StructureType` and `UnionType` include methods to verify ABI correctness.
-- **Transitive Consistency**: `TypeRegistry` validates that all type references are defined within the registry.
+- **Idempotence & Determinism**: Normalization process ensures stable, recreatable IR graphs.
+- **ABI Safety**: Automatically identifies and records implicit compiler padding.
+- **Transitive Resolution**: All type references are recursively normalized and validated.
 
 ### Testing
-- 50 unit tests in `tests/unit/test_ir_types.py` (EASY LEVEL)
-- Comprehensive coverage of array semantics, structure layout, and union invariants.
+- 80 unit tests in `tests/unit/test_type_normalization.py` (MEDIUM LEVEL).
+- Comprehensive coverage of typedef chaining, padding logic, and error boundaries.
 - All tests passing ✅
 
 ---
 
-**Module Progress:** 2/15 components complete (13.3%)  
-**Status:** Type system fully modeled, ready for normalization pipeline implementation.
+**Module Progress:** 3/15 components complete (20.0%)  
+**Status:** Canonicalization framework active, ready for symbol and linkage normalization.
