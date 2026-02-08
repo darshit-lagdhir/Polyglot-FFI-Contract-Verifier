@@ -216,6 +216,7 @@ class TestSimpleLibraryEndToEnd:
         assert report1.symbols_normalized == report2.symbols_normalized
 
 @pytest.mark.integration
+@pytest.mark.slow
 class TestPerformanceIntegration:
     """Performance integration tests."""
     
@@ -476,6 +477,7 @@ class TestCrossModuleSimulation:
             pass 
 
 @pytest.mark.integration
+@pytest.mark.slow
 class TestBulkIntegration:
     """Bulk integration tests to ensure variety and robustness."""
     

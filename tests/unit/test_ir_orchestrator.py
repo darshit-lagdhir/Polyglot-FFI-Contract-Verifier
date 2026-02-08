@@ -145,7 +145,13 @@ class TestIROrchestrator:
                     }
                 ],
                 "external_symbols": [
-                    {"linkage_name": "foo", "is_function": True, "return_type_name": "void"}
+                    {
+                        "kind": "function",
+                        "name": "foo",
+                        "linkage_name": "foo", 
+                        "return_type": {"kind": "scalar", "name": "void", "size": 0},
+                        "parameters": []
+                    }
                 ]
             }).encode())
             temp_path = Path(f.name)
