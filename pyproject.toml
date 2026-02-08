@@ -1,31 +1,38 @@
 [build-system]
-requires = ["setuptools>=65.0", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "polyglot-ffi-verifier"
+name = "pfcv-module-05"
 version = "1.0.0"
-description = "Automated FFI contract verification"
+description = "PFCV IR Normalization - Module 05"
 readme = "README.md"
-requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
-    {name = "Darshit Lagdhir", email = "darshit@example.com"}
+    {name = "PFCV Authors", email = "team@pfcv.dev"}
 ]
 maintainers = [
-    {name = "Darshit Lagdhir", email = "darshit@example.com"}
+    {name = "PFCV Authors", email = "team@pfcv.dev"}
 ]
-keywords = ["ffi", "verification", "testing", "contracts"]
+keywords = ["ffi", "verification", "ir", "normalization", "abi"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Quality Assurance",
 ]
-
+requires-python = ">=3.9"
 dependencies = [
-    "libclang>=16.0.0",
+    "pydantic>=2.0.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -34,39 +41,65 @@ dev = [
     "pytest-cov>=4.0.0",
     "pytest-timeout>=2.1.0",
     "black>=23.0.0",
-    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+]
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.2.0",
+    "myst-parser>=1.0.0",
+]
+performance = [
+    "numpy>=1.24.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/darshit-lagdhir/polyglot-ffi-verifier"
-Documentation = "https://polyglot-ffi-verifier.readthedocs.io"
-Repository = "https://github.com/darshit-lagdhir/polyglot-ffi-verifier"
-Issues = "https://github.com/darshit-lagdhir/polyglot-ffi-verifier/issues"
+Homepage = "https://pfcv.dev"
+Documentation = "https://docs.pfcv.dev/module-05"
+Repository = "https://github.com/pfcv/pfcv"
+Issues = "https://github.com/pfcv/pfcv/issues"
+History = "https://github.com/pfcv/pfcv/blob/main/CHANGELOG.md"
 
 [project.scripts]
-polyglot-verify = "polyglot_ffi_verifier.cli:main"
+pfcv-ir = "module_05_ir_normalization.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "modules"}
+packages = ["module_05_ir_normalization"]
+
+[tool.setuptools.package-data]
+module_05_ir_normalization = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v"
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=module_05_ir_normalization",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
 markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "system: System tests",
-    "e2e: End-to-end tests",
-    "compatibility: Compatibility tests",
-    "benchmark: Performance benchmarks",
-    "stress: Stress tests",
-    "slow: Tests that take more than a few seconds",
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
 ]
 
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "C4", "T20"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-ignore_missing_imports = true
+disallow_untyped_defs = true

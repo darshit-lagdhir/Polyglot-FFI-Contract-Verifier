@@ -1,0 +1,13 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include pyproject.toml
+
+recursive-include modules/module_05_ir_normalization *.py
+recursive-include modules/module_05_ir_normalization py.typed
+
+recursive-include tests *.py
+recursive-include docs *.md *.rst
+
+global-exclude __pycache__
+global-exclude *.py[co]
