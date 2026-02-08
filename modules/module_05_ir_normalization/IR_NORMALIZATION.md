@@ -15,92 +15,46 @@ and FFI verification.
 ---
 
 
-**Status:** Complete
+**Status:** Complete  
+**Focus:** Core data model and graph architecture.
+
+---
+
+
+**Status:** Complete  
+**Focus:** Explicit modeling of aggregate and complex types.
 
 ### Implemented Components
 
-#### Core Entity Model
-- `IREntity` - Base class for all IR entities with stable identity
-- `EntityKind` - Classification enumeration for entity types
-- `MetadataEntity` - Provenance and traceability information
+#### Aggregate Types
+- `ArrayType` - Modeling three distinct semantics:
+  - **Fixed-Size**: Total size = element_size × count
+  - **Incomplete**: Missing count, decays to pointer
+  - **Flexible Member**: C99/C11 zero-length trailing array
+- `StructureType` - Ordered fields with mandatory explicit padding
+  - Layout validation (overlap detection)
+  - Packing support
+- `UnionType` - Overlapping members
+  - Invariant enforcement (shared base offset)
 
-#### Top-Level Container
-- `InterfaceUnit` - Root container capturing compilation context
-  - Target architecture, OS, pointer width
-  - Compiler family and version
-  - ABI mode and endianness
-  - Contains all symbols and types
+#### Symbolic and Indirected Types
+- `EnumerationType` - Symbolic integers with explicit backing scalar type
+- `FunctionPointerType` - First-class types with full calling convention and signature
 
-#### Symbol Entities
-- `SymbolEntity` - Base class for externally visible linkage points
-- `FunctionSymbol` - Callable functions with:
-  - Calling convention
-  - Parameter list
-  - Return entity
-  - Variadic status
-- `VariableSymbol` - Global variables with:
-  - Type reference
-  - Mutability (const)
-  - Visibility
+#### Type Management
+- `TypeRegistry` - Centralized resolution, registration, and reference validation
 
-#### Type Entities
-- `TypeEntity` - Base class for canonical types
-- `ScalarType` - Primitives (integers, floats, booleans) with:
-  - Bit width
-  - Signedness
-  - Scalar kind
-- `PointerType` - Pointers with:
-  - Pointer depth
-  - Target type reference
-  - Platform-specific size
-
-#### Structure Components
-- `FieldEntity` - Structure/union fields with:
-  - Field index and name
-  - Type reference
-  - Byte/bit offsets
-  - Size and alignment
-- `PaddingEntity` - **Explicit padding regions** (critical for layout validation)
-
-#### Function Components
-- `ParameterEntity` - Function parameters with:
-  - Parameter index and name
-  - Type reference
-  - Qualifiers (const, volatile, restrict)
-- `ReturnEntity` - Return values with:
-  - Type reference
-  - Return mechanism (direct, hidden pointer, aggregate)
-
-#### Metadata
-- `AttributeEntity` - ABI-relevant attributes (alignment, packing, visibility)
-
-### Design Principles
-
-1. **Stable Identity**: Entity IDs derived from structural properties, not memory addresses
-2. **Explicit Everything**: No implicit assumptions; all ABI properties recorded explicitly
-3. **Compiler Agnostic**: Normalized representation independent of compiler internals
-4. **Graph Structure**: Directed typed graph enables transitive reasoning
-5. **Lossless**: All ABI-relevant information preserved
-
-### Files Created
-
-- `modules/module_05_ir_normalization/ir_entities.py` (~850 lines)
-- `modules/module_05_ir_normalization/IR_NORMALIZATION.md` (this file)
+### Key Features
+- **Deterministic ID Generation**: All new types generate stable IDs from structural components.
+- **Layout Validation**: `StructureType` and `UnionType` include methods to verify ABI correctness.
+- **Transitive Consistency**: `TypeRegistry` validates that all type references are defined within the registry.
 
 ### Testing
-
-- 40 unit tests covering all entity types (EASY LEVEL)
+- 50 unit tests in `tests/unit/test_ir_types.py` (EASY LEVEL)
+- Comprehensive coverage of array semantics, structure layout, and union invariants.
 - All tests passing ✅
-- Zero warnings ✅
 
 ---
 
-
-- Array types, structure types, union types, enum types
-- Function pointer types
-- Complete type system coverage
-
----
-
-**Module Progress:** 1/15 components complete (6.7%)  
-**Status:** Foundation laid, ready for type system expansion
+**Module Progress:** 2/15 components complete (13.3%)  
+**Status:** Type system fully modeled, ready for normalization pipeline implementation.

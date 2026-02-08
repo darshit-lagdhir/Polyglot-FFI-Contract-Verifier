@@ -617,10 +617,335 @@ class AttributeEntity(IREntity):
         return data
 
 # ============================================================================
+# ARRAY TYPE ()
+# ============================================================================
+
+class ArrayKind(Enum):
+    """Classification of array types."""
+    FIXED_SIZE = "fixed_size"
+    INCOMPLETE = "incomplete"
+    FLEXIBLE_MEMBER = "flexible_member"
+
+@dataclass(kw_only=True)
+class ArrayType(TypeEntity):
+    """Array type with explicit kind and element information."""
+    
+    array_kind: ArrayKind
+    element_type_reference: str
+    element_count: Optional[int] = None
+    
+    # InitVars for size/alignment logic if not provided directly
+    element_size: InitVar[int] = 0
+    element_alignment: InitVar[int] = 0
+    
+    # Defaults for base fields
+    size_bytes: int = 0
+    alignment_bytes: int = 0
+    kind: EntityKind = field(init=False, default=EntityKind.ARRAY_TYPE)
+    entity_id: str = field(init=False)
+    
+    def __post_init__(self, element_size: int, element_alignment: int):
+        self.kind = EntityKind.ARRAY_TYPE
+        if self.array_kind == ArrayKind.FIXED_SIZE and self.element_count is not None:
+            if self.size_bytes == 0:
+                self.size_bytes = element_size * self.element_count
+            if self.alignment_bytes == 0:
+                self.alignment_bytes = element_alignment
+        else:
+            if self.size_bytes == 0:
+                self.size_bytes = 0
+            if self.alignment_bytes == 0:
+                self.alignment_bytes = element_alignment if element_alignment > 0 else 1
+        
+        count_str = str(self.element_count) if self.element_count is not None else "incomplete"
+        self.entity_id = self.generate_id(
+            EntityKind.ARRAY_TYPE, self.array_kind.value, 
+            self.element_type_reference, count_str
+        )
+    
+    def is_complete(self) -> bool:
+        return self.array_kind == ArrayKind.FIXED_SIZE
+    
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            'array_kind': self.array_kind.value,
+            'element_type_reference': self.element_type_reference,
+            'element_count': self.element_count,
+            'is_complete': self.is_complete()
+        })
+        return data
+
+# ============================================================================
+# STRUCTURE TYPE
+# ============================================================================
+
+@dataclass(kw_only=True)
+class StructureType(TypeEntity):
+    """Structure type with ordered fields and explicit padding."""
+    
+    structure_name: str
+    fields: List[FieldEntity] = field(default_factory=list)
+    padding_regions: List[PaddingEntity] = field(default_factory=list)
+    is_packed: bool = False
+    explicit_alignment: Optional[int] = None
+    
+    # Defaults for base fields
+    kind: EntityKind = field(init=False, default=EntityKind.STRUCTURE_TYPE)
+    entity_id: str = field(init=False)
+    
+    def __post_init__(self):
+        self.kind = EntityKind.STRUCTURE_TYPE
+        self.entity_id = self.generate_id(
+            EntityKind.STRUCTURE_TYPE, self.structure_name, str(self.size_bytes)
+        )
+    
+    def add_field(self, field: FieldEntity):
+        self.fields.append(field)
+    
+    def add_padding(self, padding: PaddingEntity):
+        self.padding_regions.append(padding)
+    
+    def validate_layout(self) -> List[str]:
+        errors = []
+        sorted_fields = sorted(self.fields, key=lambda f: f.byte_offset)
+        
+        for i in range(len(sorted_fields) - 1):
+            current = sorted_fields[i]
+            next_field = sorted_fields[i + 1]
+            current_end = current.byte_offset + current.size_bytes
+            
+            if next_field.byte_offset < current_end:
+                errors.append(
+                    f"Field {next_field.field_name} overlaps with {current.field_name}"
+                )
+        
+        if self.fields:
+            last_field = sorted_fields[-1]
+            min_size = last_field.byte_offset + last_field.size_bytes
+            if self.size_bytes < min_size:
+                errors.append(f"Structure size {self.size_bytes} too small")
+        
+        if self.alignment_bytes > 0:
+            if (self.alignment_bytes & (self.alignment_bytes - 1)) != 0:
+                errors.append(f"Alignment {self.alignment_bytes} not power of 2")
+        
+        return errors
+    
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            'structure_name': self.structure_name,
+            'fields': [f.to_dict() for f in self.fields],
+            'padding_regions': [p.to_dict() for p in self.padding_regions],
+            'is_packed': self.is_packed
+        })
+        return data
+
+# ============================================================================
+# UNION TYPE
+# ============================================================================
+
+@dataclass(kw_only=True)
+class UnionType(TypeEntity):
+    """Union type with overlapping members."""
+    
+    union_name: str
+    members: List[FieldEntity] = field(default_factory=list)
+    
+    # Defaults for base fields
+    kind: EntityKind = field(init=False, default=EntityKind.UNION_TYPE)
+    entity_id: str = field(init=False)
+    
+    def __post_init__(self):
+        self.kind = EntityKind.UNION_TYPE
+        self.entity_id = self.generate_id(
+            EntityKind.UNION_TYPE, self.union_name, str(self.size_bytes)
+        )
+    
+    def add_member(self, member: FieldEntity):
+        if member.byte_offset != 0:
+            raise ValueError(
+                f"Union member {member.field_name} must be at offset 0"
+            )
+        self.members.append(member)
+    
+    def validate_union_invariants(self) -> List[str]:
+        errors = []
+        
+        for member in self.members:
+            if member.byte_offset != 0:
+                errors.append(f"Member {member.field_name} not at offset 0")
+        
+        if self.members:
+            max_size = max(m.size_bytes for m in self.members)
+            if self.size_bytes < max_size:
+                errors.append(f"Union size too small")
+            
+            max_align = max(m.alignment_bytes for m in self.members)
+            if self.alignment_bytes < max_align:
+                errors.append(f"Union alignment too small")
+        
+        return errors
+    
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            'union_name': self.union_name,
+            'members': [m.to_dict() for m in self.members]
+        })
+        return data
+
+# ============================================================================
+# ENUMERATION TYPE
+# ============================================================================
+
+@dataclass(kw_only=True)
+class EnumerationType(TypeEntity):
+    """Enumeration type with symbolic integer values."""
+    
+    enum_name: str
+    underlying_type_reference: str
+    enumerators: Dict[str, int] = field(default_factory=dict)
+    
+    # Defaults for base fields
+    kind: EntityKind = field(init=False, default=EntityKind.ENUM_TYPE)
+    entity_id: str = field(init=False)
+    
+    def __post_init__(self):
+        self.kind = EntityKind.ENUM_TYPE
+        self.entity_id = self.generate_id(
+            EntityKind.ENUM_TYPE, self.enum_name, self.underlying_type_reference
+        )
+    
+    def add_enumerator(self, name: str, value: int):
+        self.enumerators[name] = value
+    
+    def get_value_range(self) -> tuple[int, int]:
+        if not self.enumerators:
+            return (0, 0)
+        values = self.enumerators.values()
+        return (min(values), max(values))
+    
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            'enum_name': self.enum_name,
+            'underlying_type_reference': self.underlying_type_reference,
+            'enumerators': self.enumerators
+        })
+        return data
+
+# ============================================================================
+# FUNCTION POINTER TYPE
+# ============================================================================
+
+@dataclass(kw_only=True)
+class FunctionPointerType(TypeEntity):
+    """Function pointer type with full signature."""
+    
+    calling_convention: CallingConvention
+    return_type_reference: str
+    parameters: List[ParameterEntity] = field(default_factory=list)
+    is_variadic: bool = False
+    pointer_width: InitVar[int] = 64
+    
+    # Defaults for base fields
+    kind: EntityKind = field(init=False, default=EntityKind.FUNCTION_POINTER_TYPE)
+    entity_id: str = field(init=False)
+    size_bytes: int = field(init=False)
+    alignment_bytes: int = field(init=False)
+    
+    def __post_init__(self, pointer_width: int):
+        self.kind = EntityKind.FUNCTION_POINTER_TYPE
+        self.size_bytes = pointer_width // 8
+        self.alignment_bytes = self.size_bytes
+        self.entity_id = self.generate_id(
+            EntityKind.FUNCTION_POINTER_TYPE,
+            self.calling_convention.value, self.return_type_reference
+        )
+    
+    def add_parameter(self, parameter: ParameterEntity):
+        self.parameters.append(parameter)
+    
+    def signature_matches(self, other: 'FunctionPointerType') -> bool:
+        if self.calling_convention != other.calling_convention:
+            return False
+        if self.return_type_reference != other.return_type_reference:
+            return False
+        if len(self.parameters) != len(other.parameters):
+            return False
+        for p1, p2 in zip(self.parameters, other.parameters):
+            if p1.type_reference != p2.type_reference:
+                return False
+        if self.is_variadic != other.is_variadic:
+            return False
+        return True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            'calling_convention': self.calling_convention.value,
+            'return_type_reference': self.return_type_reference,
+            'parameters': [p.to_dict() for p in self.parameters],
+            'is_variadic': self.is_variadic
+        })
+        return data
+
+# ============================================================================
+# TYPE REGISTRY
+# ============================================================================
+
+class TypeRegistry:
+    """Registry for resolving type references."""
+    
+    def __init__(self):
+        self._types: Dict[str, TypeEntity] = {}
+    
+    def register_type(self, type_entity: TypeEntity):
+        if type_entity.entity_id in self._types:
+            raise ValueError(f"Type {type_entity.entity_id} already registered")
+        self._types[type_entity.entity_id] = type_entity
+    
+    def resolve_type(self, type_id: str) -> Optional[TypeEntity]:
+        return self._types.get(type_id)
+    
+    def validate_references(self) -> List[str]:
+        errors = []
+        for type_id, type_entity in self._types.items():
+            if isinstance(type_entity, PointerType):
+                if not self.resolve_type(type_entity.target_type_reference):
+                    errors.append(f"Pointer {type_id} references undefined type")
+            elif isinstance(type_entity, ArrayType):
+                if not self.resolve_type(type_entity.element_type_reference):
+                    errors.append(f"Array {type_id} references undefined element")
+            elif isinstance(type_entity, StructureType):
+                for field in type_entity.fields:
+                    if not self.resolve_type(field.type_reference):
+                        errors.append(f"Structure field references undefined type")
+            elif isinstance(type_entity, UnionType):
+                for member in type_entity.members:
+                    if not self.resolve_type(member.type_reference):
+                        errors.append(f"Union member references undefined type")
+            elif isinstance(type_entity, EnumerationType):
+                if not self.resolve_type(type_entity.underlying_type_reference):
+                    errors.append(f"Enum references undefined underlying type")
+            elif isinstance(type_entity, FunctionPointerType):
+                if not self.resolve_type(type_entity.return_type_reference):
+                    errors.append(f"Function pointer references undefined return type")
+                for param in type_entity.parameters:
+                    if not self.resolve_type(param.type_reference):
+                        errors.append(f"Function parameter references undefined type")
+        return errors
+    
+    def get_all_types(self) -> List[TypeEntity]:
+        return list(self._types.values())
+
+# ============================================================================
 # MODULE METADATA
 # ============================================================================
 
 __version__ = "1.0.0"
 __module__ = "Module 05: IR Normalization"
-__prompt__ = "1/15"
-__status__ = "Foundation - IR Entity Model"
+__prompt__ = "2/15"
+__status__ = "Complete Type System"
