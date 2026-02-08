@@ -363,7 +363,7 @@ class ScalarType(TypeEntity):
         if self.size_bytes == 0:
             self.size_bytes = (self.bit_width + 7) // 8
         if self.alignment_bytes == 0:
-            self.alignment_bytes = self.size_bytes
+            self.alignment_bytes = max(1, self.size_bytes)
             
         self.entity_id = self.generate_id(
             EntityKind.SCALAR_TYPE,
