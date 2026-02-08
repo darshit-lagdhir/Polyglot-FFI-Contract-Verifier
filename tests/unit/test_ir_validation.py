@@ -83,7 +83,7 @@ class TestSchemaValidator:
         assert any("not power of 2" in e for e in errors)
 
     def test_missing_linkage_name(self, validator):
-        sym = FunctionSymbol(linkage_name="", calling_convention=CallingConvention.CDECL)
+        sym = FunctionSymbol(linkage_name="", calling_convention=CallingConvention.CDECL, source_name="")
         errors = validator.validate_entity(sym)
         assert any("missing linkage_name" in e for e in errors)
 
@@ -204,7 +204,7 @@ class TestSymbolValidator:
         return SymbolValidator()
 
     def test_valid_function_symbol(self, validator):
-        func = FunctionSymbol(linkage_name="test", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="test", calling_convention=CallingConvention.CDECL, source_name="test")
         param1 = ParameterEntity(parameter_index=0, parameter_name="a", type_reference="t")
         param2 = ParameterEntity(parameter_index=1, parameter_name="b", type_reference="t")
         func.parameters.append(param1)
@@ -214,14 +214,14 @@ class TestSymbolValidator:
     
     @pytest.mark.parametrize("idx", [1, 2, 5])
     def test_parameter_index_mismatch(self, validator, idx):
-        func = FunctionSymbol(linkage_name="test", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="test", calling_convention=CallingConvention.CDECL, source_name="test")
         param = ParameterEntity(parameter_index=idx, parameter_name="a", type_reference="t")
         func.parameters.append(param)
         errors = validator.validate_function_symbol(func)
         assert any("index mismatch" in e for e in errors)
     
     def test_variadic_without_named_params(self, validator):
-        func = FunctionSymbol(linkage_name="bad", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="bad", calling_convention=CallingConvention.CDECL, source_name="bad")
         func.is_variadic = True
         errors = validator.validate_function_symbol(func)
         assert any("no named parameters" in e for e in errors)
@@ -271,7 +271,7 @@ class TestPlatformValidator:
         assert len(errors) > 0
 
     def test_unsupported_cc_on_x64(self, unit):
-        func = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.STDCALL)
+        func = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.STDCALL, source_name="f")
         val = PlatformValidator(interface_unit=unit)
         errors = val.validate_calling_conventions([func])
         assert any("unsupported" in e for e in errors)
@@ -304,7 +304,7 @@ class TestOrchestrator:
         unit.types.append(t)
         # Add return_entity to fix potential completeness/reference issues if checked
         re = ReturnEntity(type_reference=t.entity_id)
-        fs = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL, return_entity=re)
+        fs = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL, return_entity=re, source_name="f")
         unit.symbols.append(fs)
         
         orch = IRValidationOrchestrator(interface_unit=unit, type_registry=reg)

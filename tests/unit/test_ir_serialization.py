@@ -257,7 +257,7 @@ class TestEntityFactory:
         assert res.fields[0].field_name == "a"
 
     def test_reconstruct_function(self):
-        func = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL, source_name="f")
         func.return_entity = ReturnEntity(type_reference="void")
         func.parameters.append(ParameterEntity(parameter_index=0, parameter_name="p", type_reference="int"))
         data = func.to_dict()

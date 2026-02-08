@@ -4,13 +4,13 @@ Module 05: Diagnostics and Error Handling
 Comprehensive error handling, diagnostics, and user guidance.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
-from pathlib import Path
-from enum import Enum
-from contextlib import contextmanager
-import traceback
 import json
+import traceback
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # ============================================================================
 # ENUMERATIONS
@@ -43,7 +43,7 @@ class SourceLocation:
     file: Optional[str] = None
     line: Optional[int] = None
     column: Optional[int] = None
-    
+
     def __str__(self):
         if self.file:
             loc = self.file
@@ -53,7 +53,7 @@ class SourceLocation:
                     loc += f":{self.column}"
             return loc
         return "unknown location"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'file': self.file,
@@ -68,26 +68,26 @@ class SourceLocation:
 @dataclass
 class DiagnosticMessage:
     """Structured diagnostic message."""
-    
+
     code: str
     severity: Severity
     category: ErrorCategory
-    
+
     title: str
     description: str
-    
+
     source_location: Optional[SourceLocation] = None
     entity_id: Optional[str] = None
     stage: Optional[str] = None
-    
+
     causes: List[str] = field(default_factory=list)
     solutions: List[str] = field(default_factory=list)
-    
+
     technical_details: Dict[str, Any] = field(default_factory=dict)
     stack_trace: Optional[str] = None
-    
+
     documentation_url: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -104,11 +104,11 @@ class DiagnosticMessage:
             'technical_details': self.technical_details,
             'documentation_url': self.documentation_url
         }
-    
+
     def format_for_terminal(self, use_color: bool = True) -> str:
         """Format for terminal display."""
         lines = []
-        
+
         # Header
         if use_color:
             color = self._get_severity_color()
@@ -116,14 +116,14 @@ class DiagnosticMessage:
         else:
             color = ""
             reset = ""
-        
+
         severity_str = self.severity.value.upper()
         lines.append(f"{color}{severity_str}: [{self.category.value}] {self.title}{reset}")
-        
+
         # Description
         if self.description:
             lines.append(f"\n{self.description}")
-        
+
         # Context
         context_items = []
         if self.source_location:
@@ -132,36 +132,36 @@ class DiagnosticMessage:
             context_items.append(f"Entity: {self.entity_id}")
         if self.stage:
             context_items.append(f"Stage: {self.stage}")
-        
+
         if context_items:
             lines.append("\nContext:")
             for item in context_items:
                 lines.append(f"  {item}")
-        
+
         # Causes
         if self.causes:
             lines.append("\nPossible Causes:")
             for cause in self.causes:
                 lines.append(f"  • {cause}")
-        
+
         # Solutions
         if self.solutions:
             lines.append("\nSuggested Solutions:")
             for i, solution in enumerate(self.solutions, 1):
                 lines.append(f"  {i}. {solution}")
-        
+
         # Technical details
         if self.technical_details:
             lines.append("\nTechnical Details:")
             for key, value in self.technical_details.items():
                 lines.append(f"  {key}: {value}")
-        
+
         # Documentation
         if self.documentation_url:
             lines.append(f"\nDocumentation: {self.documentation_url}")
-        
+
         return "\n".join(lines)
-    
+
     def _get_severity_color(self) -> str:
         """Get ANSI color code for severity."""
         colors = {
@@ -178,17 +178,17 @@ class DiagnosticMessage:
 
 class DiagnosticCollector:
     """Collects and manages diagnostic messages."""
-    
+
     def __init__(self, max_errors: int = 100, max_warnings: int = 200):
         self.diagnostics: List[DiagnosticMessage] = []
         self.max_errors = max_errors
         self.max_warnings = max_warnings
-        
+
         self._error_count = 0
         self._warning_count = 0
         self._truncated_errors = False
         self._truncated_warnings = False
-    
+
     def add(self, diagnostic: DiagnosticMessage):
         """Add diagnostic message."""
         if diagnostic.severity == Severity.ERROR:
@@ -198,7 +198,7 @@ class DiagnosticCollector:
                     self.diagnostics.append(self._make_truncation_message(Severity.ERROR, self.max_errors))
                     self._truncated_errors = True
                 return
-        
+
         elif diagnostic.severity == Severity.WARNING:
             self._warning_count += 1
             if self._warning_count > self.max_warnings:
@@ -206,9 +206,9 @@ class DiagnosticCollector:
                     self.diagnostics.append(self._make_truncation_message(Severity.WARNING, self.max_warnings))
                     self._truncated_warnings = True
                 return
-        
+
         self.diagnostics.append(diagnostic)
-    
+
     def add_error(self, code: str, title: str, description: str, **kwargs):
         """Add error diagnostic."""
         params = {
@@ -221,7 +221,7 @@ class DiagnosticCollector:
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
         self.add(diagnostic)
-    
+
     def add_warning(self, code: str, title: str, description: str, **kwargs):
         """Add warning diagnostic."""
         params = {
@@ -234,7 +234,7 @@ class DiagnosticCollector:
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
         self.add(diagnostic)
-    
+
     def add_info(self, code: str, title: str, description: str, **kwargs):
         """Add info diagnostic."""
         params = {
@@ -247,48 +247,48 @@ class DiagnosticCollector:
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
         self.add(diagnostic)
-    
+
     def has_errors(self) -> bool:
         """Check if any errors collected."""
         return self._error_count > 0
-    
+
     def has_warnings(self) -> bool:
         """Check if any warnings collected."""
         return self._warning_count > 0
-    
+
     def get_errors(self) -> List[DiagnosticMessage]:
         """Get all error messages."""
         return [d for d in self.diagnostics if d.severity == Severity.ERROR]
-    
+
     def get_warnings(self) -> List[DiagnosticMessage]:
         """Get all warning messages."""
         return [d for d in self.diagnostics if d.severity == Severity.WARNING]
-    
+
     def generate_report(self, use_color: bool = True) -> str:
         """Generate human-readable report."""
         lines = ["Diagnostic Report", "=" * 80]
-        
-        lines.append(f"\n")
+
+        lines.append("\n")
         lines.append(f"  Errors:   {self._error_count}")
         lines.append(f"  Warnings: {self._warning_count}")
         lines.append(f"  Total:    {len(self.diagnostics)}")
-        
+
         errors = self.get_errors()
         if errors:
             lines.append(f"\nErrors ({len(errors)}):")
             for diagnostic in errors:
                 lines.append(f"\n{diagnostic.format_for_terminal(use_color)}")
                 lines.append("-" * 80)
-        
+
         warnings = self.get_warnings()
         if warnings:
             lines.append(f"\nWarnings ({len(warnings)}):")
             for diagnostic in warnings:
                 lines.append(f"\n{diagnostic.format_for_terminal(use_color)}")
                 lines.append("-" * 80)
-        
+
         return "\n".join(lines)
-    
+
     def save_json_report(self, output_path: Path):
         """Save diagnostics as JSON."""
         report = {
@@ -301,11 +301,11 @@ class DiagnosticCollector:
             },
             'diagnostics': [d.to_dict() for d in self.diagnostics]
         }
-        
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w') as f:
             json.dump(report, f, indent=2)
-    
+
     def _make_truncation_message(self, severity: Severity, limit: int) -> DiagnosticMessage:
         """Create message indicating truncation."""
         return DiagnosticMessage(
@@ -344,7 +344,7 @@ def error_context(
         # Capture exception with context
         error_code = "E9999"
         category = ErrorCategory.BUG
-        
+
         # Try to categorize exception
         name = type(e).__name__.lower()
         if "conversion" in name:
@@ -353,7 +353,7 @@ def error_context(
         elif "validation" in name:
             error_code = "E2001"
             category = ErrorCategory.VALIDATION
-        
+
         collector.add_error(
             code=error_code,
             title=f"Error in {stage}",
@@ -374,7 +374,7 @@ def error_context(
 
 class UserGuidance:
     """Provides contextual user guidance."""
-    
+
     ERROR_GUIDANCE = {
         'E1001': {
             'title': 'Conversion Error',
@@ -401,7 +401,7 @@ class UserGuidance:
             ]
         }
     }
-    
+
     @classmethod
     def get_guidance(cls, error_code: str) -> Dict[str, Any]:
         """Get guidance for error code."""
@@ -446,38 +446,38 @@ For more help: https://pfcv.dev/troubleshooting
 
 class ProgressTracker:
     """Tracks and reports pipeline progress."""
-    
+
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
         self.current_stage: Optional[str] = None
         self.stages_total: int = 0
         self.stages_completed: int = 0
-    
+
     def start_pipeline(self, total_stages: int):
         """Signal pipeline start."""
         self.stages_total = total_stages
         if self.verbose:
             print(f"Starting IR normalization ({total_stages} stages)...")
-    
+
     def start_stage(self, stage_name: str, description: str = ""):
         """Signal stage start."""
         self.current_stage = stage_name
         if self.verbose:
             progress = f"[{self.stages_completed + 1}/{self.stages_total}]"
             print(f"{progress} {stage_name}: {description}")
-    
+
     def update_stage_progress(self, current: int, total: int, item: str = ""):
         """Update progress within stage."""
         if self.verbose and total > 0:
             pct = (current / total) * 100
             print(f"  Processing: {current}/{total} ({pct:.0f}%) {item}", end='\r')
-    
+
     def complete_stage(self, duration: float):
         """Signal stage completion."""
         self.stages_completed += 1
         if self.verbose:
             print(f"  ✓ {self.current_stage or 'Stage'} Complete ({duration:.2f}s)")
-    
+
     def report_error(self, error: str):
         """Report error."""
         if self.verbose:

@@ -62,11 +62,11 @@ class TestIREntity:
     
     def test_entity_creation(self):
         """Test creating base entity."""
-        entity = IREntity(entity_id="test_id", kind=EntityKind.METADATA, metadata=None)
+        # Important: metadata is removed from base IREntity in Python 3.9 compat refactor
+        entity = IREntity(entity_id="test_id", kind=EntityKind.METADATA)
         
         assert entity.entity_id == "test_id"
         assert entity.kind == EntityKind.METADATA
-        assert entity.metadata is None
     
     def test_entity_id_generation(self):
         """Test stable ID generation."""
@@ -82,7 +82,7 @@ class TestIREntity:
     
     def test_entity_serialization(self):
         """Test entity serialization."""
-        entity = IREntity(entity_id="test_id", kind=EntityKind.FUNCTION_SYMBOL, metadata=None)
+        entity = IREntity(entity_id="test_id", kind=EntityKind.FUNCTION_SYMBOL)
         
         data = entity.to_dict()
         
@@ -204,7 +204,7 @@ class TestFunctionSymbol:
     
     def test_function_with_parameters(self):
         """Test function with parameters."""
-        func = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL, source_name="func")
         
         param = ParameterEntity(parameter_index=0, parameter_name="x", type_reference="int_type_ref")
         func.parameters.append(param)
@@ -214,7 +214,7 @@ class TestFunctionSymbol:
     
     def test_function_serialization(self):
         """Test function serialization."""
-        func = FunctionSymbol(linkage_name="my_func", calling_convention=CallingConvention.STDCALL)
+        func = FunctionSymbol(linkage_name="my_func", calling_convention=CallingConvention.STDCALL, source_name="my_func")
         
         data = func.to_dict()
         
@@ -245,14 +245,14 @@ class TestVariableSymbol:
     
     def test_const_variable(self):
         """Test const variable."""
-        var = VariableSymbol(linkage_name="VERSION", type_reference="int_type")
+        var = VariableSymbol(linkage_name="VERSION", type_reference="int_type", source_name="VERSION")
         var.is_const = True
         
         assert var.is_const is True
     
     def test_variable_serialization(self):
         """Test variable serialization."""
-        var = VariableSymbol(linkage_name="my_var", type_reference="uint64_type")
+        var = VariableSymbol(linkage_name="my_var", type_reference="uint64_type", source_name="my_var")
         
         data = var.to_dict()
         
@@ -551,7 +551,7 @@ class TestIntegration:
         metadata = MetadataEntity(source_file="api.h", line_number=100, column_number=5)
         
         # Create function
-        func = FunctionSymbol(linkage_name="process_data", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="process_data", calling_convention=CallingConvention.CDECL, source_name="process_data")
         func.metadata = metadata
         
         # Add parameter
@@ -576,11 +576,11 @@ class TestIntegration:
         )
         
         # Add function symbol
-        func = FunctionSymbol(linkage_name="my_func", calling_convention=CallingConvention.CDECL)
+        func = FunctionSymbol(linkage_name="my_func", calling_convention=CallingConvention.CDECL, source_name="my_func")
         unit.symbols.append(func)
         
         # Add variable symbol
-        var = VariableSymbol(linkage_name="my_var", type_reference="int_type")
+        var = VariableSymbol(linkage_name="my_var", type_reference="int_type", source_name="my_var")
         unit.symbols.append(var)
         
         assert len(unit.symbols) == 2

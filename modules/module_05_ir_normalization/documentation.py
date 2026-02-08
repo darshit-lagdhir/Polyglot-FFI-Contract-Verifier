@@ -4,9 +4,8 @@ Module 05: Documentation Generation
 Automatic documentation generation for IR normalization.
 """
 
-from typing import Dict, List, Any, Optional
 from pathlib import Path
-import json
+from typing import Any, Dict, List
 
 # ============================================================================
 # ERROR CATALOG
@@ -86,10 +85,10 @@ ERROR_CATALOG = {
 
 class DocumentationGenerator:
     """Generates documentation from code and metadata."""
-    
+
     def __init__(self):
         self.error_catalog = ERROR_CATALOG
-    
+
     def generate_troubleshooting_guide(self) -> str:
         """Generate troubleshooting guide from error catalog."""
         lines = [
@@ -100,22 +99,22 @@ class DocumentationGenerator:
             "## Table of Contents",
             ""
         ]
-        
+
         # Generate TOC
         for code in sorted(self.error_catalog.keys()):
             info = self.error_catalog[code]
             slug = code.lower()
             lines.append(f"- [{code}: {info['title']}](#{slug})")
-        
+
         lines.extend(["", "## Error Reference", ""])
-        
+
         # Generate detailed sections
         for code in sorted(self.error_catalog.keys()):
             info = self.error_catalog[code]
             lines.extend(self._generate_error_section(code, info))
-        
+
         return "\n".join(lines)
-    
+
     def _generate_error_section(self, code: str, info: Dict[str, Any]) -> List[str]:
         """Generate documentation section for one error."""
         lines = [
@@ -129,19 +128,19 @@ class DocumentationGenerator:
             "**Common Causes:**",
             ""
         ]
-        
+
         for cause in info['common_causes']:
             lines.append(f"- {cause}")
-        
+
         lines.extend(["", "**Solutions:**", ""])
-        
+
         for i, solution in enumerate(info['solutions'], 1):
             lines.append(f"{i}. {solution}")
-        
+
         lines.extend(["", "---", ""])
-        
+
         return lines
-    
+
     def generate_cli_reference(self) -> str:
         """Generate CLI reference documentation."""
         return """
@@ -333,19 +332,19 @@ Collects validation and error messages.
     def save_all_documentation(self, output_dir: Path):
         """Generate and save all documentation."""
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Diagnostics guide
         troubleshooting = self.generate_troubleshooting_guide()
         (output_dir / "troubleshooting.md").write_text(troubleshooting)
-        
+
         # CLI reference
         cli_ref = self.generate_cli_reference()
         (output_dir / "cli-reference.md").write_text(cli_ref)
-        
+
         # API reference
         api_ref = self.generate_api_reference()
         (output_dir / "api-reference.md").write_text(api_ref)
-        
+
         print(f"Documentation generated in {output_dir}/")
 
 __all__ = [

@@ -4,21 +4,38 @@ Module 05: IR Serialization and Persistence
 Handles serialization, deserialization, and persistent storage of IR artifacts.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Type, Union
-from pathlib import Path
-import json
 import gzip
 import hashlib
+import json
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .ir_entities import (
-    IREntity, TypeEntity, SymbolEntity, InterfaceUnit,
-    EntityKind, ScalarType, PointerType, ArrayType, StructureType,
-    UnionType, EnumerationType, FunctionPointerType,
-    FunctionSymbol, VariableSymbol, FieldEntity, PaddingEntity,
-    ParameterEntity, ReturnEntity, AttributeEntity, MetadataEntity,
-    ScalarKind, CallingConvention, ReturnMechanism, Endianness, ArrayKind
+    ArrayKind,
+    ArrayType,
+    AttributeEntity,
+    CallingConvention,
+    Endianness,
+    EntityKind,
+    EnumerationType,
+    FieldEntity,
+    FunctionPointerType,
+    FunctionSymbol,
+    InterfaceUnit,
+    IREntity,
+    MetadataEntity,
+    PaddingEntity,
+    ParameterEntity,
+    PointerType,
+    ReturnEntity,
+    ReturnMechanism,
+    ScalarKind,
+    ScalarType,
+    StructureType,
+    UnionType,
+    VariableSymbol,
 )
 from .ir_validation import ValidationReport
 
@@ -34,7 +51,7 @@ class IREntityFactory:
         """Dispatch deserialization based on entity kind."""
         if not data or 'kind' not in data:
             return None
-        
+
         kind_val = data['kind']
         try:
             kind = EntityKind(kind_val)
@@ -73,7 +90,7 @@ class IREntityFactory:
             return IREntityFactory.enum_type_from_dict(data)
         elif kind == EntityKind.FUNCTION_POINTER_TYPE:
             return IREntityFactory.function_pointer_type_from_dict(data)
-        
+
         return None
 
     @staticmethod
@@ -328,33 +345,33 @@ class IREntityFactory:
 @dataclass
 class IRArtifact:
     """Top-level IR artifact with versioning."""
-    
+
     schema_version: str = "1.0.0"
     normalization_version: str = "1.0.0"
     creation_timestamp: Optional[str] = None
-    
+
     interface_unit: Optional[InterfaceUnit] = None
     validation_report: Optional[ValidationReport] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize artifact to dictionary."""
         if self.creation_timestamp is None:
             self.creation_timestamp = datetime.now(timezone.utc).isoformat()
-            
+
         data = {
             'schema_version': self.schema_version,
             'normalization_version': self.normalization_version,
             'creation_timestamp': self.creation_timestamp
         }
-        
+
         if self.interface_unit:
             data['interface_unit'] = self.interface_unit.to_dict()
-        
+
         if self.validation_report:
             data['validation_report'] = self.validation_report.to_dict()
-        
+
         return data
-    
+
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> 'IRArtifact':
         """Deserialize artifact from dictionary."""
@@ -363,10 +380,10 @@ class IRArtifact:
             normalization_version=data.get('normalization_version', '1.0.0'),
             creation_timestamp=data.get('creation_timestamp')
         )
-        
+
         if 'interface_unit' in data and data['interface_unit']:
             artifact.interface_unit = IREntityFactory.interface_unit_from_dict(data['interface_unit'])
-        
+
         if 'validation_report' in data and data['validation_report']:
             # Assuming ValidationReport has a from_dict or can be simple reconstructed
             # For now, we'll manually reconstruct basic fields if needed, or leave as None if complex
@@ -381,7 +398,7 @@ class IRArtifact:
             vr.platform_errors = vr_data.get('platform_errors', [])
             vr.completeness_errors = vr_data.get('completeness_errors', [])
             artifact.validation_report = vr
-            
+
         return artifact
 
 # ============================================================================
@@ -391,23 +408,23 @@ class IRArtifact:
 @dataclass
 class IRManifest:
     """Metadata about IR artifact."""
-    
+
     artifact_id: str = ""
     artifact_version: str = "1.0.0"
-    
+
     source_headers: List[str] = field(default_factory=list)
     source_hash: str = ""
-    
+
     generated_timestamp: str = ""
     generator_version: str = ""
-    
+
     symbol_count: int = 0
     type_count: int = 0
     total_size_bytes: int = 0
-    
+
     validation_passed: bool = False
     validation_error_count: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize manifest."""
         return {
@@ -423,7 +440,7 @@ class IRManifest:
             'validation_passed': self.validation_passed,
             'validation_error_count': self.validation_error_count
         }
-    
+
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> 'IRManifest':
         """Deserialize manifest."""
@@ -457,7 +474,7 @@ def serialize_deterministically(obj: Any) -> str:
 
 def compute_artifact_hash(artifact: IRArtifact) -> str:
     """Compute deterministic hash of IR artifact."""
-    # We use a copy of to_dict but potentially without volatile fields like creation_timestamp 
+    # We use a copy of to_dict but potentially without volatile fields like creation_timestamp
     # if alignment between runs is needed. But prompt 1.3 says "No timestamps (or fixed timestamps)".
     # Let's override creation_timestamp for hashing if we want absolute determinism across time.
     data = artifact.to_dict()
@@ -482,7 +499,7 @@ def verify_artifact_integrity(
 def serialize_compressed(artifact: IRArtifact, output_path: Path):
     """Serialize IR artifact with gzip compression."""
     json_str = serialize_deterministically(artifact.to_dict())
-    
+
     with gzip.open(output_path, 'wt', encoding='utf-8') as f:
         f.write(json_str)
 
@@ -490,7 +507,7 @@ def deserialize_compressed(input_path: Path) -> IRArtifact:
     """Deserialize compressed IR artifact."""
     with gzip.open(input_path, 'rt', encoding='utf-8') as f:
         data = json.load(f)
-    
+
     return IRArtifact.from_dict(data)
 
 # ============================================================================
@@ -503,14 +520,14 @@ class IntegrityError(Exception):
 
 class IRArtifactManager:
     """Manages IR artifact storage and retrieval."""
-    
+
     def __init__(self, cache_dir: Path):
         self.cache_dir = cache_dir
         self.artifacts_dir = cache_dir / 'artifacts'
         self.manifests_dir = cache_dir / 'manifests'
-        
+
         self._loaded_artifacts: Dict[str, IRArtifact] = {}
-    
+
     def save_artifact(
         self,
         artifact: IRArtifact,
@@ -520,10 +537,10 @@ class IRArtifactManager:
         """Save IR artifact to disk."""
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.manifests_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Compute artifact hash
         artifact_hash = compute_artifact_hash(artifact)
-        
+
         # Save artifact
         if compress:
             artifact_path = self.artifacts_dir / f"{source_hash}.json.gz"
@@ -532,21 +549,21 @@ class IRArtifactManager:
             artifact_path = self.artifacts_dir / f"{source_hash}.json"
             with open(artifact_path, 'w') as f:
                 f.write(serialize_deterministically(artifact.to_dict()))
-        
+
         # Create and save manifest
         manifest = self._create_manifest(artifact, source_hash, artifact_hash)
         # Add actual file size to manifest
         manifest.total_size_bytes = artifact_path.stat().st_size
-        
+
         manifest_path = self.manifests_dir / f"{source_hash}.manifest.json"
         with open(manifest_path, 'w') as f:
             f.write(serialize_deterministically(manifest.to_dict()))
-        
+
         # Update index
         self._update_index(source_hash, artifact_path, manifest_path)
-        
+
         return artifact_path
-    
+
     def load_artifact(
         self,
         source_hash: str,
@@ -556,53 +573,53 @@ class IRArtifactManager:
         # Check in-memory cache
         if source_hash in self._loaded_artifacts:
             return self._loaded_artifacts[source_hash]
-        
+
         # Check index/file system
         index_path = self.cache_dir / 'index.json'
         if not index_path.exists():
             return None
-            
-        with open(index_path, 'r') as f:
+
+        with open(index_path) as f:
             index = json.load(f)
-            
+
         if source_hash not in index:
             return None
-            
+
         entry = index[source_hash]
         artifact_path = Path(entry['artifact_path'])
         manifest_path = Path(entry['manifest_path'])
-        
+
         if not artifact_path.exists():
             return None
-            
+
         # Load manifest for hash verification
         if verify_integrity:
-            with open(manifest_path, 'r') as f:
+            with open(manifest_path) as f:
                 manifest_data = json.load(f)
             expected_hash = manifest_data.get('artifact_id')
         else:
             expected_hash = None
-        
+
         # Load artifact
         if artifact_path.suffix == '.gz':
             artifact = deserialize_compressed(artifact_path)
         else:
-            with open(artifact_path, 'r') as f:
+            with open(artifact_path) as f:
                 data = json.load(f)
             artifact = IRArtifact.from_dict(data)
-            
+
         # Verify integrity
         if verify_integrity and expected_hash:
             if not verify_artifact_integrity(artifact, expected_hash):
                 raise IntegrityError(
                     f"Artifact integrity check failed for {source_hash}"
                 )
-        
+
         # Cache in memory
         self._loaded_artifacts[source_hash] = artifact
-        
+
         return artifact
-    
+
     def _create_manifest(
         self,
         artifact: IRArtifact,
@@ -615,17 +632,17 @@ class IRArtifactManager:
         manifest.source_hash = source_hash
         manifest.generated_timestamp = datetime.now(timezone.utc).isoformat()
         manifest.generator_version = artifact.normalization_version
-        
+
         if artifact.interface_unit:
             manifest.symbol_count = len(artifact.interface_unit.symbols)
             manifest.type_count = len(artifact.interface_unit.types)
-        
+
         if artifact.validation_report:
             manifest.validation_passed = artifact.validation_report.passed
             manifest.validation_error_count = artifact.validation_report.total_errors()
-        
+
         return manifest
-    
+
     def _update_index(
         self,
         source_hash: str,
@@ -634,21 +651,21 @@ class IRArtifactManager:
     ):
         """Update artifact index."""
         index_path = self.cache_dir / 'index.json'
-        
+
         if index_path.exists():
             try:
-                with open(index_path, 'r') as f:
+                with open(index_path) as f:
                     index = json.load(f)
             except json.JSONDecodeError:
                 index = {}
         else:
             index = {}
-        
+
         index[source_hash] = {
             'artifact_path': str(artifact_path),
             'manifest_path': str(manifest_path)
         }
-        
+
         with open(index_path, 'w') as f:
             f.write(serialize_deterministically(index))
 
@@ -659,27 +676,27 @@ class IRArtifactManager:
 def validate_loaded_artifact(artifact: IRArtifact) -> List[str]:
     """Validate loaded artifact is structurally sound."""
     errors = []
-    
+
     if not artifact.schema_version:
         errors.append("Missing schema_version")
-    
+
     if not artifact.interface_unit:
         errors.append("Missing interface_unit")
         return errors
-    
+
     # Check for duplicate entity IDs
     all_ids = set()
-    
+
     for symbol in artifact.interface_unit.symbols:
         if symbol.entity_id in all_ids:
             errors.append(f"Duplicate entity ID: {symbol.entity_id}")
         all_ids.add(symbol.entity_id)
-    
+
     for type_entity in artifact.interface_unit.types:
         if type_entity.entity_id in all_ids:
             errors.append(f"Duplicate entity ID: {type_entity.entity_id}")
         all_ids.add(type_entity.entity_id)
-    
+
     return errors
 
 __all__ = [

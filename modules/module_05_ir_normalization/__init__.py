@@ -20,32 +20,40 @@ Quick Start:
 
 from .__version__ import __version__, __version_info__, get_version
 
-# Core orchestration
-from .ir_orchestrator import (
-    IROrchestrator,
-    IRNormalizationConfig,
-    OrchestrationReport,
-    OrchestrationError,
+# Diagnostics
+from .diagnostics import (
+    DiagnosticCollector,
+    DiagnosticMessage,
+    Severity,
+)
+
+# Diffing
+from .ir_diff import (
+    IRDiff,
+    IRDiffComputer,
+    recommend_version_bump,
 )
 
 # Entity model
 from .ir_entities import (
-    InterfaceUnit,
-    ScalarType,
-    PointerType,
     ArrayType,
-    StructureType,
-    UnionType,
     EnumerationType,
     FunctionPointerType,
     FunctionSymbol,
+    InterfaceUnit,
+    PointerType,
+    ScalarType,
+    StructureType,
+    UnionType,
     VariableSymbol,
 )
 
-# Validation
-from .ir_validation import (
-    IRValidationOrchestrator,
-    ValidationReport,
+# Core orchestration
+from .ir_orchestrator import (
+    IRNormalizationConfig,
+    IROrchestrator,
+    OrchestrationError,
+    OrchestrationReport,
 )
 
 # Serialization
@@ -54,26 +62,18 @@ from .ir_serialization import (
     IRArtifactManager,
 )
 
-# Diffing
-from .ir_diff import (
-    IRDiffComputer,
-    IRDiff,
-    recommend_version_bump,
+# Validation
+from .ir_validation import (
+    IRValidationOrchestrator,
+    ValidationReport,
 )
 
 # Integration Bridge
 from .module_04_bridge import (
     Module04Bridge,
-    TypeDeduplicator,
-    TypeConverter,
     SymbolConverter,
-)
-
-# Diagnostics
-from .diagnostics import (
-    DiagnosticCollector,
-    DiagnosticMessage,
-    Severity,
+    TypeConverter,
+    TypeDeduplicator,
 )
 
 __all__ = [
@@ -81,13 +81,13 @@ __all__ = [
     '__version__',
     '__version_info__',
     'get_version',
-    
+
     # Orchestration
     'IROrchestrator',
     'IRNormalizationConfig',
     'OrchestrationReport',
     'OrchestrationError',
-    
+
     # Entities
     'InterfaceUnit',
     'ScalarType',
@@ -99,25 +99,25 @@ __all__ = [
     'FunctionPointerType',
     'FunctionSymbol',
     'VariableSymbol',
-    
+
     # Validation
     'IRValidationOrchestrator',
     'ValidationReport',
-    
+
     # Serialization
     'IRArtifact',
     'IRArtifactManager',
-    
+
     # Diffing
     'IRDiffComputer',
     'IRDiff',
     'recommend_version_bump',
-    
+
     # Diagnostics
     'DiagnosticCollector',
     'DiagnosticMessage',
     'Severity',
-    
+
     # Integration Bridge
     'Module04Bridge',
     'TypeDeduplicator',

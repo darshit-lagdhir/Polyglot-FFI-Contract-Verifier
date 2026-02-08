@@ -113,7 +113,7 @@ class TestIRDiffComputer:
             pointer_width=64, endianness=Endianness.LITTLE,
             abi_mode="sysv", compiler_family="gcc", compiler_version="11.0"
         )
-        f = FunctionSymbol(linkage_name="added_func", calling_convention=CallingConvention.CDECL)
+        f = FunctionSymbol(linkage_name="added_func", calling_convention=CallingConvention.CDECL, source_name="added_func")
         new_unit.symbols.append(f)
         new_art = IRArtifact(interface_unit=new_unit)
         
@@ -128,7 +128,7 @@ class TestIRDiffComputer:
             pointer_width=64, endianness=Endianness.LITTLE,
             abi_mode="sysv", compiler_family="gcc", compiler_version="11.0"
         )
-        f = FunctionSymbol(linkage_name="doomed_func", calling_convention=CallingConvention.CDECL)
+        f = FunctionSymbol(linkage_name="doomed_func", calling_convention=CallingConvention.CDECL, source_name="doomed_func")
         old_unit.symbols.append(f)
         old_art = IRArtifact(interface_unit=old_unit)
         
@@ -180,10 +180,10 @@ class TestIRDiffComputer:
         assert any(c.abi_impact == ABIImpact.BREAKING for c in changes)
 
     def test_function_param_type_change(self, computer):
-        f1 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL)
+        f1 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL, source_name="func")
         f1.parameters.append(ParameterEntity(parameter_index=0, parameter_name="p", type_reference="int"))
         
-        f2 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL)
+        f2 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL, source_name="func")
         f2.entity_id = f1.entity_id
         f2.parameters.append(ParameterEntity(parameter_index=0, parameter_name="p", type_reference="float"))
         
@@ -192,10 +192,10 @@ class TestIRDiffComputer:
         assert any(c.abi_impact == ABIImpact.BREAKING for c in changes)
 
     def test_function_param_name_change(self, computer):
-        f1 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL)
+        f1 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL, source_name="func")
         f1.parameters.append(ParameterEntity(parameter_index=0, parameter_name="old_name", type_reference="int"))
         
-        f2 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL)
+        f2 = FunctionSymbol(linkage_name="func", calling_convention=CallingConvention.CDECL, source_name="func")
         f2.entity_id = f1.entity_id
         f2.parameters.append(ParameterEntity(parameter_index=0, parameter_name="new_name", type_reference="int"))
         
@@ -204,8 +204,8 @@ class TestIRDiffComputer:
         assert all(c.abi_impact == ABIImpact.NEUTRAL for c in changes)
 
     def test_variable_constness_change(self, computer):
-        v1 = VariableSymbol(linkage_name="v", type_reference="int", is_const=False)
-        v2 = VariableSymbol(linkage_name="v", type_reference="int", is_const=True)
+        v1 = VariableSymbol(linkage_name="v", type_reference="int", is_const=False, source_name="v")
+        v2 = VariableSymbol(linkage_name="v", type_reference="int", is_const=True, source_name="v")
         v2.entity_id = v1.entity_id
         
         changes = computer._diff_variables(v1, v2)
@@ -299,8 +299,8 @@ def test_struct_field_variations(idx):
 @pytest.mark.parametrize("idx", range(15))
 def test_function_signature_permutations(idx):
     comp = IRDiffComputer()
-    f1 = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL)
-    f2 = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL)
+    f1 = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL, source_name="f")
+    f2 = FunctionSymbol(linkage_name="f", calling_convention=CallingConvention.CDECL, source_name="f")
     f2.entity_id = f1.entity_id
     
     if idx % 2 == 0:

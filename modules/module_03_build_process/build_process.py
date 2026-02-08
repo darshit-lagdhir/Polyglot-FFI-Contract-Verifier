@@ -40,6 +40,14 @@ import concurrent.futures
 import time
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_utc_now() -> str:
+    """Get current UTC timestamp in ISO format."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+# ============================================================================
 # CORE ENUMERATIONS
 # ============================================================================
 
@@ -207,7 +215,7 @@ class EnvironmentDescriptor:
     
     # Metadata
     descriptor_version: str = "1.0.0"
-    creation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    creation_timestamp: str = field(default_factory=get_utc_now)
     
     def to_json(self) -> str:
         """Serialize descriptor to JSON."""
@@ -394,7 +402,7 @@ class BuildProcessOrchestrator:
         self.stages: List[BuildStageInterface] = []
         self.build_context: Dict[str, Any] = {
             'environment': environment_descriptor,
-            'start_time': datetime.datetime.now(datetime.UTC).isoformat(),
+            'start_time': get_utc_now(),
         }
     
     def register_stage(self, stage: BuildStageInterface) -> None:
@@ -427,7 +435,7 @@ class BuildProcessOrchestrator:
             self.build_context = stage.run(self.build_context)
         
         # Add completion metadata
-        self.build_context['end_time'] = datetime.datetime.now(datetime.UTC).isoformat()
+        self.build_context['end_time'] = get_utc_now()
         self.build_context['status'] = 'SUCCESS'
         
         print("=" * 80)
@@ -483,7 +491,7 @@ class ToolchainDescriptor:
     deterministic_output: bool
     
     # Metadata
-    detection_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    detection_timestamp: str = field(default_factory=get_utc_now)
     descriptor_version: str = "1.0.0"
     
     def to_json(self) -> str:

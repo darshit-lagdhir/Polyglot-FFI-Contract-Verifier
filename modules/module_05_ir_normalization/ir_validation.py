@@ -6,14 +6,26 @@ Ensures structural integrity, type safety, ABI consistency, and completeness.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Set, Optional, Any, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from .ir_entities import (
-    IREntity, TypeEntity, SymbolEntity, FieldEntity, PaddingEntity,
-    InterfaceUnit, ScalarType, PointerType, ArrayType, StructureType,
-    UnionType, EnumerationType, FunctionPointerType,
-    FunctionSymbol, VariableSymbol, ParameterEntity,
-    TypeRegistry, ArrayKind, ScalarKind, CallingConvention, EntityKind
+    ArrayKind,
+    ArrayType,
+    CallingConvention,
+    EnumerationType,
+    FieldEntity,
+    FunctionPointerType,
+    FunctionSymbol,
+    InterfaceUnit,
+    IREntity,
+    PointerType,
+    ScalarType,
+    StructureType,
+    SymbolEntity,
+    TypeEntity,
+    TypeRegistry,
+    UnionType,
+    VariableSymbol,
 )
 
 # ============================================================================
@@ -23,9 +35,9 @@ from .ir_entities import (
 @dataclass
 class ValidationReport:
     """Comprehensive validation report."""
-    
+
     passed: bool = True
-    
+
     schema_errors: List[str] = field(default_factory=list)
     reference_errors: List[str] = field(default_factory=list)
     type_errors: List[str] = field(default_factory=list)
@@ -33,21 +45,21 @@ class ValidationReport:
     graph_errors: List[str] = field(default_factory=list)
     platform_errors: List[str] = field(default_factory=list)
     completeness_errors: List[str] = field(default_factory=list)
-    
+
     def total_errors(self) -> int:
         """Get total error count."""
         return (len(self.schema_errors) + len(self.reference_errors) +
                 len(self.type_errors) + len(self.symbol_errors) +
                 len(self.graph_errors) + len(self.platform_errors) +
                 len(self.completeness_errors))
-    
+
     def all_errors(self) -> List[str]:
         """Get all errors concatenated."""
         return (self.schema_errors + self.reference_errors +
                 self.type_errors + self.symbol_errors +
                 self.graph_errors + self.platform_errors +
                 self.completeness_errors)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize report."""
         return {
@@ -68,18 +80,18 @@ class ValidationReport:
 
 class SchemaValidator:
     """Validates IR entities conform to schema."""
-    
+
     def validate_entity(self, entity: IREntity) -> List[str]:
         """Validate entity against schema."""
         errors = []
-        
+
         # All entities must have ID and kind
         if not entity.entity_id:
             errors.append("Entity missing entity_id")
-        
+
         if not entity.kind:
             errors.append("Entity missing kind")
-        
+
         # Type-specific validation
         if isinstance(entity, TypeEntity):
             errors.extend(self._validate_type_entity(entity))
@@ -87,35 +99,35 @@ class SchemaValidator:
             errors.extend(self._validate_symbol_entity(entity))
         elif isinstance(entity, FieldEntity):
             errors.extend(self._validate_field_entity(entity))
-        
+
         return errors
-    
+
     def _validate_type_entity(self, entity: TypeEntity) -> List[str]:
         """Validate type entity schema."""
         errors = []
-        
+
         if entity.size_bytes < 0:
             errors.append(f"Type {entity.entity_id} has negative size")
-        
+
         if entity.alignment_bytes <= 0:
             errors.append(f"Type {entity.entity_id} has invalid alignment")
-        
+
         # Alignment must be power of 2
         if entity.alignment_bytes > 0:
             if (entity.alignment_bytes & (entity.alignment_bytes - 1)) != 0:
                 errors.append(
                     f"Type {entity.entity_id} alignment {entity.alignment_bytes} is not power of 2"
                 )
-        
+
         return errors
-    
+
     def _validate_symbol_entity(self, entity: SymbolEntity) -> List[str]:
         """Validate symbol entity schema."""
         errors = []
-        
+
         if not entity.linkage_name:
             errors.append(f"Symbol {entity.entity_id} missing linkage_name")
-        
+
         return errors
 
     def _validate_field_entity(self, entity: FieldEntity) -> List[str]:
@@ -133,17 +145,17 @@ class SchemaValidator:
 
 class ReferenceValidator:
     """Validates all entity references resolve."""
-    
+
     def __init__(self, type_registry: TypeRegistry):
         self.type_registry = type_registry
-    
+
     def validate_all_references(
         self,
         entities: List[IREntity]
     ) -> List[str]:
         """Validate all entity references."""
         errors = []
-        
+
         for entity in entities:
             if isinstance(entity, PointerType):
                 errors.extend(self._validate_pointer_references(entity))
@@ -159,9 +171,9 @@ class ReferenceValidator:
                 errors.extend(self._validate_function_pointer_references(entity))
             elif isinstance(entity, FunctionSymbol):
                 errors.extend(self._validate_function_references(entity))
-        
+
         return errors
-    
+
     def _validate_pointer_references(self, ptr: PointerType) -> List[str]:
         """Validate pointer type references."""
         errors = []
@@ -171,7 +183,7 @@ class ReferenceValidator:
                 f"Pointer {ptr.entity_id} references undefined target type {ptr.target_type_reference}"
             )
         return errors
-    
+
     def _validate_array_references(self, array: ArrayType) -> List[str]:
         """Validate array type references."""
         errors = []
@@ -181,7 +193,7 @@ class ReferenceValidator:
                 f"Array {array.entity_id} references undefined element type {array.element_type_reference}"
             )
         return errors
-    
+
     def _validate_structure_references(self, struct: StructureType) -> List[str]:
         """Validate structure field references."""
         errors = []
@@ -192,7 +204,7 @@ class ReferenceValidator:
                     f"Structure {struct.structure_name} field {field.field_name} references undefined type {field.type_reference}"
                 )
         return errors
-    
+
     def _validate_union_references(self, union: UnionType) -> List[str]:
         """Validate union member references."""
         errors = []
@@ -223,7 +235,7 @@ class ReferenceValidator:
             if not pt:
                 errors.append(f"FunctionPointer parameter references undefined type {param.type_reference}")
         return errors
-    
+
     def _validate_function_references(self, func: FunctionSymbol) -> List[str]:
         """Validate function symbol references."""
         errors = []
@@ -247,15 +259,15 @@ class ReferenceValidator:
 
 class TypeValidator:
     """Validates type entities satisfy ABI rules."""
-    
+
     def validate_structure_layout(self, struct: StructureType) -> List[str]:
         """Validate structure layout consistency."""
         errors = []
         if not struct.fields:
             return errors
-        
+
         sorted_fields = sorted(struct.fields, key=lambda f: f.byte_offset)
-        
+
         # Check for overlaps
         for i in range(len(sorted_fields) - 1):
             current = sorted_fields[i]
@@ -265,48 +277,48 @@ class TypeValidator:
                 errors.append(
                     f"Structure {struct.structure_name}: field {next_f.field_name} overlaps with {current.field_name}"
                 )
-        
+
         # Check field alignment
         for f in struct.fields:
             if f.alignment_bytes > 0 and f.byte_offset % f.alignment_bytes != 0:
                 errors.append(
                     f"Structure {struct.structure_name}: field {f.field_name} violates alignment {f.alignment_bytes}"
                 )
-        
+
         # Check total size
         if sorted_fields:
             last_field = sorted_fields[-1]
             min_size = last_field.byte_offset + last_field.size_bytes
             if struct.size_bytes < min_size:
                 errors.append(f"Structure {struct.structure_name} size too small, min {min_size}")
-        
+
         # Check structure alignment
         if struct.size_bytes % struct.alignment_bytes != 0:
             errors.append(f"Structure {struct.structure_name} size not multiple of alignment")
-            
+
         return errors
-    
+
     def validate_union_invariants(self, union: UnionType) -> List[str]:
         """Validate union invariants."""
         errors = []
         if not union.members:
             return errors
-        
+
         # Check all members at offset 0
         for member in union.members:
             if member.byte_offset != 0:
                 errors.append(f"Union {union.union_name} member {member.field_name} not at offset 0")
-        
+
         # Check size is at least max member size
         max_member_size = max(m.size_bytes for m in union.members)
         if union.size_bytes < max_member_size:
             errors.append(f"Union {union.union_name} size {union.size_bytes} less than max member size {max_member_size}")
-            
+
         # Check alignment is at least max member alignment
         max_member_align = max(m.alignment_bytes for m in union.members)
         if union.alignment_bytes < max_member_align:
             errors.append(f"Union {union.union_name} alignment {union.alignment_bytes} less than max member alignment {max_member_align}")
-            
+
         return errors
 
     def validate_array_consistency(self, array: ArrayType) -> List[str]:
@@ -316,7 +328,7 @@ class TypeValidator:
             if array.element_count is None or array.element_count <= 0:
                 errors.append(f"Fixed-size array {array.entity_id} invalid element count")
             elif array.size_bytes != array.element_count * array.element_size:
-                # Important: This might be slightly off due to trailing padding in some cases, 
+                # Important: This might be slightly off due to trailing padding in some cases,
                 # but usually element_size already includes padding.
                 pass
         return errors
@@ -327,14 +339,14 @@ class TypeValidator:
         underlying = reg.resolve_type(enum.underlying_type_reference)
         if not isinstance(underlying, ScalarType):
             return errors
-            
+
         if underlying.is_signed:
             min_val = -(2 ** (underlying.bit_width - 1))
             max_val = 2 ** (underlying.bit_width - 1) - 1
         else:
             min_val = 0
             max_val = 2 ** underlying.bit_width - 1
-            
+
         for name, value in enum.enumerators.items():
             if not (min_val <= value <= max_val):
                 errors.append(f"Enum {enum.enum_name} value {name}={value} out of range for {underlying.bit_width}-bit type")
@@ -346,25 +358,25 @@ class TypeValidator:
 
 class SymbolValidator:
     """Validates symbol entities."""
-    
+
     def validate_function_symbol(self, func: FunctionSymbol) -> List[str]:
         """Validate function symbol."""
         errors = []
-        
+
         # Check parameter ordering
         for i, param in enumerate(func.parameters):
             if param.parameter_index != i:
                 errors.append(f"Function {func.linkage_name}: parameter index mismatch at position {i}")
-        
+
         # Check duplicate parameter names
         names = [p.parameter_name for p in func.parameters if p.parameter_name]
         if len(names) != len(set(names)):
             errors.append(f"Function {func.linkage_name} has duplicate parameter names")
-            
+
         # Check variadic functions
         if func.is_variadic and len(func.parameters) == 0:
             errors.append(f"Variadic function {func.linkage_name} has no named parameters")
-        
+
         return errors
 
     def validate_variable_symbol(self, var: VariableSymbol) -> List[str]:
@@ -383,28 +395,28 @@ class SymbolValidator:
 
 class GraphValidator:
     """Validates type dependency graph acyclicity."""
-    
+
     def __init__(self, type_registry: TypeRegistry):
         self.type_registry = type_registry
-        
+
     def detect_cycles(self) -> List[str]:
         """Detect cycles in type dependency graph."""
         errors = []
         visited = set()
         rec_stack = set()
-        
+
         for type_entity in self.type_registry.get_all_types():
             if type_entity.entity_id not in visited:
                 cycle = self._dfs_detect_cycle(type_entity.entity_id, visited, rec_stack, [])
                 if cycle:
                     errors.append(f"Circular type dependency: {' -> '.join(cycle)}")
         return errors
-        
+
     def _dfs_detect_cycle(self, type_id: str, visited: Set[str], rec_stack: Set[str], path: List[str]) -> Optional[List[str]]:
         visited.add(type_id)
         rec_stack.add(type_id)
         path.append(type_id)
-        
+
         entity = self.type_registry.resolve_type(type_id)
         if entity:
             deps = self._get_dependencies(entity)
@@ -415,11 +427,11 @@ class GraphValidator:
                 elif dep_id in rec_stack:
                     idx = path.index(dep_id)
                     return path[idx:] + [dep_id]
-                    
+
         rec_stack.remove(type_id)
         path.pop()
         return None
-        
+
     def _get_dependencies(self, entity: TypeEntity) -> List[str]:
         deps = []
         if isinstance(entity, PointerType):
@@ -441,10 +453,10 @@ class GraphValidator:
 
 class PlatformValidator:
     """Validates IR against platform constraints."""
-    
+
     def __init__(self, interface_unit: InterfaceUnit):
         self.interface_unit = interface_unit
-        
+
     def validate_pointer_sizes(self, type_registry: TypeRegistry) -> List[str]:
         errors = []
         expected = self.interface_unit.pointer_width // 8
@@ -453,7 +465,7 @@ class PlatformValidator:
                 if t.size_bytes != expected:
                     errors.append(f"Type {t.entity_id} size {t.size_bytes} incompatible with {self.interface_unit.pointer_width}-bit platform")
         return errors
-        
+
     def validate_calling_conventions(self, symbols: List[SymbolEntity]) -> List[str]:
         errors = []
         arch = self.interface_unit.target_architecture
@@ -469,7 +481,7 @@ class PlatformValidator:
 
 class CompletenessValidator:
     """Validates IR completeness."""
-    
+
     def validate_interface_unit(self, unit: InterfaceUnit) -> List[str]:
         errors = []
         if not unit.target_architecture: errors.append("Missing target_architecture")
@@ -485,7 +497,7 @@ class CompletenessValidator:
 
 class IRValidationOrchestrator:
     """Orchestrates complete IR validation."""
-    
+
     def __init__(
         self,
         interface_unit: InterfaceUnit,
@@ -493,7 +505,7 @@ class IRValidationOrchestrator:
     ):
         self.interface_unit = interface_unit
         self.type_registry = type_registry
-        
+
         self.schema_validator = SchemaValidator()
         self.reference_validator = ReferenceValidator(type_registry)
         self.type_validator = TypeValidator()
@@ -501,20 +513,20 @@ class IRValidationOrchestrator:
         self.graph_validator = GraphValidator(type_registry)
         self.platform_validator = PlatformValidator(interface_unit)
         self.completeness_validator = CompletenessValidator()
-    
+
     def validate_complete_ir(self) -> ValidationReport:
         """Perform complete IR validation."""
         report = ValidationReport()
-        
+
         all_entities = self.interface_unit.symbols + self.interface_unit.types
-        
+
         # : Schema
         for entity in all_entities:
             report.schema_errors.extend(self.schema_validator.validate_entity(entity))
-        
+
         # : References
         report.reference_errors.extend(self.reference_validator.validate_all_references(all_entities))
-        
+
         # : Types
         for t in self.interface_unit.types:
             if isinstance(t, StructureType):
@@ -525,27 +537,27 @@ class IRValidationOrchestrator:
                 report.type_errors.extend(self.type_validator.validate_array_consistency(t))
             elif isinstance(t, EnumerationType):
                 report.type_errors.extend(self.type_validator.validate_enum_ranges(t, self.type_registry))
-        
+
         # : Symbols
         for s in self.interface_unit.symbols:
             if isinstance(s, FunctionSymbol):
                 report.symbol_errors.extend(self.symbol_validator.validate_function_symbol(s))
             elif isinstance(s, VariableSymbol):
                 report.symbol_errors.extend(self.symbol_validator.validate_variable_symbol(s))
-        
+
         # : Graph
         report.graph_errors.extend(self.graph_validator.detect_cycles())
-        
+
         # : Platform
         report.platform_errors.extend(self.platform_validator.validate_pointer_sizes(self.type_registry))
         report.platform_errors.extend(self.platform_validator.validate_calling_conventions(self.interface_unit.symbols))
-        
+
         # : Completeness
         report.completeness_errors.extend(self.completeness_validator.validate_interface_unit(self.interface_unit))
-        
+
         # Overall status
         report.passed = report.total_errors() == 0
-        
+
         return report
 
 __all__ = [
