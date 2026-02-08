@@ -30,31 +30,36 @@ and FFI verification.
 **Status:** Complete  
 **Focus:** Canonicalization framework and transformation logic.
 
+---
+
+
+**Status:** Complete  
+**Focus:** Function signature resolution and calling convention analysis.
+
 ### Implemented Components
 
-#### Normalization Framework
-- `TypeNormalizationPipeline` - Orchestrates the transformation from raw data to normalized entities.
-- `TypedefResolver` - Resolves multi-level typedef chains with cycle detection.
-- `RawTypeData` & `RawFieldData` - Input specifications for the normalization process.
+#### Symbol Normalization
+- `SymbolNormalizationPipeline` - Normalizes function and global variable symbols.
+- **Calling Convention Analysis**: Platform-aware resolution of default and explicit conventions.
+- **Return Mechanism Determination**: Logic to identify direct vs. hidden pointer return protocols.
 
-#### Core Normalization Logic
-- **Scalar/Pointer/Array Normalization**: Handles base types and transitive indirection.
-- **Structure Normalization**: Performs **Explicit Padding Insertion** based on field offsets, identifying gaps for ABI safety.
-- **Union Normalization**: Enforces shared base offsets and size/alignment invariants.
-- **Enum Normalization**: Validates backing integer types and symbolic values.
-- **Cycle Detection**: Prevents infinite recursion in self-referential types (via `in_progress` tracking).
+#### Feature Set
+- **Name Mangling Handling**: Support for linkage and source name preservation.
+- **Parameter Normalization**: Transitive type resolution for function parameters.
+- **Attribute Processing**: Normalization of ABI-relevant attributes (visibility, alignment, etc.).
+- **Variadic Support**: Proper representation of variable-argument functions.
 
 ### Key Features
-- **Idempotence & Determinism**: Normalization process ensures stable, recreatable IR graphs.
-- **ABI Safety**: Automatically identifies and records implicit compiler padding.
-- **Transitive Resolution**: All type references are recursively normalized and validated.
+- **ABI Fidelity**: Captures the exact binary interface of functions including calling conventions.
+- **Linkage Stability**: Ensures linkage names are preserved for binary symbol lookup.
+- **Platform Defaults**: Automatically handles OS/Arch specific ABI rules (e.g., Win64 vs. SysV).
 
 ### Testing
-- 80 unit tests in `tests/unit/test_type_normalization.py` (MEDIUM LEVEL).
-- Comprehensive coverage of typedef chaining, padding logic, and error boundaries.
+- 85 unit tests in `tests/unit/test_symbol_normalization.py` (MEDIUM LEVEL).
+- Coverage of calling convention defaults, hidden pointer thresholds, and variadic validation.
 - All tests passing ✅
 
 ---
 
-**Module Progress:** 3/15 components complete (20.0%)  
-**Status:** Canonicalization framework active, ready for symbol and linkage normalization.
+**Module Progress:** 4/15 components complete (26.7%)  
+**Status:** Symbol normalization complete, ready for full IR validation framework.

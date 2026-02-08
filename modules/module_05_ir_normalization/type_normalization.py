@@ -484,6 +484,264 @@ class TypeNormalizationPipeline:
         
         return func_ptr
 
+# ============================================================================
+# SYMBOL NORMALIZATION ()
+# ============================================================================
+
+from .ir_entities import (
+    FunctionSymbol, VariableSymbol, ReturnEntity, AttributeEntity
+)
+
+@dataclass
+class RawFunctionData:
+    """Raw function data from Module 04."""
+    linkage_name: str
+    source_name: Optional[str] = None
+    return_type_name: str = "void"
+    parameters: List['RawParameterData'] = field(default_factory=list)
+    is_variadic: bool = False
+    attributes: List['RawAttributeData'] = field(default_factory=list)
+    calling_convention_attr: Optional[str] = None
+
+@dataclass
+class RawParameterData:
+    """Raw parameter data."""
+    name: Optional[str]
+    type_name: str
+    is_const: bool = False
+    is_volatile: bool = False
+    is_restrict: bool = False
+
+@dataclass
+class RawVariableData:
+    """Raw global variable data."""
+    linkage_name: str
+    source_name: Optional[str] = None
+    type_name: str = ""
+    is_const: bool = False
+    visibility: Optional[str] = None
+    attributes: List['RawAttributeData'] = field(default_factory=list)
+
+@dataclass
+class RawAttributeData:
+    """Raw attribute data."""
+    name: str
+    value: Optional[str] = None
+
+# Calling convention resolution
+
+def resolve_calling_convention(
+    func_data: RawFunctionData,
+    platform_os: str,
+    platform_arch: str,
+    compiler_family: str
+) -> CallingConvention:
+    """
+    Resolve function calling convention.
+    
+    Priority:
+    1. Explicit function attribute
+    2. Platform default
+    """
+    # Check explicit attribute
+    if func_data.calling_convention_attr:
+        attr = func_data.calling_convention_attr.lower()
+        if "cdecl" in attr:
+            return CallingConvention.CDECL
+        elif "stdcall" in attr:
+            return CallingConvention.STDCALL
+        elif "fastcall" in attr:
+            return CallingConvention.FASTCALL
+        elif "vectorcall" in attr:
+            return CallingConvention.VECTORCALL
+        elif "thiscall" in attr:
+            return CallingConvention.THISCALL
+    
+    # Platform defaults
+    if platform_arch == "x86_64":
+        if platform_os == "windows":
+            return CallingConvention.WIN64
+        else:  # Linux, macOS
+            return CallingConvention.SYSV_AMD64
+    elif platform_arch in ["aarch64", "arm64"]:
+        return CallingConvention.AAPCS
+    elif platform_arch == "x86":
+        return CallingConvention.CDECL
+    
+    # Fallback
+    return CallingConvention.CDECL
+
+def determine_return_mechanism(
+    return_type: TypeEntity,
+    calling_convention: CallingConvention,
+    platform_arch: str
+) -> ReturnMechanism:
+    """Determine how return value is passed."""
+    
+    # Void returns nothing
+    if isinstance(return_type, ScalarType):
+        if return_type.scalar_kind == ScalarKind.VOID:
+            return ReturnMechanism.DIRECT
+    
+    # Small scalars and pointers: direct
+    if isinstance(return_type, (ScalarType, PointerType)):
+        return ReturnMechanism.DIRECT
+    
+    # Structures: depends on size
+    if isinstance(return_type, StructureType):
+        if platform_arch == "x86_64":
+            if calling_convention == CallingConvention.SYSV_AMD64:
+                # System V: ≤16 bytes in registers
+                if return_type.size_bytes <= 16:
+                    return ReturnMechanism.DIRECT
+            elif calling_convention == CallingConvention.WIN64:
+                # Windows: ≤8 bytes in register
+                if return_type.size_bytes <= 8:
+                    return ReturnMechanism.DIRECT
+        
+        # Large structures use hidden pointer
+        return ReturnMechanism.HIDDEN_POINTER
+    
+    return ReturnMechanism.DIRECT
+
+# Symbol normalization pipeline
+
+class SymbolNormalizationPipeline:
+    """Normalizes function and variable symbols."""
+    
+    def __init__(
+        self,
+        type_registry: TypeRegistry,
+        typedef_resolver: TypedefResolver,
+        interface_unit: InterfaceUnit
+    ):
+        self.type_registry = type_registry
+        self.typedef_resolver = typedef_resolver
+        self.interface_unit = interface_unit
+    
+    def normalize_function(
+        self,
+        func_data: RawFunctionData
+    ) -> FunctionSymbol:
+        """Normalize function symbol."""
+        
+        # Resolve calling convention
+        calling_conv = resolve_calling_convention(
+            func_data,
+            self.interface_unit.operating_system,
+            self.interface_unit.target_architecture,
+            self.interface_unit.compiler_family
+        )
+        
+        # Create function symbol
+        func = FunctionSymbol(
+            linkage_name=func_data.linkage_name,
+            calling_convention=calling_conv,
+            source_name=func_data.source_name
+        )
+        
+        # Normalize return type
+        return_type_name, _ = self.typedef_resolver.resolve(
+            func_data.return_type_name
+        )
+        
+        return_type = self.type_registry.resolve_type(return_type_name)
+        if not return_type:
+            # Try to find by name in normalized types
+            for t in self.type_registry.get_all_types():
+                if hasattr(t, 'structure_name') and t.structure_name == return_type_name:
+                    return_type = t
+                    break
+        
+        if return_type:
+            # Determine return mechanism
+            return_mechanism = determine_return_mechanism(
+                return_type,
+                calling_conv,
+                self.interface_unit.target_architecture
+            )
+            
+            func.return_entity = ReturnEntity(
+                type_reference=return_type.entity_id,
+                return_mechanism=return_mechanism
+            )
+        
+        # Normalize parameters
+        for i, param_data in enumerate(func_data.parameters):
+            param_type_name, _ = self.typedef_resolver.resolve(param_data.type_name)
+            
+            param_type = self.type_registry.resolve_type(param_type_name)
+            if param_type:
+                param = ParameterEntity(
+                    parameter_index=i,
+                    parameter_name=param_data.name or f"arg{i}",
+                    type_reference=param_type.entity_id
+                )
+                param.is_const = param_data.is_const
+                param.is_volatile = param_data.is_volatile
+                param.is_restrict = param_data.is_restrict
+                
+                func.parameters.append(param)
+        
+        # Set variadic status
+        func.is_variadic = func_data.is_variadic
+        
+        # Process attributes
+        for attr_data in func_data.attributes:
+            attr = AttributeEntity(attribute_name=attr_data.name, attribute_value=attr_data.value)
+            func.attributes.append(attr)
+        
+        return func
+    
+    def normalize_variable(
+        self,
+        var_data: RawVariableData
+    ) -> VariableSymbol:
+        """Normalize global variable symbol."""
+        
+        # Resolve variable type
+        type_name, _ = self.typedef_resolver.resolve(var_data.type_name)
+        
+        var_type = self.type_registry.resolve_type(type_name)
+        if not var_type:
+            raise NormalizationError(
+                f"Variable {var_data.linkage_name} type {type_name} undefined"
+            )
+        
+        # Create variable symbol
+        var = VariableSymbol(
+            linkage_name=var_data.linkage_name,
+            type_reference=var_type.entity_id,
+            source_name=var_data.source_name
+        )
+        
+        var.is_const = var_data.is_const
+        var.visibility = var_data.visibility or "extern"
+        
+        # Process attributes
+        for attr_data in var_data.attributes:
+            attr = AttributeEntity(attribute_name=attr_data.name, attribute_value=attr_data.value)
+            var.attributes.append(attr)
+        
+        return var
+    
+    def validate_function(self, func: FunctionSymbol) -> List[str]:
+        """Validate normalized function symbol."""
+        errors = []
+        
+        # Check parameter ordering
+        for i, param in enumerate(func.parameters):
+            if param.parameter_index != i:
+                errors.append(
+                    f"Parameter index mismatch: expected {i}, got {param.parameter_index}"
+                )
+        
+        # Variadic check
+        if func.is_variadic and len(func.parameters) == 0:
+            errors.append("Variadic function has no named parameters")
+        
+        return errors
+
 __all__ = [
     'TypeNormalizationPipeline',
     'TypedefResolver',
@@ -491,5 +749,12 @@ __all__ = [
     'CircularTypedefError',
     'TypeResolutionError',
     'RawTypeData',
-    'RawFieldData'
+    'RawFieldData',
+    'SymbolNormalizationPipeline',
+    'RawFunctionData',
+    'RawParameterData',
+    'RawVariableData',
+    'RawAttributeData',
+    'resolve_calling_convention',
+    'determine_return_mechanism'
 ]
