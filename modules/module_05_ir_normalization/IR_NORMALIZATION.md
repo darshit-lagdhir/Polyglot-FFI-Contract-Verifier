@@ -36,30 +36,37 @@ and FFI verification.
 **Status:** Complete  
 **Focus:** Function signature resolution and calling convention analysis.
 
+---
+
+
+**Status:** Complete  
+**Focus:** Integrity checking and ABI consistency verification.
+
 ### Implemented Components
 
-#### Symbol Normalization
-- `SymbolNormalizationPipeline` - Normalizes function and global variable symbols.
-- **Calling Convention Analysis**: Platform-aware resolution of default and explicit conventions.
-- **Return Mechanism Determination**: Logic to identify direct vs. hidden pointer return protocols.
-
-#### Feature Set
-- **Name Mangling Handling**: Support for linkage and source name preservation.
-- **Parameter Normalization**: Transitive type resolution for function parameters.
-- **Attribute Processing**: Normalization of ABI-relevant attributes (visibility, alignment, etc.).
-- **Variadic Support**: Proper representation of variable-argument functions.
+#### IR Validation Framework (`ir_validation.py`)
+- **`ValidationReport`**: Tracking and reporting of validation results with categorization.
+- **`SchemaValidator`**: Structural integrity checks (e.g., non-negative sizes, positive alignments).
+- **`ReferenceValidator`**: Verification of type and symbol references within the IR graph.
+- **`TypeValidator`**: ABI-level layout validation (overlap detection, alignment violations, enum ranges).
+- **`SymbolValidator`**: Function and variable signature well-formedness checks.
+- **`GraphValidator`**: Cycle detection in type dependency graphs (Acyclicity enforcement).
+- **`PlatformValidator`**: Platform-specific consistency checks (pointer widths, calling conventions).
+- **`CompletenessValidator`**: Verification of required metadata and interface unit fields.
+- **`IRValidationOrchestrator`**: Unified interface for complete IR validation.
 
 ### Key Features
-- **ABI Fidelity**: Captures the exact binary interface of functions including calling conventions.
-- **Linkage Stability**: Ensures linkage names are preserved for binary symbol lookup.
-- **Platform Defaults**: Automatically handles OS/Arch specific ABI rules (e.g., Win64 vs. SysV).
+- **Mandatory Gate**: Validation acts as a strict filter; any failure halts subsequent processing.
+- **Detailed Diagnostics**: Errors are categorized and localized for easy remediation.
+- **Cycle Prevention**: Explicitly prevents structural recursion while allowing pointer-based recursion.
+- **ABI Awareness**: Validates that type layouts and symbol signatures respect target platform rules.
 
 ### Testing
-- 85 unit tests in `tests/unit/test_symbol_normalization.py` (MEDIUM LEVEL).
-- Coverage of calling convention defaults, hidden pointer thresholds, and variadic validation.
+- 100+ unit tests in `tests/unit/test_ir_validation.py` (HARD LEVEL).
+- Comprehensive coverage of all validation stages and edge cases.
 - All tests passing ✅
 
 ---
 
-**Module Progress:** 4/15 components complete (26.7%)  
-**Status:** Symbol normalization complete, ready for full IR validation framework.
+**Module Progress:** 5/15 components complete (33.3%)  
+**Status:** IR Validation framework complete. Ready for : IR Serialization and Persistence.
