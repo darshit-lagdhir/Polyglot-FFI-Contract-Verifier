@@ -48,29 +48,35 @@ and FFI verification.
 **Status:** Complete  
 **Focus:** Durable storage and retrieval of IR artifacts.
 
+---
+
+
+**Status:** Complete  
+**Focus:** Semantic comparison of IR artifacts and ABI evolution tracking.
+
 ### Implemented Components
 
-#### IR Serialization (`ir_serialization.py`)
-- **`IRArtifact`**: Stable container for IR and validation reports with schema versioning.
-- **`IRManifest`**: Metadata for artifact auditing and quick lookup.
-- **Deterministic Serialization**: Byte-for-byte identical output for hashes.
-- **Integrity Management**: SHA-256 content hashing and verification.
-- **`IRArtifactManager`**: Structured cache management (artifacts, manifests, index).
-- **Compression**: gzip-based storage reducing disk footprint by 5-10x.
-- **`IREntityFactory`**: Dynamic reconstruction of full IR graphs from serialized form.
+#### IR Diffing (`ir_diff.py`)
+- **`IRDiffComputer`**: Computes semantic differences by matching entities via stable IDs.
+- **`ABIImpact` Classification**: Automatically categorizes changes as `BREAKING`, `COMPATIBLE`, or `NEUTRAL`.
+- **Change Detection**:
+    - **Structures**: Size/alignment changes, field reordering, field type/offset changes.
+    - **Functions**: Calling convention, return type, parameter count/type/name changes.
+    - **Variables**: Type and constness modifications.
+- **`ChangeSummary`**: Generates human-readable ABI evolution reports.
+- **Semantic Versioning**: Recommends `MAJOR`, `MINOR`, or `PATCH` bumps based on change impact.
 
 ### Key Features
-- **Schema Evolution**: Version-tagged artifacts support future migrations.
-- **High Performance**: In-memory caching and index-based retrieval.
-- **Auditability**: Manifests track generation context, source hashes, and timing.
-- **Corruption Detection**: Mandatory hash verification upon loading.
+- **Semantic Matching**: Identifies renames vs. removals by comparing structural property hashes.
+- **Layout Awareness**: Detects ABI-breaking reorders even when structure size remains constant.
+- **Impact Analysis**: Distinguishes between documentation-only changes and binary-incompatible changes.
 
 ### Testing
-- 100+ unit tests in `tests/unit/test_ir_serialization.py` (HARD LEVEL).
-- Coverage of round-trip serialization, hashing stability, and manager logic.
+- 110+ unit tests in `tests/unit/test_ir_diff.py` (HARD LEVEL).
+- Comprehensive coverage of structure, union, function, and variable diffing.
 - All tests passing ✅
 
 ---
 
-**Module Progress:** 6/15 components complete (40.0%)  
-**Status:** IR Persistence complete. Ready for : IR Diffing and Change Detection.
+**Module Progress:** 7/15 components complete (46.7%)  
+**Status:** IR Diffing complete. Ready for : Complete IR Orchestration Pipeline.
