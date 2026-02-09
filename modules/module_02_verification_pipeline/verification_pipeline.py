@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set, Tuple, Callable
+from typing import Dict, Any, List, Optional, Set, Tuple, Callable, Type, cast
 import argparse
 
 # ═══════════════════════════════════════════════════════════════════
@@ -484,7 +484,7 @@ class PipelineStage(ABC):
         Returns:
             Dictionary with stage name, state, timestamps, error (if any)
         """
-        summary = {
+        summary: Dict[str, Any] = {
             "stage_name": self.STAGE_NAME,
             "stage_version": self.STAGE_VERSION,
             "state": self.state.value,
@@ -512,10 +512,10 @@ class StageRegistry:
     and validates stage definitions.
     """
     
-    def __init__(self):
-        self._stages: Dict[str, type] = {}
+    def __init__(self) -> None:
+        self._stages: Dict[str, Type[PipelineStage]] = {}
     
-    def register_stage(self, stage_class: type) -> None:
+    def register_stage(self, stage_class: Type[PipelineStage]) -> None:
         """
         Register a stage class.
         
@@ -535,7 +535,7 @@ class StageRegistry:
         
         self._stages[stage_name] = stage_class
     
-    def get_stage_class(self, stage_name: str) -> type:
+    def get_stage_class(self, stage_name: str) -> Type[PipelineStage]:
         """
         Get stage class by name.
         
@@ -821,7 +821,7 @@ class VerificationPipeline:
             print(f"ERROR: {e}")
             return False
     
-    def _resolve_execution_order(self) -> List[type]:
+    def _resolve_execution_order(self) -> List[Type[PipelineStage]]:
         """
         Resolve stage execution order based on dependencies.
         
@@ -930,7 +930,7 @@ class StateMachineValidator:
 # 2.3 Schema Version Comparator
 # ───────────────────────────────────────────────────────────────────
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class SemanticVersion:
     """Semantic version (MAJOR.MINOR.PATCH)."""
     major: int
@@ -1160,7 +1160,7 @@ class DependencyGraph:
     Builds and analyzes stage dependency graph for execution order resolution.
     """
     
-    def __init__(self, stages: List[type]):
+    def __init__(self, stages: List[Type[PipelineStage]]):
         """
         Initialize dependency graph from stage classes.
         
@@ -1598,7 +1598,7 @@ class ProvenanceChainValidator:
         errors = []
         
         # Load all artifacts
-        artifacts = []
+        artifacts: List[Tuple[str, Dict[str, Any]]] = []
         for path in artifact_paths:
             try:
                 artifact = self.artifact_validator.validate_artifact(path, verify_hashes=False)
@@ -1703,7 +1703,7 @@ class StalenessDetector:
         """Set current execution context for staleness checking."""
         self.current_execution_context = context
     
-    def check_staleness(self, artifact_path: str, stage_class: type) -> StalenessStatus:
+    def check_staleness(self, artifact_path: str, stage_class: Type[PipelineStage]) -> StalenessStatus:
         """
         Check if artifact is stale.
         
@@ -2306,7 +2306,7 @@ class NativeInterfaceIngestionStage(PipelineStage):
     def _extract_function(self, cursor) -> Dict[str, Any]:
         """Extract function information."""
         # Extract parameters
-        parameters = []
+        parameters: List[Dict[str, Any]] = []
         for arg in cursor.get_arguments():
             parameters.append({
                 "name": arg.spelling,
@@ -2565,11 +2565,12 @@ class TypedefResolver:
         if type_info.get("kind") != "typedef":
             return type_info
         
-        visited = set()
-        current = type_info
+        visited: List[str] = []
+        current: Optional[Dict[str, Any]] = type_info
         
-        while current.get("kind") == "typedef":
+        while current is not None and current.get("kind") == "typedef":
             typedef_name = current.get("name")
+            if typedef_name is None: break
             
             if typedef_name in visited:
                 cycle = " → ".join(visited) + f" → {typedef_name}"
@@ -2578,18 +2579,19 @@ class TypedefResolver:
                     stage_name="ir_normalization"
                 )
             
-            visited.add(typedef_name)
+            visited.append(typedef_name)
             
             # Get underlying type
-            underlying = current.get("underlying_type")
-            if not underlying:
+            current = current.get("underlying_type")
+            if not current:
                 raise StageError(
                     f"Typedef '{typedef_name}' missing underlying type",
                     stage_name="ir_normalization"
                 )
-            
-            current = underlying
         
+        if current is None:
+             raise StageError("Failed to resolve typedef", stage_name="ir_normalization")
+             
         return current
 
 # ───────────────────────────────────────────────────────────────────
@@ -2911,7 +2913,7 @@ class Constraint:
             result["related_target"] = self.related_target
         
         if self.conditions:
-            result["conditions"] = self.conditions
+            result["conditions"] = cast(Any, self.conditions)
         
         # Add warning for low confidence
         if self.confidence < 0.6:
@@ -3877,7 +3879,7 @@ class InputValueGenerator:
             return []
     
     @staticmethod
-    def generate_valid_buffer(sizes: List[int] = None) -> List[bytes]:
+    def generate_valid_buffer(sizes: Optional[List[int]] = None) -> List[bytes]:
         """Generate valid buffer test values."""
         if sizes is None:
             sizes = [0, 1, 10, 100, 1024]
@@ -3897,7 +3899,7 @@ class InputValueGenerator:
         return [None]  # Null pointer
     
     @staticmethod
-    def generate_null_terminated_string(lengths: List[int] = None) -> List[bytes]:
+    def generate_null_terminated_string(lengths: Optional[List[int]] = None) -> List[bytes]:
         """Generate null-terminated strings."""
         if lengths is None:
             lengths = [0, 1, 10, 100]
@@ -3939,7 +3941,7 @@ class TestCaseGenerator:
         
         Returns list of test case specifications.
         """
-        test_cases = []
+        test_cases: List[Dict[str, Any]] = []
         func_name = func_contract["name"]
         
         # Find function in IR for parameter info
@@ -4216,7 +4218,7 @@ class CoverageAnalyzer:
         
         # Collect exercised constraints
         exercised_constraints = set()
-        constraint_test_map = {}
+        constraint_test_map: Dict[str, List[str]] = {}
         
         for test in test_cases:
             for constraint_id in test.get("constraints_exercised", []):
@@ -4282,7 +4284,7 @@ class TestPlanGenerationStage(PipelineStage):
         coverage = CoverageAnalyzer.analyze_coverage(all_test_cases, contract)
         
         # Build metadata
-        tests_by_category = {}
+        tests_by_category: Dict[str, int] = {}
         for test in all_test_cases:
             category = test["category"]
             tests_by_category[category] = tests_by_category.get(category, 0) + 1
@@ -5441,9 +5443,9 @@ class CompletePipeline:
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
         
-        self.execution_context = None
-        self.pipeline = None
-        self.start_time = None
+        self.execution_context: Optional[Dict[str, Any]] = None
+        self.pipeline: Optional[Any] = None
+        self.start_time: Optional[float] = None
     
     def execute(self, verbose: bool = True) -> VerificationResult:
         """
@@ -5491,7 +5493,9 @@ class CompletePipeline:
         
         except Exception as e:
             # Pipeline failed - build error result
-            elapsed = time.time() - self.start_time
+            elapsed = 0.0
+            if self.start_time is not None:
+                elapsed = time.time() - self.start_time
             
             if verbose:
                 print(f"\n✗ Pipeline failed: {e}\n")
@@ -5572,11 +5576,15 @@ class CompletePipeline:
     def _execute_pipeline(self, verbose: bool) -> bool:
         """Execute all stages."""
         # Use dependency-resolved execution
+        if self.pipeline is None:
+            raise RuntimeError("Pipeline not initialized")
         return self.pipeline.execute_full_pipeline_with_dependency_resolution()
     
     def _build_result(self, success: bool) -> VerificationResult:
         """Build VerificationResult from pipeline execution."""
-        elapsed = time.time() - self.start_time
+        elapsed = 0.0
+        if self.start_time is not None:
+            elapsed = time.time() - self.start_time
         
         # Load execution log if available
         execution_log_path = os.path.join(self.output_dir, "execution_log.json")
@@ -5609,7 +5617,7 @@ class CompletePipeline:
                 execution_time=elapsed,
                 report_path=os.path.join(self.output_dir, "report.html"),
                 artifacts_dir=self.output_dir,
-                stages_completed=self.pipeline.registry.list_stages()
+                stages_completed=self.pipeline.registry.list_stages() if self.pipeline else []
             )
         else:
             # Pipeline didn't reach execution stage
@@ -6032,12 +6040,12 @@ class CacheManager:
 # 12.2 Dependency Graph Helper
 # ───────────────────────────────────────────────────────────────────
 
-class DependencyGraph:
+class SimpleDependencyGraph:
     """Simple dependency graph for stage ordering."""
     
-    def __init__(self, stage_classes: List[type]):
+    def __init__(self, stage_classes: List[Type[PipelineStage]]):
         """Build dependency graph from stage classes."""
-        self.graph = {}
+        self.graph: Dict[str, List[str]] = {}
         
         # Map outputs to producing stages
         producers = {}
@@ -6051,7 +6059,7 @@ class DependencyGraph:
             for required_input in stage_class.REQUIRED_INPUTS:
                 if required_input in producers:
                     dependencies.add(producers[required_input])
-            self.graph[stage_class.STAGE_NAME] = dependencies
+            self.graph[stage_class.STAGE_NAME] = list(dependencies)
 
 # ───────────────────────────────────────────────────────────────────
 # 12.3 Parallel Executor
@@ -6111,7 +6119,7 @@ class ParallelPipelineExecutor:
         """
         levels = []
         remaining = set(self.pipeline.registry.list_stages())
-        completed = set()
+        completed: Set[str] = set()
         
         while remaining:
             # Find stages with all dependencies satisfied
@@ -6338,7 +6346,9 @@ class OptimizedCompletePipeline(CompletePipeline):
             if verbose:
                 print("Executing stages in parallel...")
             
-            executor = ParallelPipelineExecutor(self.pipeline, self.max_workers)
+            if self.pipeline is None:
+                raise RuntimeError("Pipeline not initialized")
+            executor = ParallelPipelineExecutor(self.pipeline, max_workers=self.max_workers)
             success = executor.execute_parallel()
             
             # Build result
@@ -6357,7 +6367,9 @@ class OptimizedCompletePipeline(CompletePipeline):
             return result
         
         except Exception as e:
-            elapsed = time.time() - self.start_time
+            elapsed = 0.0
+            if self.start_time is not None:
+                elapsed = time.time() - self.start_time
             if verbose:
                 print(f"\n✗ Pipeline failed: {e}\n")
                 traceback.print_exc()

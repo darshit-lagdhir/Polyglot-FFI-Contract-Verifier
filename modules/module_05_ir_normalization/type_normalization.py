@@ -96,11 +96,11 @@ class TypeResolutionError(NormalizationError):
 class TypedefResolver:
     """Resolves typedef chains to canonical types."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.typedef_map: Dict[str, str] = {}
         self.typedef_chains: Dict[str, List[str]] = {}
 
-    def add_typedef(self, source_name: str, target_name: str):
+    def add_typedef(self, source_name: str, target_name: str) -> None:
         """Register a typedef."""
         self.typedef_map[source_name] = target_name
 
@@ -116,18 +116,18 @@ class TypedefResolver:
             # The cache should store the result.
             visited = set()
             current = type_name
-            chain = []
+            res_chain: List[str] = []
             while current in self.typedef_map:
                 if current in visited:
                     raise CircularTypedefError(
-                        f"Circular typedef: {' -> '.join(chain + [current])}"
+                        f"Circular typedef: {' -> '.join(res_chain + [current])}"
                     )
                 visited.add(current)
-                chain.append(current)
+                res_chain.append(current)
                 current = self.typedef_map[current]
-            return (current, chain)
+            return (current, res_chain)
 
-        chain = []
+        chain: List[str] = []
         visited = set()
         current = type_name
 
@@ -171,7 +171,7 @@ class TypeNormalizationPipeline:
     Transforms raw compiler-extracted types into canonical IR types.
     """
 
-    def __init__(self, interface_unit: InterfaceUnit):
+    def __init__(self, interface_unit: InterfaceUnit) -> None:
         """
         Initialize normalization pipeline.
         
@@ -254,6 +254,8 @@ class TypeNormalizationPipeline:
         self.in_progress.add(raw_type.name)
 
         try:
+            normalized: Optional[TypeEntity] = None
+
             # Normalize based on kind
             if raw_type.kind == "scalar":
                 normalized = self._normalize_scalar(raw_type)

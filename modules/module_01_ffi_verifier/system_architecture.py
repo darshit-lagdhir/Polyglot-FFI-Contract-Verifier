@@ -97,7 +97,7 @@ __license__ = 'MIT'
 # IMPORTS
 # ═══════════════════════════════════════════════════════════════════════════
 
-from dataclasses import dataclass
+import dataclasses
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from datetime import datetime, timezone
@@ -109,8 +109,7 @@ from typing import Any, Dict, List
 from typing import Any, Dict, List, Optional
 from typing import Any, Dict, List, Optional, Tuple
 from typing import Dict, Any, List
-from typing import Dict, Any, List, Optional
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, List, Optional, Set, Tuple, Callable, Type
 from typing import Dict, List, Optional, Any
 from typing import List, Dict, Any
 from typing import Optional, List, Dict, Any, Callable
@@ -223,6 +222,7 @@ class ExecutionContext:
     verification_config: VerificationConfig
     provenance: ProvenanceMetadata
     artifacts: ArtifactPaths
+    baseline_contract_path: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert execution context to dictionary for serialization."""
@@ -264,7 +264,8 @@ class ExecutionContext:
             target_runtime=TargetLanguageRuntime(**data['target_runtime']),
             verification_config=VerificationConfig(**data['verification_config']),
             provenance=ProvenanceMetadata(**data['provenance']),
-            artifacts=ArtifactPaths(**data['artifacts'])
+            artifacts=ArtifactPaths(**data['artifacts']),
+            baseline_contract_path=data.get('baseline_contract_path')
         )
 
 class ExecutionContextBuilder:
@@ -572,6 +573,7 @@ class ExecutionContextBuilder:
             result = subprocess.run(
                 [python_interpreter, "-c", f"import {ffi_mechanism}"],
                 capture_output=True,
+                text=True,
                 timeout=5,
                 check=True
             )
@@ -706,17 +708,14 @@ class ExecutionContextBuilder:
     def _construct_context(self) -> ExecutionContext:
         """STEP 8: Construct immutable ExecutionContext object."""
         # Verify all components are initialized
-        if not all([
-            self._platform,
-            self._compiler,
-            self._native_library,
-            self._target_runtime,
-            self._verification_config,
-            self._provenance,
-            self._artifacts
-        ]):
-            raise RuntimeError("ExecutionContext construction incomplete")
-        
+        assert self._platform is not None
+        assert self._compiler is not None
+        assert self._native_library is not None
+        assert self._target_runtime is not None
+        assert self._verification_config is not None
+        assert self._provenance is not None
+        assert self._artifacts is not None
+
         # Construct immutable context
         context = ExecutionContext(
             platform=self._platform,
@@ -1192,7 +1191,7 @@ class CLIOrchestrator:
                     print(f"  Report: {context.artifacts.report_path}")
                 return 0
             else:
-                orchestrator.execute_stage(PipelineStage.Ingest) # wait, usage of PipelineStage.INGEST
+                orchestrator.execute_stage(PipelineStage.INGEST) # wait, usage of PipelineStage.INGEST
                 # Correcting for case consistency
                 orchestrator.execute_stage(PipelineStage.INGEST)
                 if verbosity != "quiet":
@@ -1224,7 +1223,12 @@ class CLIOrchestrator:
         }
         
         if args.command == "compare-contracts":
-            context.baseline_contract_path = args.baseline
+            # ExecutionContext is frozen, use replace to update it
+            context = dataclasses.replace(context, baseline_contract_path=args.baseline)
+            # Re-initialize orchestrator with updated context if necessary, 
+            # but Pipeline already took the old context.
+            # Actually, let's just create a new orchestrator.
+            orchestrator = Pipeline(context)
         
         stage = stage_map[args.command]
         orchestrator.execute_stage(stage)
@@ -1560,7 +1564,7 @@ class NativeInterfaceAnalyzer:
     def _extract_function_info(self, cursor) -> Dict[str, Any]:
         func_name = cursor.spelling
         return_type = self.abi_extractor.extract_type_info(cursor.type.get_result())
-        parameters = []
+        parameters: List[Dict[str, Any]] = []
         for arg in cursor.get_arguments():
             parameters.append({
                 "name": arg.spelling or f"param{len(parameters)}",
@@ -1847,7 +1851,10 @@ class TypeResolver:
             if count == 0 and "size" in type_info:
                  count = type_info["size"]
                  
-            element_id = self.resolve_type(element, type_registry)
+            if element is not None:
+                element_id = self.resolve_type(element, type_registry)
+            else:
+                element_id = "unknown"
             type_id = f"array:{element_id}:{count}"
             
             if type_id not in type_registry:
@@ -1949,7 +1956,7 @@ class IRNormalizer:
         type_resolver = TypeResolver(ni.get("platform", {}))
         layout_normalizer = LayoutNormalizer(type_resolver)
         
-        type_registry = {}
+        type_registry: Dict[str, Dict[str, Any]] = {}
         
         # 3. Normalize Enums first (simplest types)
         normalized_enums = []
@@ -2257,7 +2264,7 @@ class ConstraintDeriver:
         nullability = self.defaults.default_nullability()
         null_just = "Pointer parameter without indication of nullability"
         
-        if is_pointer:
+        if is_pointer and p_name is not None:
             if self.naming_analyzer.is_nullable_name(p_name):
                 nullability = "nullable"
                 null_just = "Naming convention suggests optional parameter"
@@ -2281,7 +2288,8 @@ class ConstraintDeriver:
             
             if ownership == self.defaults.default_ownership() and not self.naming_analyzer.is_borrowed_function(func_name):
                 # We couldn't find a strong rule, so we used default. Log it.
-                self.logger.warn_ambiguous_ownership(func_name, p_name)
+                if p_name is not None:
+                    self.logger.warn_ambiguous_ownership(func_name, p_name)
 
         # Rule 3: Lifetime
         lifetime = self.defaults.default_lifetime()
@@ -2340,17 +2348,18 @@ class ConstraintDeriver:
                 p2_type = p2.get("type_id", "")
                 
                 if p2_type.startswith("primitive:int") or p2_type.startswith("primitive:uint"):
-                    if self.naming_analyzer.detect_buffer_size_relationship(p1_name, p2_name):
-                        constraints.append({
-                            "constraint_id": self.id_gen.generate_function_id(func_name, f"p_{p1_name}", "buffer_relationship"),
-                            "constraint_type": "buffer_size",
-                            "description": f"Parameter '{p1_name}' buffer size is defined by '{p2_name}'",
-                            "target": f"parameter:{p1_name}",
-                            "size_parameter": p2_name,
-                            "justification": f"Naming relationship between '{p1_name}' and '{p2_name}'",
-                            "severity": "error"
-                        })
-                        found_size = True
+                    if p1_name is not None and p2_name is not None:
+                        if self.naming_analyzer.detect_buffer_size_relationship(p1_name, p2_name):
+                            constraints.append({
+                                "constraint_id": self.id_gen.generate_function_id(func_name, f"p_{p1_name}", "buffer_relationship"),
+                                "constraint_type": "buffer_size",
+                                "description": f"Parameter '{p1_name}' buffer size is defined by '{p2_name}'",
+                                "target": f"parameter:{p1_name}",
+                                "size_parameter": p2_name,
+                                "justification": f"Naming relationship between '{p1_name}' and '{p2_name}'",
+                                "severity": "error"
+                            })
+                            found_size = True
             
             # Special Rule for char*
             if p1_type == "pointer:primitive:char" and not found_size:
@@ -2363,7 +2372,8 @@ class ConstraintDeriver:
                     "severity": "error"
                 })
             elif p1_type == "pointer:primitive:void" and not found_size:
-                self.logger.warn_missing_buffer_size(func_name, p1_name)
+                if p1_name is not None:
+                    self.logger.warn_missing_buffer_size(func_name, p1_name)
 
         return constraints
 
@@ -3124,8 +3134,8 @@ class ContractComparator:
 
     def _detect_global_changes(self, baseline: List[Dict], current: List[Dict]) -> List[Dict]:
         changes = []
-        b_ids = [g.get("constraint_id") for g in baseline]
-        c_ids = [g.get("constraint_id") for g in current]
+        b_ids = [str(g.get("constraint_id")) for g in baseline if g.get("constraint_id")]
+        c_ids = [str(g.get("constraint_id")) for g in current if g.get("constraint_id")]
         
         for cid in c_ids:
             if cid not in b_ids:
@@ -3777,7 +3787,7 @@ class InputValueGenerator:
     Deterministic generation of input values for FFI tests.
     """
     
-    PRIMITIVE_VALUES = {
+    PRIMITIVE_VALUES: Dict[str, List[Any]] = {
         "primitive:int8": [1, 127, -128],
         "primitive:int16": [1, 32767, -32768],
         "primitive:int32": [42, 2147483647, -2147483648],
@@ -3930,7 +3940,7 @@ class NegativeTestGenerator:
                  
         return test_cases
 
-    def _generate_violation(self, f: Dict[str, Any], c: Dict[str, Any], ir: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_violation(self, f: Dict[str, Any], c: Dict[str, Any], ir: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         c_type = c["constraint_type"]
         target = c["target"].split(":")[-1]
         cid = c["constraint_id"]
@@ -4048,7 +4058,7 @@ class CoverageAnalyzer:
         Analyzes which constraints are covered by the test cases.
         """
         all_constraints = self._extract_all_constraints(contract)
-        coverage_map = {cid: [] for cid in all_constraints}
+        coverage_map: Dict[str, Any] = {cid: [] for cid in all_constraints}
         
         for tc in test_cases:
             for cid in tc.get("constraints_exercised", []):
@@ -4182,7 +4192,7 @@ class InputInstantiator:
     Transforms JSON-based values into ctypes instances for FFI calls.
     """
     
-    PRIMITIVE_MAP = {
+    PRIMITIVE_MAP: Dict[str, Any] = {
         "primitive:int8": ctypes.c_int8,
         "primitive:int16": ctypes.c_int16,
         "primitive:int32": ctypes.c_int32,
@@ -4222,9 +4232,12 @@ class InputInstantiator:
 
         # Handle Primitives
         if t_id in self.PRIMITIVE_MAP:
+            f = self.PRIMITIVE_MAP[t_id]
+            if f is None:
+                return None
             if t_id == "primitive:char" and isinstance(val, str):
-                return self.PRIMITIVE_MAP[t_id](val.encode('ascii')[0])
-            return self.PRIMITIVE_MAP[t_id](val)
+                return f(val.encode('ascii')[0])
+            return f(val)
 
         # Handle Pointers
         if t_id.startswith("pointer:"):
@@ -4700,7 +4713,7 @@ def run_test(test_case_json: str, lib_name: str, adapter_module_name: str):
         func = getattr(adapter_module, func_name)
         
         # Execute
-        actual_outcome = {"type": "success"}
+        actual_outcome: Dict[str, Any] = {"type": "success"}
         try:
             actual_ret = func(**kwargs)
             actual_outcome["return_value"] = str(actual_ret)
@@ -5016,7 +5029,7 @@ class ViolationAggregator:
         """
         Groups violations by constraint_id.
         """
-        groups = {}
+        groups: Dict[str, Any] = {}
         
         for v in violations:
             cid = v.get("constraint_id", "unknown")

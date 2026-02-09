@@ -34,6 +34,8 @@ from .ir_entities import (
     ScalarKind,
     ScalarType,
     StructureType,
+    SymbolEntity,
+    TypeEntity,
     UnionType,
     VariableSymbol,
 )
@@ -331,9 +333,15 @@ class IREntityFactory:
         if 'entity_id' in data:
             unit.entity_id = data['entity_id']
         if 'symbols' in data:
-            unit.symbols = [IREntityFactory.from_dict(s) for s in data['symbols']]
+            unit.symbols = [
+                s for s in (IREntityFactory.from_dict(x) for x in data['symbols'])
+                if isinstance(s, SymbolEntity)
+            ]
         if 'types' in data:
-            unit.types = [IREntityFactory.from_dict(t) for t in data['types']]
+            unit.types = [
+                t for t in (IREntityFactory.from_dict(x) for x in data['types'])
+                if isinstance(t, TypeEntity)
+            ]
         if 'metadata' in data and data['metadata']:
             unit.metadata = IREntityFactory.metadata_from_dict(data['metadata'])
         return unit
@@ -358,7 +366,7 @@ class IRArtifact:
         if self.creation_timestamp is None:
             self.creation_timestamp = datetime.now(timezone.utc).isoformat()
 
-        data = {
+        data: Dict[str, Any] = {
             'schema_version': self.schema_version,
             'normalization_version': self.normalization_version,
             'creation_timestamp': self.creation_timestamp
@@ -521,7 +529,7 @@ class IntegrityError(Exception):
 class IRArtifactManager:
     """Manages IR artifact storage and retrieval."""
 
-    def __init__(self, cache_dir: Path):
+    def __init__(self, cache_dir: Path) -> None:
         self.cache_dir = cache_dir
         self.artifacts_dir = cache_dir / 'artifacts'
         self.manifests_dir = cache_dir / 'manifests'

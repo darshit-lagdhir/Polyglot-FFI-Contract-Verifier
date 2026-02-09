@@ -19,7 +19,7 @@ class CompletionCheck:
 class ModuleCompletionVerifier:
     """Verifies module completion and production readiness."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.checks: List[CompletionCheck] = []
 
     def verify_all(self) -> bool:
@@ -32,7 +32,7 @@ class ModuleCompletionVerifier:
 
         return all(check.passed for check in self.checks)
 
-    def check_implementation(self):
+    def check_implementation(self) -> None:
         """Verify implementation completeness."""
         required_modules = [
             'ir_entities.py',
@@ -62,7 +62,7 @@ class ModuleCompletionVerifier:
             details=f"Missing: {missing}" if missing else "All modules present"
         ))
 
-    def check_testing(self):
+    def check_testing(self) -> None:
         """Verify test completeness."""
         # Check test count
         test_dir = Path(__file__).parent.parent.parent / 'tests'
@@ -79,7 +79,7 @@ class ModuleCompletionVerifier:
             details=f"{total_tests} test files ({unit_tests} unit, {integration_tests} integration)"
         ))
 
-    def check_documentation(self):
+    def check_documentation(self) -> None:
         """Verify documentation completeness."""
         docs_dir = Path(__file__).parent.parent.parent / 'docs'
 
@@ -98,7 +98,7 @@ class ModuleCompletionVerifier:
             details=f"Missing: {missing}" if missing else "All docs present"
         ))
 
-    def check_packaging(self):
+    def check_packaging(self) -> None:
         """Verify packaging configuration."""
         base_path = Path(__file__).parent.parent.parent
 
@@ -112,7 +112,7 @@ class ModuleCompletionVerifier:
             details=f"Missing: {missing}" if missing else "Ready for distribution"
         ))
 
-    def check_examples(self):
+    def check_examples(self) -> None:
         """Verify examples exist."""
         examples_dir = Path(__file__).parent.parent.parent / 'examples'
 

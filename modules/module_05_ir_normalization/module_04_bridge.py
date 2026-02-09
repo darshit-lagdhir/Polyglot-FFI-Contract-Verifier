@@ -62,7 +62,7 @@ class MissingFieldError(ConversionError):
 class TypeDeduplicator:
     """Deduplicates types by structural equivalence."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.type_cache: Dict[str, str] = {}  # structural_hash -> entity_id
         self.entity_cache: Dict[str, TypeEntity] = {} # entity_id -> entity
 
@@ -129,11 +129,11 @@ class TypeDeduplicator:
 class TypeConverter:
     """Converts Module 04 types to Module 05 types."""
 
-    def __init__(self, deduplicator: TypeDeduplicator):
+    def __init__(self, deduplicator: TypeDeduplicator) -> None:
         self.deduplicator = deduplicator
         self.pointer_width = 64 # Default
 
-    def set_pointer_width(self, width: int):
+    def set_pointer_width(self, width: int) -> None:
         self.pointer_width = width
 
     def convert_type(self, type_data: Dict[str, Any]) -> TypeEntity:
@@ -350,7 +350,7 @@ class TypeConverter:
 class SymbolConverter:
     """Converts Module 04 symbols to Module 05 symbols."""
 
-    def __init__(self, deduplicator: TypeDeduplicator, type_converter: TypeConverter):
+    def __init__(self, deduplicator: TypeDeduplicator, type_converter: TypeConverter) -> None:
         self.deduplicator = deduplicator
         self.type_converter = type_converter
 
@@ -364,8 +364,8 @@ class SymbolConverter:
             raise UnsupportedTypeError(f"Unsupported symbol kind: {kind}")
 
     def _convert_function(self, data: Dict[str, Any]) -> FunctionSymbol:
-        name = data.get('name')
-        mangled = data.get('mangled_name', name)
+        name = data.get('name') or "unknown_function"
+        mangled = data.get('mangled_name') or name
         cc = self._translate_cc(data.get('calling_convention', 'cdecl'))
 
         func = FunctionSymbol(
@@ -413,7 +413,7 @@ class SymbolConverter:
         return func
 
     def _convert_variable(self, data: Dict[str, Any]) -> VariableSymbol:
-        name = data.get('name')
+        name = data.get('name') or "unknown_variable"
         type_data = data.get('type', {})
         type_id = self.deduplicator.get_or_create_type_id(type_data, self.type_converter)
 
@@ -460,7 +460,7 @@ class SymbolConverter:
 class Module04Bridge:
     """Bridges Module 04 RawInterfaceArtifact to Module 05 IR."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.deduplicator = TypeDeduplicator()
         self.type_converter = TypeConverter(self.deduplicator)
         self.symbol_converter = SymbolConverter(self.deduplicator, self.type_converter)

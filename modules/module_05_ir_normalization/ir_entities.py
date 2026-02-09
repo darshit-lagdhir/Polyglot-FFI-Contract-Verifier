@@ -132,7 +132,7 @@ class MetadataEntity(IREntity):
     # Metadata for consistency (though unusual)
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.METADATA
         self.entity_id = self.generate_id(
             EntityKind.METADATA,
@@ -191,7 +191,7 @@ class InterfaceUnit(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.INTERFACE_UNIT
         self.entity_id = self.generate_id(
             EntityKind.INTERFACE_UNIT,
@@ -242,7 +242,7 @@ class SymbolEntity(IREntity):
     # NOTE: metadata is NOT added here because subclasses (FunctionSymbol)
     # add non-default fields. It must be added to subclasses.
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Subclasses must set self.kind before calling super().__post_init__()
         # or we calculate ID using whatever self.kind currently is.
         self.entity_id = self.generate_id(self.kind, self.linkage_name)
@@ -276,7 +276,7 @@ class FunctionSymbol(SymbolEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.FUNCTION_SYMBOL
         super().__post_init__()
 
@@ -311,7 +311,7 @@ class VariableSymbol(SymbolEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.VARIABLE_SYMBOL
         super().__post_init__()
 
@@ -345,7 +345,7 @@ class TypeEntity(IREntity):
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.entity_id = self.generate_id(self.kind, str(self.size_bytes), str(self.alignment_bytes))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -377,7 +377,7 @@ class ScalarType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.SCALAR_TYPE
         if self.size_bytes == 0 and self.bit_width > 0:
             self.size_bytes = (self.bit_width + 7) // 8
@@ -422,7 +422,7 @@ class PointerType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self, pointer_width: int):
+    def __post_init__(self, pointer_width: int) -> None:
         self.kind = EntityKind.POINTER_TYPE
         self.size_bytes = pointer_width // 8
         self.alignment_bytes = self.size_bytes
@@ -469,7 +469,7 @@ class FieldEntity(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.FIELD
         self.entity_id = self.generate_id(
             EntityKind.FIELD,
@@ -512,7 +512,7 @@ class PaddingEntity(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.PADDING
         self.entity_id = self.generate_id(
             EntityKind.PADDING,
@@ -556,7 +556,7 @@ class ParameterEntity(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.PARAMETER
         self.entity_id = self.generate_id(
             EntityKind.PARAMETER,
@@ -597,7 +597,7 @@ class ReturnEntity(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.RETURN
         self.entity_id = self.generate_id(
             EntityKind.RETURN,
@@ -636,7 +636,7 @@ class AttributeEntity(IREntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.ATTRIBUTE
         self.entity_id = self.generate_id(
             EntityKind.ATTRIBUTE,
@@ -684,7 +684,7 @@ class ArrayType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self, element_size: int, element_alignment: int):
+    def __post_init__(self, element_size: int, element_alignment: int) -> None:
         self.kind = EntityKind.ARRAY_TYPE
         if self.array_kind == ArrayKind.FIXED_SIZE and self.element_count is not None:
             if self.size_bytes == 0:
@@ -737,16 +737,16 @@ class StructureType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.STRUCTURE_TYPE
         self.entity_id = self.generate_id(
             EntityKind.STRUCTURE_TYPE, self.structure_name, str(self.size_bytes)
         )
 
-    def add_field(self, field: FieldEntity):
+    def add_field(self, field: FieldEntity) -> None:
         self.fields.append(field)
 
-    def add_padding(self, padding: PaddingEntity):
+    def add_padding(self, padding: PaddingEntity) -> None:
         self.padding_regions.append(padding)
 
     def validate_layout(self) -> List[str]:
@@ -803,13 +803,13 @@ class UnionType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.UNION_TYPE
         self.entity_id = self.generate_id(
             EntityKind.UNION_TYPE, self.union_name, str(self.size_bytes)
         )
 
-    def add_member(self, member: FieldEntity):
+    def add_member(self, member: FieldEntity) -> None:
         if member.byte_offset != 0:
             raise ValueError(
                 f"Union member {member.field_name} must be at offset 0"
@@ -861,13 +861,13 @@ class EnumerationType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.kind = EntityKind.ENUM_TYPE
         self.entity_id = self.generate_id(
             EntityKind.ENUM_TYPE, self.enum_name, self.underlying_type_reference
         )
 
-    def add_enumerator(self, name: str, value: int):
+    def add_enumerator(self, name: str, value: int) -> None:
         self.enumerators[name] = value
 
     def get_value_range(self) -> tuple[int, int]:
@@ -908,7 +908,7 @@ class FunctionPointerType(TypeEntity):
     # Metadata
     metadata: Optional['MetadataEntity'] = None
 
-    def __post_init__(self, pointer_width: int):
+    def __post_init__(self, pointer_width: int) -> None:
         self.kind = EntityKind.FUNCTION_POINTER_TYPE
         self.size_bytes = pointer_width // 8
         self.alignment_bytes = self.size_bytes
@@ -917,7 +917,7 @@ class FunctionPointerType(TypeEntity):
             self.calling_convention.value, self.return_type_reference
         )
 
-    def add_parameter(self, parameter: ParameterEntity):
+    def add_parameter(self, parameter: ParameterEntity) -> None:
         self.parameters.append(parameter)
 
     def signature_matches(self, other: 'FunctionPointerType') -> bool:
@@ -951,10 +951,10 @@ class FunctionPointerType(TypeEntity):
 class TypeRegistry:
     """Registry for resolving type references."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._types: Dict[str, TypeEntity] = {}
 
-    def register_type(self, type_entity: TypeEntity):
+    def register_type(self, type_entity: TypeEntity) -> None:
         if type_entity.entity_id in self._types:
             raise ValueError(f"Type {type_entity.entity_id} already registered")
         self._types[type_entity.entity_id] = type_entity

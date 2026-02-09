@@ -9,11 +9,11 @@ import json
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterator
 
 # Optional numpy for vectorization
 try:
-    import numpy as np
+    import numpy as np  # type: ignore
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
@@ -27,22 +27,22 @@ from .ir_entities import EntityKind, IREntity, PaddingEntity
 class PerformanceProfiler:
     """Profiles pipeline performance."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.timings: Dict[str, float] = {}
         self.call_counts: Dict[str, int] = {}
         self.enabled = False
         self.stack: List[tuple] = []
 
-    def enable(self):
+    def enable(self) -> None:
         """Enable profiling."""
         self.enabled = True
 
-    def disable(self):
+    def disable(self) -> None:
         """Disable profiling."""
         self.enabled = False
 
     @contextmanager
-    def profile(self, name: str):
+    def profile(self, name: str) -> Iterator[None]:
         """
         Profile a code block.
         
@@ -139,7 +139,7 @@ class OptimizedTypeDeduplicator:
     - Fast path for common types
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.type_cache: Dict[str, str] = {} # fast_key -> entity_id
         self.hash_cache: Dict[str, str] = {} # fast_key -> struct_hash
 
@@ -365,7 +365,7 @@ class BenchmarkResult:
 class BenchmarkSuite:
     """Performance benchmark suite."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.results: List[BenchmarkResult] = []
 
     def run_all(self) -> List[BenchmarkResult]:

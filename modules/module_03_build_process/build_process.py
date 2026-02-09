@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Module 03: Build Process & Toolchain Integration
 : Build Philosophy & Core Architecture Model
@@ -35,7 +35,7 @@ import platform
 import urllib.request
 import tempfile
 import shutil
-import yaml
+import yaml  # type: ignore
 import concurrent.futures
 import time
 
@@ -378,7 +378,7 @@ class BuildStageInterface(ABC):
         print(f"[Stage {self.stage_number.value}] {self.stage_name}: Validating postconditions...")
         self.validate_postconditions(updated_context)
         
-        print(f"[Stage {self.stage_number.value}] {self.stage_name}: ✓ Complete")
+        print(f"[Stage {self.stage_number.value}] {self.stage_name}: âœ“ Complete")
         return updated_context
 
 # ============================================================================
@@ -598,10 +598,10 @@ class ToolchainDetector:
                 try:
                     descriptor = self._detect_toolchain(Path(compiler_path), friendly_name)
                     toolchains.append(descriptor)
-                    print(f"    ✓ Version: {descriptor.compiler_version}")
-                    print(f"    ✓ Target: {descriptor.target_triple}")
+                    print(f"    âœ“ Version: {descriptor.compiler_version}")
+                    print(f"    âœ“ Target: {descriptor.target_triple}")
                 except BuildError as e:
-                    print(f"    ✗ Detection failed: {e}")
+                    print(f"    âœ— Detection failed: {e}")
         
         if not toolchains:
             raise BuildConfigError(
@@ -737,11 +737,10 @@ class ToolchainDetector:
             linker_path = compiler_path.parent / 'link.exe'
         elif compiler_name in ['Clang', 'GCC']:
             # Try to find ld or lld
-            linker_path = shutil.which('ld')
-            if not linker_path:
-                linker_path = shutil.which('lld')
-            if not linker_path:
-                # Use compiler as linker
+            found_linker = shutil.which('ld') or shutil.which('lld')
+            if found_linker:
+                linker_path = Path(found_linker)
+            else:
                 linker_path = compiler_path
         
         if not linker_path or not Path(linker_path).exists():
@@ -810,7 +809,7 @@ class ToolchainDetector:
         Returns:
             Dictionary of ABI properties
         """
-        properties = {}
+        properties: Dict[str, Any] = {}
         
         # Default calling convention
         if compiler_name == 'MSVC' and target_arch == 'x86_64':
@@ -899,11 +898,11 @@ class ToolchainRequirementValidator:
         if 'required_calling_convention' in self.requirements:
             required_cc = self.requirements['required_calling_convention']
             if toolchain.default_calling_convention != required_cc:
-                print(f"  ⚠ Warning: Calling convention mismatch")
+                print(f"  âš  Warning: Calling convention mismatch")
                 print(f"    Toolchain default: {toolchain.default_calling_convention}")
                 print(f"    Required: {required_cc}")
         
-        print(f"  ✓ Toolchain validation passed")
+        print(f"  âœ“ Toolchain validation passed")
     
     def _compare_versions(self, version1: str, version2: str) -> int:
         """
@@ -946,7 +945,7 @@ def requires(*preconditions: str):
     Args:
         *preconditions: List of precondition keys that must exist in context
     """
-    def decorator(method: Callable):
+    def decorator(method: Any):
         method._preconditions = preconditions
         return method
     return decorator
@@ -958,7 +957,7 @@ def ensures(*postconditions: str):
     Args:
         *postconditions: List of postcondition keys that must exist after stage
     """
-    def decorator(method: Callable):
+    def decorator(method: Any):
         method._postconditions = postconditions
         return method
     return decorator
@@ -1089,7 +1088,7 @@ class SourceValidationStage(BuildStageInterface):
         print(f"  Validating source files...")
         
         source_files = context['source_files']
-        validation_results = {
+        validation_results: Dict[str, Any] = {
             'validated_files': [],
             'validation_errors': []
         }
@@ -1126,7 +1125,7 @@ class SourceValidationStage(BuildStageInterface):
         
         print(f"  Validated {len(validation_results['validated_files'])} files")
         if validation_results['validation_errors']:
-            print(f"  ⚠ Found {len(validation_results['validation_errors'])} validation errors")
+            print(f"  âš  Found {len(validation_results['validation_errors'])} validation errors")
         
         context['validation_results'] = validation_results
         return context
@@ -1174,7 +1173,7 @@ class DependencyResolutionStage(BuildStageInterface):
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         print(f"  Resolving dependencies...")
         
-        resolved_dependencies = {
+        resolved_dependencies: Dict[str, Any] = {
             'runtime': [],
             'build': [],
             'test': []
@@ -1227,14 +1226,14 @@ class PipelineCheckpoint:
         checkpoint_data = {
             'stage': stage.value,
             'stage_name': stage.name,
-            'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'context': context
         }
         
         with open(checkpoint_file, 'wb') as f:
             pickle.dump(checkpoint_data, f)
         
-        print(f"  ✓ Checkpoint saved: {checkpoint_file.name}")
+        print(f"  âœ“ Checkpoint saved: {checkpoint_file.name}")
         return checkpoint_file
     
     def load_checkpoint(self, stage: BuildStage) -> Dict[str, Any]:
@@ -1257,7 +1256,7 @@ class PipelineCheckpoint:
         with open(checkpoint_file, 'rb') as f:
             checkpoint_data = pickle.load(f)
         
-        print(f"  ✓ Loaded checkpoint from stage {checkpoint_data['stage_name']}")
+        print(f"  âœ“ Loaded checkpoint from stage {checkpoint_data['stage_name']}")
         return checkpoint_data['context']
     
     def list_checkpoints(self) -> List[Tuple[BuildStage, str]]:
@@ -1357,7 +1356,7 @@ class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
                 raise
         
         # Add completion metadata
-        self.build_context['end_time'] = datetime.datetime.now(datetime.UTC).isoformat()
+        self.build_context['end_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         self.build_context['status'] = 'SUCCESS'
         
         print("=" * 80)
@@ -1531,7 +1530,7 @@ class DependencyGraph:
             BuildError: If circular dependency detected
         """
         # Kahn's algorithm for topological sort
-        adj = {node: [] for node in self.nodes}
+        adj: Dict[str, List[str]] = {node: [] for node in self.nodes}
         in_degree = {node: 0 for node in self.nodes}
         
         for edge in self.edges:
@@ -1571,7 +1570,7 @@ class DependencyGraph:
         rec_stack = set()
         
         # Build adjacency list for faster lookup
-        adj = {node: [] for node in self.nodes}
+        adj: Dict[str, List[str]] = {node: [] for node in self.nodes}
         for edge in self.edges:
             if edge.from_source in adj:
                 adj[edge.from_source].append(edge.to_source)
@@ -1867,7 +1866,7 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
         # Detect circular dependencies
         cycles = dependency_graph.detect_cycles()
         if cycles:
-            print(f"  ⚠ Warning: Detected {len(cycles)} circular dependencies")
+            print(f"  âš  Warning: Detected {len(cycles)} circular dependencies")
             for cycle in cycles[:3]:
                 print(f"    Cycle: {' -> '.join(cycle)}")
         
@@ -2040,7 +2039,7 @@ class DependencyLockFile:
     Lock file capturing exact dependency tree for reproducible builds.
     """
     lock_version: str = "1.0.0"
-    generated_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    generated_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     platform: str = ""
     dependencies: Dict[str, DependencySpecification] = field(default_factory=dict)
     
@@ -2136,7 +2135,7 @@ class DependencyResolver:
         
         # Check for conflicts
         if self.conflicts:
-            print(f"  ⚠ Warning: {len(self.conflicts)} dependency conflicts detected")
+            print(f"  âš  Warning: {len(self.conflicts)} dependency conflicts detected")
             for conflict in self.conflicts:
                 print(f"    - {conflict}")
         
@@ -2195,18 +2194,18 @@ class DependencyResolver:
         if cache_path.exists():
             if dep.hash:
                 if dep.verify_hash(cache_path):
-                    print(f"    ✓ Verified from cache: {dep.name} {dep.version}")
+                    print(f"    âœ“ Verified from cache: {dep.name} {dep.version}")
                     return True
                 else:
-                    print(f"    ✗ Cache verification failed: {dep.name} {dep.version}")
+                    print(f"    âœ— Cache verification failed: {dep.name} {dep.version}")
                     cache_path.unlink()
                     return False
             else:
-                print(f"    ⚠ No hash for verification: {dep.name} {dep.version}")
+                print(f"    âš  No hash for verification: {dep.name} {dep.version}")
                 return True
         
         # Not in cache - would need to download
-        print(f"    ⚠ Not in cache: {dep.name} {dep.version}")
+        print(f"    âš  Not in cache: {dep.name} {dep.version}")
         return True
     
     def install_from_lock(self, lock_file: DependencyLockFile) -> bool:
@@ -2224,7 +2223,7 @@ class DependencyResolver:
         success = True
         for name, dep in lock_file.dependencies.items():
             if not self.verify_dependency(dep):
-                print(f"    ✗ Failed to install: {name}")
+                print(f"    âœ— Failed to install: {name}")
                 success = False
         
         return success
@@ -2304,7 +2303,7 @@ class EnhancedDependencyResolutionStage(BuildStageInterface):
         
         # Warn if conflicts detected
         if context['dependencies']['conflicts']:
-            print(f"  ⚠ Warning: Dependency conflicts detected but resolution succeeded")
+            print(f"  âš  Warning: Dependency conflicts detected but resolution succeeded")
     
     def _parse_manifest(self) -> List[DependencySpecification]:
         """Parse dependency manifest into specifications."""
@@ -2440,7 +2439,7 @@ class ToolchainValidator:
         # Check cache
         cached_capabilities = self._load_cached_validation()
         if cached_capabilities:
-            print("  ✓ Using cached validation results")
+            print("  âœ“ Using cached validation results")
             return cached_capabilities
         
         # Perform validation tests
@@ -2457,7 +2456,7 @@ class ToolchainValidator:
         # Cache results
         self._cache_validation()
         
-        print(f"  ✓ Toolchain validation complete")
+        print(f"  âœ“ Toolchain validation complete")
         return self.capabilities
     
     def _load_cached_validation(self) -> Optional[ToolchainCapabilities]:
@@ -2474,7 +2473,7 @@ class ToolchainValidator:
             
             # Verify cache is recent (within 30 days)
             cached_time = datetime.datetime.fromisoformat(data['timestamp'])
-            age = datetime.datetime.now(datetime.UTC) - cached_time
+            age = datetime.datetime.now(datetime.timezone.utc) - cached_time
             
             if age.days > 30:
                 print("  Cache expired (>30 days old)")
@@ -2497,7 +2496,7 @@ class ToolchainValidator:
         cache_file = self.cache_dir / f"{cache_key}.json"
         
         data = {
-            'timestamp': datetime.datetime.now(datetime.UTC).isoformat(),
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'compiler_name': self.toolchain.compiler_name,
             'compiler_version': self.toolchain.compiler_version,
             'compiler_hash': self.toolchain.compiler_executable_hash,
@@ -2654,13 +2653,13 @@ int main() {
             if size >= 8 and offset >= 4:
                 self.capabilities.abi_compatible = True
                 self.capabilities.structure_packing_verified = True
-                print(f"    ✓ ABI compatible (struct size: {size}, offset: {offset})")
+                print(f"    âœ“ ABI compatible (struct size: {size}, offset: {offset})")
             else:
-                print(f"    ⚠ Unusual structure layout (size: {size}, offset: {offset})")
+                print(f"    âš  Unusual structure layout (size: {size}, offset: {offset})")
                 self.capabilities.abi_compatible = False
         
         except Exception as e:
-            print(f"    ✗ ABI validation failed: {e}")
+            print(f"    âœ— ABI validation failed: {e}")
             self.capabilities.abi_compatible = False
     
     def _validate_determinism(self):
@@ -2686,9 +2685,9 @@ int main() {
             
             if hash1 == hash2:
                 self.capabilities.deterministic_output = True
-                print(f"    ✓ Deterministic output verified")
+                print(f"    âœ“ Deterministic output verified")
             else:
-                print(f"    ⚠ Non-deterministic output detected")
+                print(f"    âš  Non-deterministic output detected")
                 print(f"      First:  {hash1[:16]}...")
                 print(f"      Second: {hash2[:16]}...")
                 self.capabilities.deterministic_output = False
@@ -2698,7 +2697,7 @@ int main() {
             binary2.unlink(missing_ok=True)
         
         except Exception as e:
-            print(f"    ✗ Determinism validation failed: {e}")
+            print(f"    âœ— Determinism validation failed: {e}")
             self.capabilities.deterministic_output = False
     
     def _run_smoke_test(self):
@@ -2716,7 +2715,7 @@ int main() {
         try:
             output = self._compile_and_run(test_program, 'c')
             if 'smoke test passed' in output:
-                print(f"    ✓ Smoke test passed")
+                print(f"    âœ“ Smoke test passed")
             else:
                 raise BuildError(f"Smoke test produced unexpected output: {output}")
         except Exception as e:
@@ -2946,7 +2945,7 @@ class ABIConfig:
         default_cc = cc_config.get('default', 'platform_default')
         
         # Parse compiler flags
-        compiler_flags = {}
+        compiler_flags: Dict[str, List[str]] = {}
         for section in ['structure_packing', 'calling_convention', 'exception_handling', 'rtti']:
             section_data = spec.get(section, {})
             flags = section_data.get('compiler_flags', {})
@@ -3156,11 +3155,11 @@ class ABIVerifier:
             if 'struct_name' in result:
                 lines.append(f"Structure: {result['struct_name']}")
                 lines.append(f"  Expected size: {result['expected_size']} bytes")
-                lines.append(f"  Verified: {'✓' if result['verified'] else '✗'}")
+                lines.append(f"  Verified: {'âœ“' if result['verified'] else 'âœ—'}")
             elif 'function_name' in result:
                 lines.append(f"Function: {result['function_name']}")
                 lines.append(f"  Expected convention: {result['expected_convention']}")
-                lines.append(f"  Verified: {'✓' if result['verified'] else '✗'}")
+                lines.append(f"  Verified: {'âœ“' if result['verified'] else 'âœ—'}")
             
             if result.get('issues'):
                 for issue in result['issues']:
@@ -3220,7 +3219,7 @@ class ABIDriftDetector:
                     if current_info['size'] != baseline_info['size']:
                         drift_items.append(
                             f"Structure size changed: {struct_name} "
-                            f"({baseline_info['size']} → {current_info['size']})"
+                            f"({baseline_info['size']} â†’ {current_info['size']})"
                         )
         
         # Compare symbols
@@ -3259,7 +3258,7 @@ class CompilationMetadata:
     flags_used: List[str] = field(default_factory=list)
     dependencies: List[str] = field(default_factory=list)
     
-    compilation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    compilation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     compilation_duration: float = 0.0
     
     success: bool = False
@@ -3618,7 +3617,7 @@ class NativeCompiler:
         cached_metadata = self.compilation_cache.get(str(unit.source_file))
         if cached_metadata:
             # Source changed
-            if cached_metadata.source_hash != unit.metadata.source_hash:
+            if unit.metadata and cached_metadata.source_hash != unit.metadata.source_hash:
                 return True
                 
             # Compiler changed
@@ -3966,11 +3965,11 @@ class ValidationResult:
         lines = [
             f"Validation Report: {self.object_file.name}",
             "=" * 60,
-            f"Format validation: {'✓' if self.format_valid else '✗'}",
-            f"Symbol validation: {'✓' if self.symbols_valid else '✗'}",
-            f"Debug symbols: {'✓' if self.debug_symbols_valid else '⚠'}",
-            f"ABI conformance: {'✓' if self.abi_conformance_valid else '✗'}",
-            f"Self-test: {'✓' if self.self_test_passed else '✗'}",
+            f"Format validation: {'âœ“' if self.format_valid else 'âœ—'}",
+            f"Symbol validation: {'âœ“' if self.symbols_valid else 'âœ—'}",
+            f"Debug symbols: {'âœ“' if self.debug_symbols_valid else 'âš '}",
+            f"ABI conformance: {'âœ“' if self.abi_conformance_valid else 'âœ—'}",
+            f"Self-test: {'âœ“' if self.self_test_passed else 'âœ—'}",
             "",
             f"Overall: {'PASSED' if self.overall_valid else 'FAILED'}",
         ]
@@ -4114,7 +4113,7 @@ class LinkingMetadata:
     libraries_linked: List[str] = field(default_factory=list)
     lto_enabled: bool = False
     
-    link_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    link_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     link_duration: float = 0.0
     
     success: bool = False
@@ -4541,7 +4540,7 @@ class AdapterMetadata:
     
     generator_name: str = "AdapterGenerator"
     generator_version: str = "1.0.0"
-    generation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    generation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     
     template_used: str = "c_adapter_template"
     template_hash: str = ""
@@ -4638,7 +4637,7 @@ class AdapterGenerator:
         # Header
         lines.append("// Generated adapter code")
         lines.append(f"// Contract: {contract.get('library_name', 'unknown')}")
-        lines.append(f"// Generated: {datetime.datetime.now(datetime.UTC).isoformat()}")
+        lines.append(f"// Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}")
         lines.append("")
         
         # Includes
@@ -4805,12 +4804,12 @@ class AdapterGenerationStage(BuildStageInterface):
                     generated_adapters.append(source_file)
                     adapter_metadata.append(metadata)
                 else:
-                    print(f"    ✗ Adapter validation failed: {contract.get('library_name')}")
+                    print(f"    âœ— Adapter validation failed: {contract.get('library_name')}")
                     for issue in issues[:3]:
                         print(f"      - {issue}")
                         
             except Exception as e:
-                print(f"    ✗ Adapter generation failed: {e}")
+                print(f"    âœ— Adapter generation failed: {e}")
                 
         print(f"    Generated {len(generated_adapters)} adapters")
         
@@ -4843,7 +4842,7 @@ class AdapterGenerationStage(BuildStageInterface):
                     contract = json.load(f)
                     contracts.append(contract)
             except Exception as e:
-                print(f"    ⚠ Failed to load contract {contract_file}: {e}")
+                print(f"    âš  Failed to load contract {contract_file}: {e}")
                 
         return contracts
 
@@ -4856,7 +4855,7 @@ class BuildManifest:
     """Complete manifest of build artifacts and provenance."""
     
     manifest_version: str = "1.0"
-    build_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    build_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     
     # Components
     native_libraries: List[Dict[str, Any]] = field(default_factory=list)
@@ -4967,7 +4966,7 @@ class PackageAssembler:
         # Generate API stub
         self._generate_api_stub(package_dir)
         
-        print(f"  ✓ Package assembled: {package_dir}")
+        print(f"  âœ“ Package assembled: {package_dir}")
         return package_dir
         
     def _generate_package_init(self, package_dir: Path):
@@ -5068,7 +5067,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
     """
     
     def __init__(self, output_dir: Path):
-        super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION) # Fixed enum usage based on earlier definition
+        super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION_ASSEMBLY)
         self.stage_name = "Orchestration Assembly"
         self.output_dir = output_dir
         
@@ -5091,7 +5090,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Collect artifacts
-        native_libs = [] # In real flow, would extract shared libs from linking context
+        native_libs: List[Path] = [] # In real flow, would extract shared libs from linking context
         executables = [
             Path(exe)
             for exe in context['linking'].get('executables', [])
@@ -5100,7 +5099,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
             Path(adapter)
             for adapter in context.get('adapter_generation', {}).get('generated_adapters', [])
         ]
-        python_sources = []  # Would collect from source enumeration
+        python_sources: List[Path] = []  # Would collect from source enumeration
         
         # Assemble package
         assembler = PackageAssembler(self.output_dir)
@@ -5127,7 +5126,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
             'ready_for_deployment': True
         }
         
-        print(f"  ✓ Orchestration assembly complete")
+        print(f"  âœ“ Orchestration assembly complete")
         
         return context
         
@@ -5193,7 +5192,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
 # ============================================================================
 
 @dataclass
-class ValidationResult:
+class GateValidationResult:
     """Result of a validation gate."""
     
     gate_name: str
@@ -5236,7 +5235,7 @@ class ValidationGate(ABC):
         pass
     
     @abstractmethod
-    def validate(self, context: Dict[str, Any]) -> ValidationResult:
+    def validate(self, context: Dict[str, Any]) -> 'GateValidationResult':
         """
         Perform validation.
         
@@ -5244,7 +5243,7 @@ class ValidationGate(ABC):
             context: Complete build context
             
         Returns:
-            ValidationResult with pass/fail status
+            GateValidationResult with pass/fail status
         """
         pass
     
@@ -5258,8 +5257,8 @@ class ArtifactExistenceGate(ValidationGate):
     
     gate_name = "Artifact Existence"
     
-    def validate(self, context: Dict[str, Any]) -> ValidationResult:
-        result = ValidationResult(gate_name=self.gate_name)
+    def validate(self, context: Dict[str, Any]) -> 'GateValidationResult':
+        result = GateValidationResult(gate_name=self.gate_name)
         
         # Check executables
         executables = context.get('linking', {}).get('executables', [])
@@ -5288,8 +5287,8 @@ class ArtifactIntegrityGate(ValidationGate):
     
     gate_name = "Artifact Integrity"
     
-    def validate(self, context: Dict[str, Any]) -> ValidationResult:
-        result = ValidationResult(gate_name=self.gate_name)
+    def validate(self, context: Dict[str, Any]) -> GateValidationResult:
+        result = GateValidationResult(gate_name=self.gate_name)
         
         # Validate object file hashes
         compilation_metadata = context.get('native_compilation', {}).get(
@@ -5334,8 +5333,8 @@ class DocumentationCompletenessGate(ValidationGate):
     def is_required(self) -> bool:
         return False  # Warning-level gate
     
-    def validate(self, context: Dict[str, Any]) -> ValidationResult:
-        result = ValidationResult(gate_name=self.gate_name)
+    def validate(self, context: Dict[str, Any]) -> GateValidationResult:
+        result = GateValidationResult(gate_name=self.gate_name)
         
         required_docs = [
             'README.md',
@@ -5370,7 +5369,7 @@ class BuildCompletionReport:
     """Report of build completion validation."""
     
     build_successful: bool
-    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     
     gates_passed: List[str] = field(default_factory=list)
     gates_failed: List[str] = field(default_factory=list)
@@ -5389,7 +5388,7 @@ class BuildCompletionReport:
             "BUILD COMPLETION REPORT",
             "=" * 80,
             f"Timestamp: {self.timestamp}",
-            f"Overall Status: {'✓ SUCCESS' if self.build_successful else '✗ FAILED'}",
+            f"Overall Status: {'âœ“ SUCCESS' if self.build_successful else 'âœ— FAILED'}",
             "",
             "Validation Gates:",
             f"  Total: {self.total_gates}",
@@ -5402,19 +5401,19 @@ class BuildCompletionReport:
         if self.gates_failed:
             lines.append("Failed Gates:")
             for gate in self.gates_failed:
-                lines.append(f"  ✗ {gate}")
+                lines.append(f"  âœ— {gate}")
             lines.append("")
         
         if self.gates_warned:
             lines.append("Warning Gates:")
             for gate in self.gates_warned:
-                lines.append(f"  ⚠ {gate}")
+                lines.append(f"  âš  {gate}")
             lines.append("")
         
         if self.gates_passed:
             lines.append("Passed Gates:")
             for gate in self.gates_passed:
-                lines.append(f"  ✓ {gate}")
+                lines.append(f"  âœ“ {gate}")
         
         lines.append("=" * 80)
         
@@ -5467,16 +5466,16 @@ class BuildCompletionValidator:
                 report.gates_passed.append(gate.gate_name)
                 if gate.is_required:
                     report.required_gates_passed += 1
-                print(f"    ✓ {gate.gate_name} passed")
+                print(f"    âœ“ {gate.gate_name} passed")
             else:
                 if gate.is_required:
                     report.gates_failed.append(gate.gate_name)
                     report.required_gates_failed += 1
                     report.build_successful = False
-                    print(f"    ✗ {gate.gate_name} FAILED")
+                    print(f"    âœ— {gate.gate_name} FAILED")
                 else:
                     report.gates_warned.append(gate.gate_name)
-                    print(f"    ⚠ {gate.gate_name} warned")
+                    print(f"    âš  {gate.gate_name} warned")
             
             # Show errors/warnings
             for error in result.errors[:3]:
@@ -5503,8 +5502,8 @@ class CacheEntry:
     compiler_hash: str = ""
     flags: List[str] = field(default_factory=list)
     
-    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
-    last_access: str = field(default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    last_access: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     
     def is_valid(
         self,
@@ -5599,7 +5598,7 @@ class BuildCache:
         
         if entry:
             # Update last access time
-            entry.last_access = datetime.datetime.now(datetime.UTC).isoformat()
+            entry.last_access = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
         return entry
         
@@ -5719,7 +5718,7 @@ class IncrementalBuildManager:
         
         # Validate cache entry
         # Important: Flags would come from compilation unit in full implementation
-        current_flags = []
+        current_flags: List[str] = []
         
         is_valid = cache_entry.is_valid(
             current_source_hash,
@@ -5908,7 +5907,7 @@ class AgeBasedEvictionPolicy(EvictionPolicy):
         target_size_bytes: int,
         statistics: CacheStatistics
     ) -> List[CacheEntry]:
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.timezone.utc)
         ttl_threshold = now - datetime.timedelta(days=self.ttl_days)
         
         to_evict = []
@@ -5917,7 +5916,7 @@ class AgeBasedEvictionPolicy(EvictionPolicy):
             entry_time = datetime.datetime.fromisoformat(entry.timestamp)
             # Ensure timezone awareness for comparison
             if entry_time.tzinfo is None:
-                entry_time = entry_time.replace(tzinfo=datetime.UTC)
+                entry_time = entry_time.replace(tzinfo=datetime.timezone.utc)
             
             if entry_time < ttl_threshold:
                 to_evict.append(entry)
@@ -5947,7 +5946,7 @@ class CacheManager:
         
         stats.total_entries = len(self.cache.entries)
         
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.timezone.utc)
         
         for entry in self.cache.entries.values():
             # Compute size
@@ -5963,7 +5962,7 @@ class CacheManager:
             try:
                 entry_time = datetime.datetime.fromisoformat(entry.timestamp)
                 if entry_time.tzinfo is None:
-                    entry_time = entry_time.replace(tzinfo=datetime.UTC)
+                    entry_time = entry_time.replace(tzinfo=datetime.timezone.utc)
                 age = now - entry_time
             except ValueError:
                 # Fallback implementation if parsing fails
@@ -6187,10 +6186,10 @@ class ReproducibilityVerifier:
         # Check all artifacts exist
         for path in artifacts:
             if not path.exists():
-                print(f"    ✗ Artifact missing: {path}")
+                print(f"    âœ— Artifact missing: {path}")
                 return False
                 
-        print(f"    ✓ All {len(artifacts)} artifacts present and verified")
+        print(f"    âœ“ All {len(artifacts)} artifacts present and verified")
         return True
         
     def compare_artifacts(
@@ -6201,7 +6200,7 @@ class ReproducibilityVerifier:
         """Compare two sets of artifacts."""
         # Check same set of files
         if set(artifacts1.keys()) != set(artifacts2.keys()):
-            print("    ✗ Different sets of artifacts")
+            print("    âœ— Different sets of artifacts")
             return False
             
         # Compare hashes
@@ -6210,12 +6209,12 @@ class ReproducibilityVerifier:
             hash2 = artifacts2.get(path)
             if hash1 != hash2:
                 mismatches += 1
-                print(f"    ✗ Hash mismatch: {path}")
+                print(f"    âœ— Hash mismatch: {path}")
                 
         if mismatches > 0:
             return False
             
-        print(f"    ✓ All {len(artifacts1)} artifacts identical")
+        print(f"    âœ“ All {len(artifacts1)} artifacts identical")
         return True
         
     def collect_artifacts(self, context: Dict[str, Any]) -> Dict[Path, str]:
@@ -6378,7 +6377,7 @@ class ProfilingBuildStage(BuildStageInterface):
         self.execution_time = end_time - start_time
         cpu_time = end_cpu - start_cpu
         
-        print(f"\n✓ Stage completed in {self.execution_time:.2f}s (CPU: {cpu_time:.2f}s)")
+        print(f"\nâœ“ Stage completed in {self.execution_time:.2f}s (CPU: {cpu_time:.2f}s)")
         
         # Add profiling data to context
         if 'profiling' not in result_context:
@@ -6970,7 +6969,7 @@ class CompleteBuildPipeline:
     
     def _create_stages(self) -> List[BuildStageInterface]:
         """Create all build stages in order."""
-        stages = []
+        stages: List[BuildStageInterface] = []
         
 
         # Stage 1: Source Enumeration
@@ -7132,7 +7131,7 @@ def validate_module_integration() -> bool:
     print("Module 03 Integration Checklist:")
     print("=" * 60)
     for check, status in checks.items():
-        status_str = '✓' if status else '✗'
+        status_str = 'âœ“' if status else 'âœ—'
         print(f"  [{status_str}] {check}")
     print("=" * 60)
     

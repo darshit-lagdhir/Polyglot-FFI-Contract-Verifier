@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Module 04: Native Interface Ingestion
 
@@ -256,7 +256,7 @@ class Diagnostic:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize diagnostic."""
-        data = {
+        data: Dict[str, Any] = {
             'severity': self.severity,
             'message': self.message
         }
@@ -2279,7 +2279,7 @@ class AttributeExtractor:
         Returns:
             List of AttributeInfo
         """
-        attributes = []
+        attributes: List[AttributeInfo] = []
 
         # Check if cursor has attributes
         if not libclang.clang_IDE_hasAttrs(cursor):
@@ -2343,7 +2343,7 @@ class AttributeExtractor:
         Returns:
             List of deprecated AttributeInfo
         """
-        attributes = []
+        attributes: List[AttributeInfo] = []
 
         # Important: Full implementation would parse cursor attributes
         # This is a simplified placeholder
@@ -2395,7 +2395,7 @@ class CppExtractor:
         Returns:
             List of namespace names (outer to inner)
         """
-        namespaces = []
+        namespaces: List[str] = []
         parent = libclang.clang_getIDESemanticParent(cursor)
 
         while parent and libclang.clang_getIDEKind(parent) != CXIDEKind.TRANSLATION_UNIT:
@@ -2424,7 +2424,7 @@ class CppExtractor:
         Returns:
             Dictionary with template metadata
         """
-        info = {}
+        info: Dict[str, Any] = {}
 
         kind = libclang.clang_getIDEKind(cursor)
         is_template = False
@@ -2463,9 +2463,9 @@ class CppExtractor:
         if is_template:
             info['is_template'] = True
 
-            if kind == CXIDEKind.ClassDecl or kind == CXIDEKind.StructDecl:
+            if kind == CXIDEKind.CLASS_DECL or kind == CXIDEKind.STRUCT_DECL:
                  info['kind'] = 'class'
-            elif kind == CXIDEKind.FunctionDecl:
+            elif kind == CXIDEKind.FUNCTION_DECL:
                  info['kind'] = 'function'
 
         return info
@@ -3157,6 +3157,7 @@ class CXIDEKind(IntEnum):
     UNEXPOSED_DECL = 1
     STRUCT_DECL = 2
     UNION_DECL = 3
+    CLASS_DECL = 4
     ENUM_DECL = 5
     FUNCTION_DECL = 8
     VAR_DECL = 9
@@ -3164,6 +3165,7 @@ class CXIDEKind(IntEnum):
     ENUM_CONSTANT_DECL = 22
     TYPEDEF_DECL = 20
     TYPE_ALIAS_DECL = 301
+    TRANSLATION_UNIT = 300
     FUNCTION_TEMPLATE = 405
     CLASS_TEMPLATE = 406
     CLASS_TEMPLATE_PARTIAL_SPECIALIZATION = 407
@@ -3364,8 +3366,8 @@ class ClangCompilationUnit(CompilationUnit):
 
     def __init__(
         self,
-        index: ctypes.POINTER(CXIndex),
-        translation_unit: ctypes.POINTER(CXTranslationUnit)
+        index: Any,
+        translation_unit: Any
     ):
         super().__init__(internal_repr=translation_unit)
         self.index = index
@@ -3913,7 +3915,7 @@ class DiagnosticCollector:
 
     def collect_clang_diagnostics(
         self,
-        translation_unit: ctypes.POINTER(CXTranslationUnit)
+        translation_unit: Any
     ):
         """Collect diagnostics from Clang translation unit."""
         if not LIBCLANG_AVAILABLE:
@@ -4389,7 +4391,7 @@ class ClangFrontend(CompilerFrontend):
                 pass
 
                 try:
-            attributes = self._attribute_extractor.extract_attributes(cursor)
+            attributes: List[AttributeInfo] = self._attribute_extractor.extract_attributes(cursor)
             if attributes:
                 symbol.attributes = attributes
 
@@ -4514,7 +4516,7 @@ class ArtifactValidator:
 
     def _validate_structure(self, artifact: RawInterfaceArtifact) -> List[Diagnostic]:
         """Validate structural consistency."""
-        diagnostics = []
+        diagnostics: List[Diagnostic] = []
 
         # Validate type definitions
         defined_types = set(artifact.type_definitions.keys())
@@ -4591,7 +4593,7 @@ class ArtifactValidator:
         diagnostics = []
 
         # Check for duplicate symbol names
-        symbol_map = {}
+        symbol_map: Dict[str, ExternalSymbol] = {}
 
         for symbol in artifact.external_symbols:
             if symbol.name in symbol_map:
@@ -5518,7 +5520,7 @@ def main():
     try:
         artifact = orchestrator.ingest(config)
 
-        print(f"✓ Ingestion successful")
+        print(f"âœ“ Ingestion successful")
         print(f"  Symbols extracted: {len(artifact.external_symbols)}")
 
         if config.output_path:
@@ -5532,7 +5534,7 @@ def main():
         sys.exit(0)
 
     except IngestionError as e:
-        print(f"✗ Ingestion failed: {e}", file=sys.stderr)
+        print(f"âœ— Ingestion failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 # ============================================================================
@@ -5716,7 +5718,7 @@ class DocumentationOrchestrator:
         self,
         artifact: RawInterfaceArtifact,
         output_dir: Path,
-        formats: List[str] = None
+        formats: Optional[List[str]] = None
     ):
         """
         Generate documentation in requested formats.
@@ -5732,7 +5734,7 @@ class DocumentationOrchestrator:
         if 'markdown' in formats:
             md_dir = output_dir / 'markdown'
             self.markdown_generator.generate(artifact, md_dir)
-            print(f"✓ Markdown documentation: {md_dir}")
+            print(f"âœ“ Markdown documentation: {md_dir}")
 
 # ============================================================================
 # MODULE COMPLETION AND INTEGRATION ( - FINAL)
@@ -5823,17 +5825,17 @@ def execute_native_ingestion_stage(
 def print_module_completion_banner():
     """Print module completion banner."""
     banner = """
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║                                                               ║
-    ║              MODULE 04 COMPLETE! 🎉🎊🚀                      ║
-    ║                                                               ║
-    ║         NATIVE INTERFACE INGESTION                            ║
-    ║                                                               ║
-    ║  20/20 Prompts ✓ | 228 Tests ✓ | 9,730 Lines ✓              ║
-    ║                                                               ║
-    ║  Ready for Integration with Module 02 Verification Pipeline  ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
+    â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+    â•‘                                                               â•‘
+    â•‘              MODULE 04 COMPLETE! ðŸŽ‰ðŸŽŠðŸš€                      â•‘
+    â•‘                                                               â•‘
+    â•‘         NATIVE INTERFACE INGESTION                            â•‘
+    â•‘                                                               â•‘
+    â•‘  20/20 Prompts âœ“ | 228 Tests âœ“ | 9,730 Lines âœ“              â•‘
+    â•‘                                                               â•‘
+    â•‘  Ready for Integration with Module 02 Verification Pipeline  â•‘
+    â•‘                                                               â•‘
+    â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     """
     print(banner)
 

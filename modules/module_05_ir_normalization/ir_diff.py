@@ -213,7 +213,7 @@ class IRDiffComputer:
         return diff
 
     def _build_entity_map(self, artifact: IRArtifact) -> Dict[str, IREntity]:
-        entity_map = {}
+        entity_map: Dict[str, IREntity] = {}
         if not artifact.interface_unit:
             return entity_map
 
@@ -235,15 +235,15 @@ class IRDiffComputer:
                 entity_id=old.entity_id
             )]
 
-        if isinstance(old, StructureType):
+        if isinstance(old, StructureType) and isinstance(new, StructureType):
             return self._diff_structures(old, new)
-        elif isinstance(old, UnionType):
+        elif isinstance(old, UnionType) and isinstance(new, UnionType):
             return self._diff_unions(old, new)
-        elif isinstance(old, FunctionSymbol):
+        elif isinstance(old, FunctionSymbol) and isinstance(new, FunctionSymbol):
             return self._diff_functions(old, new)
-        elif isinstance(old, VariableSymbol):
+        elif isinstance(old, VariableSymbol) and isinstance(new, VariableSymbol):
             return self._diff_variables(old, new)
-        elif isinstance(old, TypeEntity):
+        elif isinstance(old, TypeEntity) and isinstance(new, TypeEntity):
             return self._diff_base_types(old, new)
 
         return []

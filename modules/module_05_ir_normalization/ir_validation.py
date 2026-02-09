@@ -6,7 +6,7 @@ Ensures structural integrity, type safety, ABI consistency, and completeness.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Sequence
 
 from .ir_entities import (
     ArrayKind,
@@ -146,12 +146,12 @@ class SchemaValidator:
 class ReferenceValidator:
     """Validates all entity references resolve."""
 
-    def __init__(self, type_registry: TypeRegistry):
+    def __init__(self, type_registry: TypeRegistry) -> None:
         self.type_registry = type_registry
 
     def validate_all_references(
         self,
-        entities: List[IREntity]
+        entities: Sequence[IREntity]
     ) -> List[str]:
         """Validate all entity references."""
         errors = []
@@ -262,7 +262,7 @@ class TypeValidator:
 
     def validate_structure_layout(self, struct: StructureType) -> List[str]:
         """Validate structure layout consistency."""
-        errors = []
+        errors: List[str] = []
         if not struct.fields:
             return errors
 
@@ -300,7 +300,7 @@ class TypeValidator:
 
     def validate_union_invariants(self, union: UnionType) -> List[str]:
         """Validate union invariants."""
-        errors = []
+        errors: List[str] = []
         if not union.members:
             return errors
 
@@ -327,15 +327,13 @@ class TypeValidator:
         if array.array_kind == ArrayKind.FIXED_SIZE:
             if array.element_count is None or array.element_count <= 0:
                 errors.append(f"Fixed-size array {array.entity_id} invalid element count")
-            elif array.size_bytes != array.element_count * array.element_size:
-                # Important: This might be slightly off due to trailing padding in some cases,
-                # but usually element_size already includes padding.
-                pass
+            # elif array.size_bytes != array.element_count * array.element_size:
+            #     pass
         return errors
 
     def validate_enum_ranges(self, enum: EnumerationType, reg: TypeRegistry) -> List[str]:
         """Validate enumerator values fit in underlying type."""
-        errors = []
+        errors: List[str] = []
         underlying = reg.resolve_type(enum.underlying_type_reference)
         if not isinstance(underlying, ScalarType):
             return errors
@@ -402,8 +400,8 @@ class GraphValidator:
     def detect_cycles(self) -> List[str]:
         """Detect cycles in type dependency graph."""
         errors = []
-        visited = set()
-        rec_stack = set()
+        visited: Set[str] = set()
+        rec_stack: Set[str] = set()
 
         for type_entity in self.type_registry.get_all_types():
             if type_entity.entity_id not in visited:
@@ -454,7 +452,7 @@ class GraphValidator:
 class PlatformValidator:
     """Validates IR against platform constraints."""
 
-    def __init__(self, interface_unit: InterfaceUnit):
+    def __init__(self, interface_unit: InterfaceUnit) -> None:
         self.interface_unit = interface_unit
 
     def validate_pointer_sizes(self, type_registry: TypeRegistry) -> List[str]:
@@ -502,7 +500,7 @@ class IRValidationOrchestrator:
         self,
         interface_unit: InterfaceUnit,
         type_registry: TypeRegistry
-    ):
+    ) -> None:
         self.interface_unit = interface_unit
         self.type_registry = type_registry
 
