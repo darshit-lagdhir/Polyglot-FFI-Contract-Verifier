@@ -2398,8 +2398,13 @@ class CppExtractor:
         namespaces: List[str] = []
         parent = libclang.clang_getIDESemanticParent(cursor)
 
-        while parent and libclang.clang_getIDEKind(parent) != CXIDEKind.TRANSLATION_UNIT:
+        depth = 0
+        max_depth = 100
+        while depth < max_depth:
             kind = libclang.clang_getIDEKind(parent)
+            if kind == 0 or kind == CXIDEKind.TRANSLATION_UNIT:
+                break
+
             if kind == CXIDEKind.NAMESPACE:
                 name_cx = libclang.clang_getIDESpelling(parent)
                 name = clang_string_to_python(name_cx)
@@ -2410,6 +2415,7 @@ class CppExtractor:
 
             # Continue traversal up
             parent = libclang.clang_getIDESemanticParent(parent)
+            depth += 1
 
         return namespaces
 
