@@ -45,13 +45,14 @@ class MigrationDifficulty(Enum):
 
 @dataclass
 class ParameterChange:
-        parameter_name: str
+    """Represents a fine-grained change to a specific clause parameter."""
+    parameter_name: str
     old_value: Any
     new_value: Any
     category: ChangeCategory
     impact: ChangeImpact
     confidence: float = 1.0
-    analysis: str = ""
+    explanation: str = ""
 
 @dataclass
 class DetailedClauseChange:
@@ -152,7 +153,8 @@ class AdvancedDiffResult:
         return "\n".join(lines)
 
 class NullabilityChangeAnalyzer:
-        def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
+    """Specialized analyzer for pointer nullability constraints."""
+    def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
         old_val = self._extract_nullable(old_c)
         new_val = self._extract_nullable(new_c)
         
@@ -177,7 +179,8 @@ class NullabilityChangeAnalyzer:
         return None
 
 class SizeChangeAnalyzer:
-        def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
+    """Specialized analyzer for memory size constraints."""
+    def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
         old_size = self._extract_size(old_c)
         new_size = self._extract_size(new_c)
         
@@ -193,7 +196,8 @@ class SizeChangeAnalyzer:
         return p.value if p else None
 
 class OwnershipChangeAnalyzer:
-        def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
+    """Specialized analyzer for memory ownership and lifecycle constraints."""
+    def analyze_impact(self, old_c: ContractClause, new_c: ContractClause) -> ChangeImpact:
         old_mode = self._extract_mode(old_c)
         new_mode = self._extract_mode(new_c)
         return ChangeImpact.BREAKING if old_mode != new_mode else ChangeImpact.NEUTRAL
@@ -203,7 +207,7 @@ class OwnershipChangeAnalyzer:
         return p.value if p else None
 
 class AdvancedContractDiffer:
-        
+    """Orchestrates detailed semantic comparison between contract versions."""
     def __init__(self):
         self.basic_differ = ContractDiffer()
         self.null_analyzer = NullabilityChangeAnalyzer()
