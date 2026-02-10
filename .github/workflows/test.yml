@@ -1,8 +1,12 @@
 name: Test
 
-on:
+"on":
   push:
     branches: [ main, develop ]
+    paths:
+      - 'modules/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
   pull_request:
     branches: [ main, develop ]
 
@@ -18,7 +22,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -27,48 +31,85 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
+        pip install pytest pytest-cov PyYAML black==23.3.0 flake8==6.0.0 isort==5.12.0 mypy==1.3.0 radon
     
-    - name: Lint with ruff
-      run: ruff check modules/
+    - name: Code Quality (Lint & Format)
+      run: |
+        black --check --diff modules/
+        isort --check-only --diff modules/
+        flake8 modules/ --max-line-length=100 --extend-ignore=E203,W503 --count --statistics
     
     - name: Type check with mypy
-      run: mypy modules/module_05_ir_normalization
+      run: mypy modules/ --ignore-missing-imports --no-strict-optional
       continue-on-error: true
     
-    - name: Run unit tests
-      run: pytest tests/unit -v --cov --cov-report=xml
+    - name: Run Module 06 Tests
+      run: |
+        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
+        pytest tests/unit/test_contract_*.py \
+          tests/unit/test_clause_types.py \
+          tests/unit/test_enforcement_boundary.py \
+          tests/unit/test_module_06_init.py \
+          tests/unit/test_documentation.py \
+          tests/unit/test_ci_cd_config.py \
+          -v \
+          --cov=modules/module_06_contract_schema \
+          --cov-report=xml:coverage_m06.xml \
+          --cov-fail-under=85
     
-    - name: Run integration tests
-      run: pytest tests/integration -v
+    - name: Run Global Tests
+      run: |
+        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
+        pytest tests/unit/ -v --cov --cov-append --cov-report=xml
+        pytest tests/integration/ -v
     
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v4
       with:
-        file: ./coverage.xml
+        files: ./coverage.xml,./coverage_m06.xml
         flags: unittests
         name: codecov-umbrella
-        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
 
   performance:
-    name: Performance Tests
+    name: Performance Benchmarks
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.11"
+        cache: 'pip'
     
     - name: Install dependencies
       run: |
         pip install -e ".[dev,performance]"
+        pip install pytest-benchmark
     
-    - name: Run performance benchmarks
-      run: pytest tests/integration -v -m "slow"
+    - name: Run Module 06 Benchmarks
+      run: |
+        mkdir -p tests/benchmarks
+        cat <<EOF > tests/benchmarks/test_module_06_benchmarks.py
+        import pytest
+        from module_06_contract_schema import ContractGenerator
+        def test_generation_benchmark(benchmark):
+            generator = ContractGenerator()
+            benchmark(generator.generate, None, "benchmark_interface")
+        EOF
+        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
+        pytest tests/benchmarks/ --benchmark-only --benchmark-json=benchmark_results_m06.json
+    
+    - name: Run Legacy Performance Tests
+      run: |
+        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
+        pytest tests/integration -v -m "slow"
     
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
-        path: benchmark-results.json
+        path: |
+          benchmark_results_m06.json
+          benchmark-results.json
