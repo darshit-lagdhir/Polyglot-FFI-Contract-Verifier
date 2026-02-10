@@ -184,7 +184,6 @@ See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTIO
 
 See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
 
-### 0: Diagnostics Mapping and Failure Classification
 - Automatic categorization of failures (buffer overflow, null pointer, etc.)
 - Severity assessment and exploitability analysis
 - Traceability from raw crashes to specific contract constraints
@@ -357,8 +356,7 @@ The system is organized as a deterministic, artifact-driven pipeline:
 
 ```
 Polyglot-FFI-Contract-Verifier/
-├── polyglot_ffi_verifier/     # Main package
-│   ├── __init__.py            # Package API
+├── polyglot_ffi_verifier/     │   ├── __init__.py            # Package API
 │   ├── __main__.py            # CLI entry point
 │   ├── context.py             # Execution context
 │   ├── pipeline.py            # Pipeline orchestration
@@ -394,8 +392,7 @@ Polyglot-FFI-Contract-Verifier/
 │       └── test_system_stability.py
 ├── docs/                      # Documentation
 │   ├── architecture/          # System design
-│   ├── implementation/        # Implementation details
-│   ├── api/                   # API reference
+│   ├── implementation/        │   ├── api/                   # API reference
 │   └── operations/            # Operational guides
 ├── examples/                  # Usage
 │   └── demo/
