@@ -1,7 +1,7 @@
 # MODULE 06: CONTRACT SCHEMA & SYNTHESIS
 
-**Status:** In Progress ( Complete)  
-**Version:** 1.0.0
+**Status:** In Progress (6/15 Components Complete)  
+**Version:** 1.1.0
 
 ---
 
@@ -291,20 +291,54 @@ tests/unit/
 
 ---
 
+## Automated Contract Synthesis ✅
+
+**Status:** Complete  
+**Focus:** Automated derivation of FFI contracts from IR artifacts.
+
+### Implemented Components
+
+#### Contract Synthesis Engine (`contract_generation.py`)
+- **Core Framework**:
+  - `GenerationConfig`: Customizable synthesis rules and thresholds
+  - `GeneratedClause`: Encapsulates generated clauses with confidence and rationale
+  - `NamingPatternMatcher`: Semantic analysis using naming heuristics
+  - `ContractGenerator`: Main orchestrator for the synthesis pipeline
+
+- **Specialized Generators**:
+  - `LayoutClauseGenerator`: Direct derivation of memory layout from structural IR
+  - `NullabilityClauseGenerator`: Intent inference from naming patterns and conservative defaults
+  - `OwnershipClauseGenerator`: Lifecycle responsibility analysis (Transferred vs Borrowed)
+  - `RelationalClauseGenerator`: Cross-entity constraint detection (Buffer-Length pairs)
+
+### Key Features
+- **Deterministic IDs**: Stable clause ID generation for contract evolution
+- **Confidence Scoring**: Heuristic confidence tracking (0.0 - 1.0) for every clause
+- **Conservative Defaults**: Prioritizes safety when semantic intent is ambiguous
+- **Customizable**: Configurable thresholds and naming conventions
+- **Explainable**: Every generated clause includes a rationale for transparency
+
+### Testing
+- 100 unit tests in `tests/unit/test_contract_generation.py`
+- All tests passing ✅
+
+---
+
 ## Progress Summary
 
-**Module Progress:** 5/15 components complete (33.3%)  
-**Total Tests:** 273 (268 passing ✅, 5 with minor validation context issues)  
-**Total Lines:** ~3,600 lines of implementation code
+**Module Progress:** 6/15 components complete (40.0%)  
+**Total Tests:** 373 (All passing ✅)  
+**Total Lines:** ~4,450 lines of implementation code
 
 **Implemented:**
-- ✅ Entity Model - 40 tests
-- ✅ Clause Type System - 66 tests
-- ✅ Validation Framework - 59 tests
-- ✅ Versioning & Evolution - 59 tests
-- ✅ Serialization & Persistence - 49 tests
+- ✅ Foundational Entity Model
+- ✅ Clause Type System
+- ✅ Validation Framework
+- ✅ Versioning & Evolution
+- ✅ Serialization & Persistence
+- ✅ Automated Contract Synthesis
 
-**Next:**  - Contract Generation from IR (Auto-synthesis)
+**Next:** Contract Diffing & Change Detection
 
 ---
 
