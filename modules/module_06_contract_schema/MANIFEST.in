@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include py.typed
+recursive-include modules/module_06_contract_schema *.py
+recursive-include examples *.py *.md *.json
+recursive-include docs *.md

@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pfcv-module-05"
+name = "pfcv"
 version = "1.0.0"
-description = "PFCV IR Normalization - Module 05"
+description = "Polyglot FFI Contract Verifier - Core Modules"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
@@ -14,7 +14,7 @@ authors = [
 maintainers = [
     {name = "PFCV Authors", email = "team@pfcv.dev"}
 ]
-keywords = ["ffi", "verification", "ir", "normalization", "abi"]
+keywords = ["ffi", "verification", "ir", "normalization", "abi", "contracts", "schema"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -40,9 +40,13 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-timeout>=2.1.0",
-    "black>=23.0.0",
-    "mypy>=1.0.0",
+    "pytest-benchmark>=4.0.0",
+    "black>=23.3.0",
+    "mypy>=1.3.0",
     "ruff>=0.1.0",
+    "flake8>=6.0.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.0.0",
 ]
 docs = [
     "sphinx>=5.0.0",
@@ -51,24 +55,30 @@ docs = [
 ]
 performance = [
     "numpy>=1.24.0",
+    "pytest-benchmark>=4.0.0",
 ]
 
 [project.urls]
 Homepage = "https://pfcv.dev"
-Documentation = "https://docs.pfcv.dev/module-05"
+Documentation = "https://docs.pfcv.dev"
 Repository = "https://github.com/pfcv/pfcv"
 Issues = "https://github.com/pfcv/pfcv/issues"
 History = "https://github.com/pfcv/pfcv/blob/main/CHANGELOG.md"
 
 [project.scripts]
 pfcv-ir = "module_05_ir_normalization.cli:main"
+pfcv-contract = "module_06_contract_schema.contract_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "modules"}
-packages = ["module_05_ir_normalization"]
+packages = [
+    "module_05_ir_normalization",
+    "module_06_contract_schema"
+]
 
 [tool.setuptools.package-data]
 module_05_ir_normalization = ["py.typed"]
+module_06_contract_schema = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -78,9 +88,8 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=module_05_ir_normalization",
+    "--cov=modules",
     "--cov-report=term-missing",
-    "--cov-report=html",
     "--cov-report=xml",
 ]
 markers = [
@@ -126,5 +135,10 @@ ignore = [
 python_version = "3.9"
 warn_return_any = false
 warn_unused_configs = true
+ignore_missing_imports = true
 disallow_untyped_defs = false
 check_untyped_defs = false
+
+[tool.isort]
+profile = "black"
+line_length = 100
