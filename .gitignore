@@ -49,10 +49,13 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
-.pytest_cache/
 nosetests.xml
 test-results/
 junit/
+test_results.txt
+test_fail.txt
+test_results_unit.txt
+mypy_errors.txt
 
 # ============================================================================
 # Build Artifacts (Compiled Objects & Libraries)
@@ -80,6 +83,7 @@ examples/demo/*.exe
 # Verification Artifacts (Generated during runs)
 # ============================================================================
 artifacts/
+.pfcv/
 *.json
 !config/*.json
 !configs/*.json
@@ -95,6 +99,8 @@ verification_*.json
 # ============================================================================
 .vscode/
 .idea/
+.agent/
+.gemini/
 *.swp
 *.swo
 *~
