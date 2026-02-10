@@ -108,7 +108,7 @@ class DocumentationGenerator:
 
         lines.extend(["", "## Error Reference", ""])
 
-                for code in sorted(self.error_catalog.keys()):
+        for code in sorted(self.error_catalog.keys()):
             info = self.error_catalog[code]
             lines.extend(self._generate_error_section(code, info))
 

@@ -105,7 +105,7 @@ class IREntityFactory:
             header_origin=data.get('header_origin'),
             ingestion_timestamp=data.get('ingestion_timestamp')
         )
-                if 'entity_id' in data:
+        if 'entity_id' in data:
             meta.entity_id = data['entity_id']
         return meta
 

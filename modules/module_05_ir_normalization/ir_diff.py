@@ -422,7 +422,7 @@ class IRDiffComputer:
 # CHANGE SUMMARY
 # ============================================================================
 
-class Change
+class ChangeSummary:
     """Generates human-readable summaries of IR differences."""
 
     def __init__(self, diff: IRDiff):

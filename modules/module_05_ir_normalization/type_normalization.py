@@ -397,7 +397,8 @@ class TypeNormalizationPipeline:
             struct.add_field(field)
             current_offset = raw_field.byte_offset + raw_field.size_bytes
 
-                if raw_type.size_bytes > current_offset:
+        # Add trailing padding if needed
+        if raw_type.size_bytes > current_offset:
             trailing_size = raw_type.size_bytes - current_offset
             trailing_padding = PaddingEntity(
                 byte_offset=current_offset,
@@ -405,7 +406,6 @@ class TypeNormalizationPipeline:
                 reason="structure end padding"
             )
             struct.add_padding(trailing_padding)
-
         return struct
 
     def _normalize_union(self, raw_type: RawTypeData) -> UnionType:

@@ -82,7 +82,7 @@ class SchemaValidator:
     """Validates IR entities conform to schema."""
 
     def validate_entity(self, entity: IREntity) -> List[str]:
-                errors = []
+        errors = []
 
         # All entities must have ID and kind
         if not entity.entity_id:

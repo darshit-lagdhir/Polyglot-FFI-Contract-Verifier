@@ -233,7 +233,7 @@ class TestVersionRecommendation:
         diff = IRDiff()
         assert recommend_version_bump(diff) == VersionBump.NONE
 
-class TestChange
+class TestChange:
     """Test summary generation."""
     
     def test_summary_formatting(self):

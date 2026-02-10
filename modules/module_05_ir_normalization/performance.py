@@ -160,7 +160,7 @@ class OptimizedTypeDeduplicator:
         # Generate entity ID
         # Important: In a real system we'd determine the correct EntityKind
         # For optimization purposes, we use a generic TYPE_SYMBOL or similar if appropriate,
-                entity_id = IREntity.generate_id(EntityKind.TYPE_SYMBOL, struct_hash)
+        entity_id = IREntity.generate_id(EntityKind.TYPE_SYMBOL, struct_hash)
 
         # Cache both keys
         self.type_cache[cache_key] = entity_id
@@ -247,9 +247,9 @@ class OptimizedPaddingComputer:
         if self._has_no_padding(fields_data, total_size):
             return []
 
-                if HAS_NUMPY and len(fields_data) > 10:
+        # Use vectorized if available
+        if HAS_NUMPY and len(fields_data) > 10:
             return self._compute_padding_vectorized(fields_data, total_size)
-
         return self._compute_padding_sequential(fields_data, total_size)
 
     def _has_no_padding(

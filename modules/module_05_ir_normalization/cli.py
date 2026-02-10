@@ -525,7 +525,7 @@ For more information: https://pfcv.readthedocs.io/module_05/
 # ============================================================================
 
 def main():
-        parser = create_parser()
+    parser = create_parser()
     args = parser.parse_args()
 
     if not args.command:
