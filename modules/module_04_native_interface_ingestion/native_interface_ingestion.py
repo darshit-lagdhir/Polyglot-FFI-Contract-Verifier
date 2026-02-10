@@ -3312,7 +3312,8 @@ if LIBCLANG_AVAILABLE:
     bind('clang_getNumArgTypes', [CXType], ctypes.c_int)
     bind('clang_getArgType', [CXType, ctypes.c_uint], CXType)
 
-        bind('clang_IDE_getOffsetOfField', [CXIDE], ctypes.c_longlong)
+    # Field offset query ()
+    bind('clang_IDE_getOffsetOfField', [CXIDE], ctypes.c_longlong)
     bind('clang_Type_getNumFields', [CXType], ctypes.c_int)
     bind('clang_IDE_isBitField', [CXIDE], ctypes.c_uint)
     bind('clang_getFieldDeclBitWidth', [CXIDE], ctypes.c_int)

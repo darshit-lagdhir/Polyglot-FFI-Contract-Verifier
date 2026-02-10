@@ -14,36 +14,42 @@ and FFI verification.
 
 ---
 
+## : Foundational IR Entity Model ✅
 
 **Status:** Complete  
 **Focus:** Core data model and graph architecture.
 
 ---
 
+## : Complete Type System ✅
 
 **Status:** Complete  
 **Focus:** Explicit modeling of aggregate and complex types.
 
 ---
 
+## : Type Normalization Pipeline ✅
 
 **Status:** Complete  
 **Focus:** Canonicalization framework and transformation logic.
 
 ---
 
+## : Symbol Normalization ✅
 
 **Status:** Complete  
 **Focus:** Function signature resolution and calling convention analysis.
 
 ---
 
+## : Comprehensive IR Validation Framework ✅
 
 **Status:** Complete  
 **Focus:** Integrity checking and ABI consistency verification.
 
 ---
 
+## : IR Serialization and Persistence ✅
 
 **Status:** Complete  
 **Focus:** Durable storage and retrieval of IR artifacts.
