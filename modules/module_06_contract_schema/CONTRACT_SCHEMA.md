@@ -84,18 +84,75 @@ ownership, nullability, and ABI compatibility.
 - **Extensibility**: Easy to add new clause types
 
 ### Testing
-- 90 unit tests in `tests/unit/test_clause_types.py` (MEDIUM LEVEL)
+- 66 unit tests in `tests/unit/test_clause_types.py` (MEDIUM LEVEL)
+- All tests passing ✅
+
+---
+
+
+**Status:** Complete  
+**Focus:** Three-layer validation architecture for contract correctness.
+
+### Implemented Components
+
+#### Validation Framework (`contract_validation.py`)
+- **Validation Result Types**:
+  - `ValidationLayer`: Enum for layer identification
+  - `ValidationError`: Structured error representation with remediation
+  - `ValidationWarning`: Non-fatal validation issues
+  - `ValidationResult`: Per-layer validation results
+  - `CompleteValidationResult`: Aggregated multi-layer results
+
+- **Validation Context**:
+  - `ValidationContext`: IR artifact and configuration management
+  - Entity index building for O(1) lookups
+  - Strict mode and platform configuration
+
+- **Three-Layer Validators**:
+  - `SchemaValidator`: Layer 1 - Structural conformance
+    - Header validation (schema version, contract version)
+    - Clause structure validation
+    - Duplicate clause ID detection
+  
+  - `ReferentialValidator`: Layer 2 - IR entity resolution
+    - Subject reference resolution against IR
+    - Entity existence validation
+    - Parent-child relationship validation
+  
+  - `ConstraintValidator`: Layer 3 - Semantic correctness
+    - Parameter type and range validation
+    - Cross-clause consistency checking
+    - Nullability contradiction detection
+    - Ownership conflict detection
+
+- **Complete Validator**:
+  - `ContractValidator`: Orchestrates all three layers
+  - Fail-fast design (stops at first failing layer)
+  - Quick validation mode (schema only)
+  - Selective layer skipping for testing
+
+### Key Features
+- **Fail-Fast Architecture**: Schema → Referential → Constraint validation order
+- **Structured Errors**: Machine-readable codes + human-friendly messages
+- **Remediation Suggestions**: Actionable fix recommendations
+- **IR Integration**: Entity resolution against Module 05 IR artifacts
+- **Cross-Clause Consistency**: Detects contradictions between clauses
+- **Performance Ready**: Entity indexing for fast lookups
+- **Comprehensive Reporting**: Human-readable validation reports
+
+### Testing
+- 59 unit tests in `tests/unit/test_contract_validation.py` (HARD LEVEL)
 - Coverage:
-  - LayoutClause: 9 tests
-  - SizeClause: 9 tests
-  - AlignmentClause: 6 tests
-  - NullabilityClause: 6 tests
-  - OwnershipClause: 6 tests
-  - LifetimeClause: 6 tests
-  - RelationalClause: 8 tests
-  - CallingConventionClause: 5 tests
-  - ABICompatibilityClause: 6 tests
-  - Factory: 6 tests
+  - ValidationError: 5 tests
+  - ValidationWarning: 3 tests
+  - ValidationResult: 7 tests
+  - CompleteValidationResult: 7 tests
+  - ValidationContext: 6 tests
+  - SchemaValidator: 6 tests
+  - ReferentialValidator: 5 tests
+  - ConstraintValidator: 4 tests
+  - ContractValidator: 6 tests
+  - Edge Cases: 10 tests
 - All tests passing ✅
 
 ---
@@ -105,26 +162,29 @@ ownership, nullability, and ABI compatibility.
 ```
 modules/module_06_contract_schema/
 ├── contract_entities.py ✅
-└── clause_types.py ✅
+├── clause_types.py ✅
+└── contract_validation.py ✅
 
 tests/unit/
 ├── test_contract_entities.py ✅
-└── test_clause_types.py ✅
+├── test_clause_types.py ✅
+└── test_contract_validation.py ✅
 ```
 
 ---
 
 ## Progress Summary
 
-**Module Progress:** 2/15 components complete (13.3%)  
-**Total Tests:** 106 (all passing ✅)  
-**Total Lines:** ~1,400 lines of implementation code
+**Module Progress:** 3/15 components complete (20%)  
+**Total Tests:** 165 (all passing ✅)  
+**Total Lines:** ~2,100 lines of implementation code
 
 **Implemented:**
 - ✅ Entity Model - 40 tests
 - ✅ Clause Type System - 66 tests
+- ✅ Validation Framework - 59 tests
 
-**Next:** Contract Synthesis Engine
+**Next:** Contract Versioning & Evolution System
 
 ---
 
@@ -134,11 +194,13 @@ tests/unit/
 - Consumes `IRArtifact` from Module 05
 - References IR entities via `SubjectReference`
 - Uses IR type information for constraint generation
+- Entity index for fast IR lookups
 
 ### With Future Modules
 - Provides contract artifacts for binding generators
 - Enables runtime verification of FFI calls
 - Supports contract evolution tracking
+- Validation results feed into enforcement logic
 
 ---
 
