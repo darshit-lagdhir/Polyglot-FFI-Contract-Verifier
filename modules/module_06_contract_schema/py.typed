@@ -1,0 +1,5 @@
+# PEP 561 marker file
+# This empty file indicates that the module_06_contract_schema package
+# supports type checking with mypy and other PEP 484 compliant type checkers.
+# Users can enable type checking with:
+# mypy --check-untyped-defs user_code.py
