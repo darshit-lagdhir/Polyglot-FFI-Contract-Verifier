@@ -1380,22 +1380,22 @@ class TestPackageAssembler:
         assert assembler.output_dir == tmp_path
         assert assembler.package_name == "verification_tool"
 
-class TestValidationResult:
-    """Test validation result."""
+class TestGateValidationResult:
+    """Test validation gate result."""
     
-    def test_result_creation(self):
-        """Test creating validation result."""
-        from modules.module_03_build_process.build_process import ValidationResult
+    def test_gate_result_creation(self):
+        """Test creating validation gate result."""
+        from modules.module_03_build_process.build_process import GateValidationResult
         
-        result = ValidationResult(gate_name="Test Gate")
+        result = GateValidationResult(gate_name="Test Gate")
         assert result.gate_name == "Test Gate"
         assert result.passed is True
         
-    def test_add_error(self):
-        """Test adding error marks result as failed."""
-        from modules.module_03_build_process.build_process import ValidationResult
+    def test_gate_add_error(self):
+        """Test adding error marks gate result as failed."""
+        from modules.module_03_build_process.build_process import GateValidationResult
         
-        result = ValidationResult(gate_name="Test")
+        result = GateValidationResult(gate_name="Test")
         result.add_error("Something went wrong")
         
         assert result.passed is False
