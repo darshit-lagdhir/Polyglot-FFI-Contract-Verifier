@@ -154,17 +154,24 @@ class ContractSerializer:
                 'contract': contract_dict
             }
             
-            # Serialize to JSON
-            if self.pretty:
-                json_str = json.dumps(envelope, indent=2, sort_keys=True)
-            else:
-                json_str = json.dumps(envelope, sort_keys=True)
-            
             # Add integrity if requested
             if self.include_integrity:
-                json_str = self._add_integrity(json_str)
+                # Always compute checksum on compact version for stability
+                compact_str = json.dumps(envelope, sort_keys=True)
+                checksum = compute_checksum(compact_str)
+                
+                # Add to envelope and re-serialize
+                envelope['integrity'] = IntegrityInfo(checksum=checksum).to_dict()
+                
+                if self.pretty:
+                    return json.dumps(envelope, indent=2, sort_keys=True)
+                else:
+                    return json.dumps(envelope, sort_keys=True)
             
-            return json_str
+            if self.pretty:
+                return json.dumps(envelope, indent=2, sort_keys=True)
+            else:
+                return json.dumps(envelope, sort_keys=True)
         
         except Exception as e:
             raise SerializationError(f"Failed to serialize contract: {e}")
@@ -271,6 +278,7 @@ class ContractDeserializer:
         integrity = IntegrityInfo.from_dict(integrity_data)
         
         # Create copy without integrity block for checksum
+        # Always use compact representation for checksum verification
         data_copy = {k: v for k, v in data.items() if k != 'integrity'}
         content_without_integrity = json.dumps(data_copy, sort_keys=True)
         

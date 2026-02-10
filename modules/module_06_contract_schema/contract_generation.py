@@ -101,7 +101,7 @@ class NamingPatternMatcher:
         return any(lower_name.startswith(p) for p in self.config.borrow_prefixes)
 
     def find_buffer_length_pair(self, parameters: List[Dict[str, any]]) -> Optional[Tuple[str, str]]:
-                for i, param in enumerate(parameters):
+        for i, param in enumerate(parameters):
             name = param.get('name', '').lower()
             is_buf = any(b in name for b in self.config.buffer_names)
             is_ptr = param.get('is_pointer', False)

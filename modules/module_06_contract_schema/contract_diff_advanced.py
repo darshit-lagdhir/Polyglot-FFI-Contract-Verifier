@@ -126,6 +126,9 @@ class AdvancedDiffResult:
     def get_breaking_changes(self) -> List[DetailedClauseChange]:
         return [c for c in self.detailed_changes if c.impact == ChangeImpact.BREAKING]
 
+    def get_compatible_changes(self) -> List[DetailedClauseChange]:
+        return [c for c in self.detailed_changes if c.impact == ChangeImpact.COMPATIBLE]
+
     def has_breaking_changes(self) -> bool:
         return any(c.impact == ChangeImpact.BREAKING for c in self.detailed_changes)
 

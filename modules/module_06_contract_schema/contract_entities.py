@@ -87,11 +87,13 @@ class GenerationMetadata:
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
+        mode_val = self.generation_mode.value if hasattr(self.generation_mode, 'value') else self.generation_mode
+        
         return {
             'tool_name': self.tool_name,
             'tool_version': self.tool_version,
             'generation_timestamp': self.generation_timestamp,
-            'generation_mode': self.generation_mode.value,
+            'generation_mode': mode_val,
             'ir_artifact_hash': self.ir_artifact_hash,
             'generator_config': self.generator_config
         }
@@ -227,8 +229,10 @@ class SubjectReference:
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
+        kind_val = self.subject_kind.value if hasattr(self.subject_kind, 'value') else self.subject_kind
+        
         result = {
-            'subject_kind': self.subject_kind.value,
+            'subject_kind': kind_val,
             'entity_id': self.entity_id
         }
         
@@ -332,7 +336,7 @@ class ContractClause:
     severity: Severity = Severity.ERROR
     
     # Optional fields
-    analysis: Optional[str] = None
+    explanation: Optional[str] = None
     rationale: Optional[str] = None
     remediation: Optional[str] = None
     
@@ -369,15 +373,18 @@ class ContractClause:
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
+        clause_type_val = self.clause_type.value if hasattr(self.clause_type, 'value') else self.clause_type
+        severity_val = self.severity.value if hasattr(self.severity, 'value') else self.severity
+        
         result = {
             'clause_id': self.clause_id,
-            'clause_type': self.clause_type.value,
+            'clause_type': clause_type_val,
             'subject_reference': self.subject_reference.to_dict(),
             'constraint_parameters': [p.to_dict() for p in self.constraint_parameters],
-            'severity': self.severity.value
+            'severity': severity_val
         }
         
-        if self.analysis:
+        if self.explanation:
             result['explanation'] = self.explanation
         if self.rationale:
             result['rationale'] = self.rationale

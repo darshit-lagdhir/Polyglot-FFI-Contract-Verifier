@@ -33,7 +33,7 @@ class TypedClause(ABC):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None
+        explanation: Optional[str] = None
     ):
         self.clause_id = clause_id
         self.subject_reference = subject_reference
@@ -77,7 +77,7 @@ class LayoutClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         expected_size: int = 0,
         expected_alignment: int = 1,
         field_layout: Optional[Dict[str, int]] = None,
@@ -151,7 +151,7 @@ class SizeClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         size_kind: str = "exact",
         size_value: Optional[int] = None,
         size_reference: Optional[str] = None,
@@ -230,7 +230,7 @@ class AlignmentClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         required_alignment: int = 1,
         context: str = "parameter"
     ):
@@ -293,7 +293,7 @@ class NullabilityClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         nullable: bool = False,
         conditional: Optional[str] = None
     ):
@@ -348,7 +348,7 @@ class OwnershipClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         ownership_mode: str = "caller_owned",
         allocation_responsibility: str = "caller",
         deallocation_responsibility: str = "caller"
@@ -418,7 +418,7 @@ class LifetimeClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         lifetime_scope: str = "call",
         invalidation_event: Optional[str] = None
     ):
@@ -473,7 +473,7 @@ class RelationalClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         relation_kind: str = "buffer_length",
         primary_reference: str = "",
         secondary_reference: str = "",
@@ -544,7 +544,7 @@ class CallingConventionClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         required_convention: str = "cdecl",
         strict: bool = True
     ):
@@ -597,7 +597,7 @@ class ABICompatibilityClause(TypedClause):
         clause_id: str,
         subject_reference: SubjectReference,
         severity: Severity = Severity.ERROR,
-        analysis: Optional[str] = None,
+        explanation: Optional[str] = None,
         compatible_versions: Optional[List[str]] = None,
         compatibility_mode: str = "strict"
     ):

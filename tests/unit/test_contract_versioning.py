@@ -625,8 +625,7 @@ class TestContractDiffer:
             target_interface_id="test"
         )
         contract2 = ContractDocument(header=header2)
-        
-                param2 = ConstraintParameter("nullable", True, "boolean")
+        param2 = ConstraintParameter("nullable", True, "boolean")
         clause2 = ContractClause(
             "clause_1",
             ClauseType.NULLABILITY,
