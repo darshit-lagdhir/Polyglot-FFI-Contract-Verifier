@@ -275,8 +275,7 @@ class TestErrorHandling:
         
         orchestrator = IROrchestrator(config)
         
-        # Should handle gracefully (or raise specific exception)
-        with pytest.raises(Exception):
+                with pytest.raises(Exception):
             orchestrator.execute()
     
     def test_missing_input_file(self, temp_output_dir):
@@ -513,8 +512,7 @@ class TestCachingEdgeCases:
 
 @pytest.mark.integration
 class TestConfigDetailed:
-    """Detailed configuration validation."""
-    
+        
     def test_empty_input_path(self):
         """Test with non-existent input path."""
         with pytest.raises(Exception):

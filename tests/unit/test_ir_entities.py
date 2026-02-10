@@ -131,8 +131,7 @@ class TestMetadataEntity:
 # ============================================================================
 
 class TestInterfaceUnit:
-    """Test InterfaceUnit - top-level IR container."""
-    
+        
     def test_interface_unit_creation(self):
         """Test creating interface unit."""
         unit = InterfaceUnit(
@@ -568,8 +567,7 @@ class TestIntegration:
         assert func.return_entity.return_mechanism == ReturnMechanism.DIRECT
     
     def test_interface_unit_with_symbols(self):
-        """Test interface unit containing symbols."""
-        unit = InterfaceUnit(
+                unit = InterfaceUnit(
             target_architecture="x86_64", operating_system="linux", 
             pointer_width=64, endianness=Endianness.LITTLE, abi_mode="sysv",
             compiler_family="gcc", compiler_version="11.2.0"

@@ -133,7 +133,6 @@ import weakref
 # PHASE 1: EXECUTION CONTEXT & ORCHESTRATION
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Provides immutable execution context capturing all environmental details.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -328,10 +327,10 @@ class ExecutionContextBuilder:
         Returns:
             Immutable ExecutionContext object
         """
-        # STEP 1: Platform Detection
+        # Phase 1. Platform Detection
         self._detect_platform()
         
-        # STEP 2: Compiler and Tooling Resolution
+        # Phase 2: Compiler and Tooling Resolution
         self._resolve_compiler(
             compiler_path,
             include_paths or [],
@@ -339,13 +338,13 @@ class ExecutionContextBuilder:
             compiler_flags or []
         )
         
-        # STEP 3: Native Library Validation
+        # Phase 3. Native Library Validation
         self._validate_native_library(library_file, header_file)
         
-        # STEP 4: Target Language Runtime Resolution
+        # Phase 4. Target Language Runtime Resolution
         self._resolve_target_runtime(python_interpreter, ffi_mechanism)
         
-        # STEP 5: Verification Config
+        # Phase 5: Verification Config
         self._configure_verification(
             library_file,
             random_seed,
@@ -356,17 +355,17 @@ class ExecutionContextBuilder:
             verbosity
         )
         
-        # STEP 6: Provenance Metadata Generation
+        # Phase 6. Provenance Metadata Generation
         self._generate_provenance()
         
-        # STEP 7: Artifact Path Resolution
+        # Phase 7. Artifact Path Resolution
         self._resolve_artifact_paths(working_directory)
         
-        # STEP 8: Immutable Context Object Construction
+        # Phase 8. Immutable Context Object Construction
         return self._construct_context()
     
     def _detect_platform(self) -> None:
-        """STEP 1: Detect platform identification information."""
+        """Phase 1. Detect platform identification information."""
         os_name = platform.system()
         os_version = platform.version()
         architecture = platform.machine()
@@ -399,7 +398,7 @@ class ExecutionContextBuilder:
         preprocessor_macros: Dict[str, str],
         compiler_flags: List[str]
     ) -> None:
-        """STEP 2: Resolve compiler and tooling information."""
+        """Phase 2: Resolve compiler and tooling information."""
         # Detect or validate compiler
         if compiler_path is None:
             # Auto-detect MSVC on Windows
@@ -497,7 +496,7 @@ class ExecutionContextBuilder:
             raise RuntimeError(f"Failed to query compiler version: {e}")
     
     def _validate_native_library(self, library_file: str, header_file: str) -> None:
-        """STEP 3: Validate native library and compute hash."""
+        """Phase 3. Validate native library and compute hash."""
         library_path = os.path.abspath(library_file)
         header_path = os.path.abspath(header_file)
         
@@ -541,7 +540,7 @@ class ExecutionContextBuilder:
         python_interpreter: Optional[str],
         ffi_mechanism: str
     ) -> None:
-        """STEP 4: Resolve target language runtime information."""
+        """Phase 4. Resolve target language runtime information."""
         # Detect or validate Python interpreter
         if python_interpreter is None:
             python_interpreter = sys.executable
@@ -568,8 +567,7 @@ class ExecutionContextBuilder:
         if ffi_mechanism not in ["ctypes", "cffi"]:
             raise ValueError(f"Unsupported FFI mechanism: {ffi_mechanism}. Use 'ctypes' or 'cffi'.")
         
-        # Validate FFI module is available
-        try:
+                try:
             result = subprocess.run(
                 [python_interpreter, "-c", f"import {ffi_mechanism}"],
                 capture_output=True,
@@ -598,7 +596,7 @@ class ExecutionContextBuilder:
         enable_crash_detection: bool,
         verbosity: str
     ) -> None:
-        """STEP 5: Configure verification parameters."""
+        """Phase 5: Configure verification parameters."""
         # Deterministic seed generation if not provided
         if random_seed is None:
             # Hash library path and filename for a stable seed per library
@@ -653,7 +651,7 @@ class ExecutionContextBuilder:
         return seed
     
     def _generate_provenance(self) -> None:
-        """STEP 6: Generate provenance metadata."""
+        """Phase 6. Generate provenance metadata."""
         # Generate UUID v4 for execution identifier
         execution_id = str(uuid.uuid4())
         
@@ -668,7 +666,7 @@ class ExecutionContextBuilder:
         )
     
     def _resolve_artifact_paths(self, working_directory: Optional[str]) -> None:
-        """STEP 7: Resolve artifact paths and create directories."""
+        """Phase 7. Resolve artifact paths and create directories."""
         # Use current directory if not specified
         if working_directory is None:
             working_directory = os.getcwd()
@@ -706,7 +704,7 @@ class ExecutionContextBuilder:
         )
     
     def _construct_context(self) -> ExecutionContext:
-        """STEP 8: Construct immutable ExecutionContext object."""
+        """Phase 8. Construct immutable ExecutionContext object."""
         # Verify all components are initialized
         assert self._platform is not None
         assert self._compiler is not None
@@ -844,8 +842,7 @@ class Pipeline:
         normalizer = IRNormalizer()
         ir_artifact = normalizer.normalize(context)
         
-        # Ensure path is available in context
-        ir_path = context.artifacts.intermediate_representation_path
+                ir_path = context.artifacts.intermediate_representation_path
         normalizer.save_artifact(ir_artifact, ir_path)
         
         # : Contract Synthesis
@@ -983,8 +980,7 @@ class Pipeline:
                 
                 results[stage.value] = {"error": str(e), "error_type": e.error_type.value}
                 
-                # Halt pipeline on first failure
-                raise
+                                raise
         
         return results
     
@@ -1191,15 +1187,13 @@ class CLIOrchestrator:
                     print(f"  Report: {context.artifacts.report_path}")
                 return 0
             else:
-                orchestrator.execute_stage(PipelineStage.INGEST) # wait, usage of PipelineStage.INGEST
-                # Correcting for case consistency
+                orchestrator.execute_stage(PipelineStage.INGEST)                 # Correcting for case consistency
                 orchestrator.execute_stage(PipelineStage.INGEST)
                 if verbosity != "quiet":
                     print(f"✓ Native interface ingestion completed")
                 return 0
         except Exception as e:
-            # Reraise for run() to catch
-            raise e
+                        raise e
 
     def _handle_stage_command(self, args, verbosity: str) -> int:
         working_dir = args.working_dir or os.getcwd()
@@ -1272,8 +1266,7 @@ _configure_libclang()
 try:
     import clang.cindex as clang
 except ImportError:
-    # We allow import error here, but classes will fail if instantiated
-    clang = None
+        clang = None
 
 # ============================================================================
 # INTERNAL HELPERS
@@ -1504,8 +1497,7 @@ class CompilerFrontend:
         return f"clang {' '.join(args)} {header_path}"
 
 class NativeInterfaceAnalyzer:
-    """Main orchestrator for native interface ingestion."""
-
+    
     def __init__(self):
         self.frontend = CompilerFrontend()
         self.abi_extractor = ABIExtractor()
@@ -1773,10 +1765,8 @@ class TypeResolver:
             pointee = type_info.get("pointee")
             if not pointee:
                 # Fallback for void* or incomplete pointers if pointee missing
-                # But mostly this should raise error or handle void*
-                # Assuming generic void* if missing or check if it's handled upstream
-                # For safety, let's raise if critical, but if it happens in void* case:
-                # In our extractor, pointer always has pointee.
+                                # Assuming generic void* if missing or check if it's handled upstream
+                                # In our extractor, pointer always has pointee.
                 raise ValueError("Malformed pointer: missing pointee")
                 
             pointee_id = self.resolve_type(pointee, type_registry)
@@ -2043,7 +2033,6 @@ class IRNormalizer:
 # PHASE 4: CONTRACT SYNTHESIS
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Derivation of semantic correctness constraints from structural IR.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2129,8 +2118,7 @@ class ConstraintIDGenerator:
     def _normalize(self, base_id: str) -> str:
         """Ensure IDs are valid identifiers and deduplicated locally if needed."""
         # In a real system we might append a hash of the justification if multiple
-        # identical constraints exist, but for our v1.0, semantic names are better.
-        return base_id.lower().replace(" ", "_").replace("*", "ptr")
+                return base_id.lower().replace(" ", "_").replace("*", "ptr")
 
 class ConservativeDefaultPolicy:
     """
@@ -2220,8 +2208,7 @@ class NamingConventionAnalyzer:
             if s_name == f"{p_name}{indicator}" or s_name == indicator:
                 return True
                 
-        # 2. Heuristic for common pairs
-        common_pairs = {
+                common_pairs = {
             "buffer": ["buffer_size", "buf_len", "size"],
             "data": ["data_size", "datalen", "len"],
             "items": ["count", "num_items"],
@@ -2302,8 +2289,7 @@ class ConstraintDeriver:
         mutability = self.defaults.default_mutability(is_const)
         mut_just = "Const qualifier prohibits modification" if is_const else "No const qualifier; assume mutable"
 
-        # Construct constraints list
-        constraints = []
+                constraints = []
         if is_pointer:
             constraints.append({
                 "constraint_type": "valid_pointer",
@@ -2330,8 +2316,7 @@ class ConstraintDeriver:
         }
 
     def derive_buffer_constraints(self, func_name: str, parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Rule 4: Detect buffer-length pairs."""
-        constraints = []
+                constraints = []
         
         for i, p1 in enumerate(parameters):
             p1_name = p1.get("name")
@@ -2409,8 +2394,7 @@ class ConstraintDeriver:
         }
 
     def derive_struct_field_contract(self, struct_name: str, field: Dict[str, Any]) -> Dict[str, Any]:
-        """Rule 5: Struct field constraints."""
-        name = field.get("name")
+                name = field.get("name")
         type_id = field.get("type_id", "")
         
         constraints = []
@@ -2471,8 +2455,7 @@ class ContractSynthesizer:
         # 2. Synthesize Struct Contracts
         struct_contracts = self._synthesize_structs(ir.get("structs", []), type_registry)
         
-        # 3. Apply Global Constraints (Rules 7, 8, 32/64 bit consistency)
-        global_constraints = self._generate_global_constraints(context)
+                global_constraints = self._generate_global_constraints(context)
         
         # 4. Compile Metadata
         metadata = {
@@ -2841,8 +2824,7 @@ class ContractSchemaValidator:
         }
 
     def validate_against_schema(self, contract: Dict[str, Any], schema_version: str) -> List[str]:
-        """Validates an in-memory contract against a specific version (placeholder for deep validation)."""
-        # For now, we reuse the same logic
+                # For now, we reuse the same logic
         errors = []
         for key in self.REQUIRED_ROOT_KEYS:
             if key not in contract:
@@ -2855,8 +2837,7 @@ class CompatibilityReportGenerator:
     """
     
     def generate_report(self, diff: Dict[str, Any]) -> str:
-        """Generates the full plain-text report."""
-        summary = diff.get("summary", {})
+                summary = diff.get("summary", {})
         changes = diff.get("changes", [])
         schema = diff.get("schema_compatibility", {})
         
@@ -2966,7 +2947,7 @@ class ContractComparator:
         """
         Executes the 8-step comparison algorithm.
         """
-        # STEP 1: Load and Validate
+        # Phase 1. Load and Validate
         baseline_res = self.validator.validate_contract(baseline_path)
         current_res = self.validator.validate_contract(current_path)
         
@@ -2976,7 +2957,7 @@ class ContractComparator:
         baseline = baseline_res["contract"] or {}
         current = current_res["contract"]
         
-        # STEP 2: Check Schema Compatibility
+        # Phase 2: Check Schema Compatibility
         b_version = baseline.get("provenance", {}).get("schema_version", "0.0.0")
         c_version = current.get("provenance", {}).get("schema_version", self.version_manager.get_current_schema_version())
         
@@ -2990,22 +2971,22 @@ class ContractComparator:
         changes = []
         
         if baseline:
-            # STEP 4: Detect Function Changes
+            # Phase 4. Detect Function Changes
             changes.extend(self._detect_function_changes(baseline.get("function_contracts", []), current.get("function_contracts", [])))
             
-            # STEP 5: Detect Struct Changes
+            # Phase 5: Detect Struct Changes
             changes.extend(self._detect_struct_changes(baseline.get("struct_contracts", []), current.get("struct_contracts", [])))
             
-            # STEP 6: Detect Type Changes
+            # Phase 6. Detect Type Changes
             changes.extend(self._detect_type_changes(baseline.get("type_registry", {}), current.get("type_registry", {})))
             
-            # STEP 7: Detect Global Changes
+            # Phase 7. Detect Global Changes
             changes.extend(self._detect_global_changes(baseline.get("global_constraints", []), current.get("global_constraints", [])))
         else:
             # Treating as initial contract if baseline is empty
             pass
 
-        # STEP 8: Generate Diff Artifact
+        # Phase 8. Generate Diff Artifact
         summary = self._generate_summary(changes)
         
         diff = {
@@ -3451,8 +3432,7 @@ class ConstraintEnforcementCodegen:
     """
     
     def generate_constraint_check(self, constraint: Dict[str, Any]) -> str:
-        """Dispatches to specific generator based on constraint type."""
-        c_type = constraint.get("constraint_type")
+                c_type = constraint.get("constraint_type")
         
         if c_type == "non_null":
             return self._generate_null_check(constraint)
@@ -3465,8 +3445,7 @@ class ConstraintEnforcementCodegen:
         elif c_type == "error_code":
             return self._generate_error_code_check(constraint)
             
-        return f"    # Skip: Unsupported constraint type '{c_type}'"
-
+        return f"    
     def _generate_null_check(self, c: Dict[str, Any]) -> str:
         target = c["target"].split(":")[-1]
         cid = c["constraint_id"]
@@ -3563,8 +3542,7 @@ class FunctionWrapperGenerator:
         self.codegen = ConstraintEnforcementCodegen()
         
     def generate_wrapper_module(self, library_name: str, library_path: str, functions: List[Dict[str, Any]]) -> str:
-        """Generates the main adapter module."""
-        lines = [
+                lines = [
             f'"""',
             f'Generated FFI adapter for {library_name}.',
             f'Auto-created by Polyglot FFI Contract Verifier.',
@@ -3718,8 +3696,7 @@ class AdapterGenerator:
         with open(os.path.join(output_dir, f"{lib_name}_structs.py"), "w") as f:
             f.write(struct_code)
             
-        # 4. Generate Main Adapter
-        adapter_code = self.func_gen.generate_wrapper_module(lib_name, lib_path, contract.get("function_contracts", []))
+                adapter_code = self.func_gen.generate_wrapper_module(lib_name, lib_path, contract.get("function_contracts", []))
         with open(os.path.join(output_dir, f"{lib_name}_adapter.py"), "w") as f:
             f.write(adapter_code)
             
@@ -3774,7 +3751,6 @@ class AdapterGenerator:
 # PHASE 7: TEST PLAN GENERATION
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Systematic derivation of test cases achieving 100% constraint coverage.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -3954,8 +3930,7 @@ class NegativeTestGenerator:
                 "value": self.input_gen.generate_value(p["type_id"], ir, "typical")
             }
             
-        # Corrupt the target input based on constraint type
-        exc_type = self.EXCEPTION_MAP.get(c_type, "FFIContractViolation")
+                exc_type = self.EXCEPTION_MAP.get(c_type, "FFIContractViolation")
         
         if c_type == "non_null":
             if target in inputs:
@@ -4082,8 +4057,7 @@ class CoverageAnalyzer:
         }
 
     def _extract_all_constraints(self, contract: Dict[str, Any]) -> List[str]:
-        """Extracts every unique constraint ID from the contract."""
-        ids = set()
+                ids = set()
         for f in contract.get("function_contracts", []):
             for pc in f.get("pre_conditions", []):
                  ids.add(pc["constraint_id"])
@@ -4223,8 +4197,7 @@ class InputInstantiator:
             pass
 
     def instantiate(self, spec: Dict[str, Any]) -> Any:
-        """Main entry point for instantiation."""
-        t_id = spec["type"]
+                t_id = spec["type"]
         val = spec.get("value")
         
         if val is None:
@@ -4305,8 +4278,7 @@ class OutcomeValidator:
                 if exp_exc and exp_exc != act_exc:
                     return False, f"Expected exception {exp_exc}, but got {act_exc}"
                 
-                # Validate constraint ID
-                exp_cid = expected.get("constraint_id")
+                                exp_cid = expected.get("constraint_id")
                 act_cid = actual.get("constraint_id")
                 if exp_cid and exp_cid != act_cid:
                     return False, f"Expected violation of {exp_cid}, but got {act_cid}"
@@ -4755,7 +4727,6 @@ if __name__ == "__main__":
 # PHASE 10: DIAGNOSTICS MAPPING
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# Automatic categorization and root cause analysis of failures.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -4888,14 +4859,11 @@ class FailureClassifier:
             failure_mode = "missing_enforcement"
             category = "missing_validation"
 
-        # Determine Constraint
-        constraint_id = "unknown"
+                constraint_id = "unknown"
         constraints_exercised = test_result.get("constraints_exercised", [])
         if constraints_exercised:
-            constraint_id = constraints_exercised[0] # Primary constraint
-
-        # Lookup constraint type in contract
-        constraint_type = "unknown"
+            constraint_id = constraints_exercised[0] 
+                constraint_type = "unknown"
         if contract and "function_contracts" in contract:
              # Assuming standard contract structure here
              for fc in contract["function_contracts"]:
@@ -5705,7 +5673,7 @@ class HtmlReportGenerator:
     def _generate_footer(self, context: Any) -> str:
         return f"""
 <footer>
-    <p>Generated by Polyglot FFI Contract Verifier v{context.provenance.tool_version}</p>
+    <p>created by Polyglot FFI Contract Verifier v{context.provenance.tool_version}</p>
     <p>Report ID: {context.provenance.execution_id}</p>
 </footer>
 """
@@ -5762,8 +5730,7 @@ class MarkdownReportGenerator:
         ]
 
         if violations:
-            md.append("## Detailed Violations")
-            md.append("")
+            md.append("            md.append("")
             # Sort critical first
             sorted_violations = sorted(violations, key=lambda x: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(x.get("severity"), 9))
             
@@ -5787,14 +5754,13 @@ class MarkdownReportGenerator:
                     md.append(f"- {step}")
                 md.append("")
 
-        md.append("## Technical Details")
-        md.append("")
+        md.append("        md.append("")
         md.append(f"- **Execution ID:** `{context.provenance.execution_id}`")
         md.append(f"- **Platform:** {context.platform.os_name} {context.platform.os_version}")
         md.append(f"- **Tool Version:** {context.provenance.tool_version}")
         md.append("")
         md.append("---")
-        md.append(f"Generated by Polyglot FFI Contract Verifier")
+        md.append(f"created by Polyglot FFI Contract Verifier")
 
         return "\n".join(md)
 
@@ -6013,8 +5979,7 @@ class ReportGenerator:
             contract_path = os.path.join(artifacts_dir, "contract.json")
             
         if not os.path.exists(contract_path):
-             # Try to find any json file in artifacts that looks like a contract if strict path fails
-            raise FileNotFoundError(f"Contract missing: {contract_path}. Run 'synthesize' first.")
+                         raise FileNotFoundError(f"Contract missing: {contract_path}. Run 'synthesize' first.")
             
         with open(contract_path, 'r', encoding='utf-8') as f:
             contract = json.load(f)
@@ -6051,7 +6016,6 @@ if __name__ == '__main__':
 # END OF SYSTEM ARCHITECTURE
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# This consolidated file contains the complete Polyglot FFI Contract Verifier
 # system. All 12 phases are included and fully functional.
 #
 # For the modular package structure (for development), see:

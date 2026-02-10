@@ -90,24 +90,19 @@ class BuildError(Exception):
     pass
 
 class BuildConfigError(BuildError):
-    """Raised when build configuration is invalid or incomplete."""
-    pass
+        pass
 
 class BuildPreconditionError(BuildError):
-    """Raised when stage preconditions are not satisfied."""
-    pass
+        pass
 
 class BuildPostconditionError(BuildError):
-    """Raised when stage postconditions are violated."""
-    pass
+        pass
 
 class BuildDeterminismError(BuildError):
-    """Raised when build produces nondeterministic outputs."""
-    pass
+        pass
 
 class BuildIsolationError(BuildError):
-    """Raised when build domain isolation is violated."""
-    pass
+        pass
 
 # ============================================================================
 # BUILD PHILOSOPHY ENFORCER
@@ -188,8 +183,7 @@ class EnvironmentDescriptor:
     outputs. It serves as both configuration input and provenance output.
     """
     
-    # Toolchain information
-    compiler_name: str
+        compiler_name: str
     compiler_version: str
     compiler_executable: Path
     linker_executable: Path
@@ -279,8 +273,7 @@ class EnvironmentDescriptor:
         Raises:
             BuildConfigError: If descriptor is invalid
         """
-        # Validate toolchain executables exist
-        if not self.compiler_executable.exists():
+                if not self.compiler_executable.exists():
             raise BuildConfigError(
                 f"Compiler executable does not exist: {self.compiler_executable}"
             )
@@ -461,8 +454,7 @@ class ToolchainDescriptor:
     behavior, code generation, and build determinism.
     """
     
-    # Toolchain identity
-    compiler_name: str
+        compiler_name: str
     compiler_version: str
     compiler_full_version: str
     compiler_executable: Path
@@ -495,8 +487,7 @@ class ToolchainDescriptor:
     descriptor_version: str = "1.0.0"
     
     def to_json(self) -> str:
-        """Serialize toolchain descriptor to JSON."""
-        data = {
+                data = {
             'descriptor_version': self.descriptor_version,
             'detection_timestamp': self.detection_timestamp,
             'compiler': {
@@ -533,8 +524,7 @@ class ToolchainDescriptor:
     
     @classmethod
     def from_json(cls, json_str: str) -> 'ToolchainDescriptor':
-        """Deserialize toolchain descriptor from JSON."""
-        data = json.loads(json_str)
+                data = json.loads(json_str)
         return cls(
             compiler_name=data['compiler']['name'],
             compiler_version=data['compiler']['version'],
@@ -1138,8 +1128,7 @@ class SourceValidationStage(BuildStageInterface):
         
         validation_results = context['validation_results']
         
-        # Fail if critical errors found
-        if validation_results['validation_errors']:
+                if validation_results['validation_errors']:
             error_summary = '\n'.join(
                 f"  - {err['file']}: {err['error']}"
                 for err in validation_results['validation_errors'][:5]
@@ -1905,8 +1894,7 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
 
         # Verify at least some sources found - Disabled for flexible testing/empty projects
         # if len(context['source_metadata']) == 0:
-        #    raise BuildPostconditionError(
-        #        "Stage 1 found no processable source files"
+                #        "Stage 1 found no processable source files"
         #    )
     
     def _find_handler(self, file_path: Path) -> Optional[SourceHandler]:
@@ -2295,8 +2283,7 @@ class EnhancedDependencyResolutionStage(BuildStageInterface):
                 "Stage 3 must produce 'dependencies'"
             )
         
-        # Fail if installation failed
-        if not context['dependencies']['install_success']:
+                if not context['dependencies']['install_success']:
             raise BuildPostconditionError(
                 "Dependency installation failed"
             )
@@ -2460,8 +2447,7 @@ class ToolchainValidator:
         return self.capabilities
     
     def _load_cached_validation(self) -> Optional[ToolchainCapabilities]:
-        """Load cached validation if available and valid."""
-        cache_key = self._get_cache_key()
+                cache_key = self._get_cache_key()
         cache_file = self.cache_dir / f"{cache_key}.json"
         
         if not cache_file.exists():
@@ -2507,8 +2493,7 @@ class ToolchainValidator:
             json.dump(data, f, indent=2)
     
     def _get_cache_key(self) -> str:
-        """Generate cache key for this toolchain configuration."""
-        key_parts = [
+                key_parts = [
             self.toolchain.compiler_name,
             self.toolchain.compiler_version,
             self.toolchain.target_architecture,
@@ -2663,8 +2648,7 @@ int main() {
             self.capabilities.abi_compatible = False
     
     def _validate_determinism(self):
-        """Validate that toolchain produces deterministic outputs."""
-        print("  Validating determinism...")
+                print("  Validating determinism...")
         
         test_program = r'''
 #include <stdio.h>
@@ -2701,8 +2685,7 @@ int main() {
             self.capabilities.deterministic_output = False
     
     def _run_smoke_test(self):
-        """Run basic smoke test to verify toolchain works."""
-        print("  Running smoke test...")
+                print("  Running smoke test...")
         
         test_program = r'''
 #include <stdio.h>
@@ -2921,8 +2904,7 @@ class ABIConfig:
     # Name mangling
     name_mangling_scheme: str = "platform_default"  # "msvc", "itanium"
     
-    # Compiler flags per toolchain
-    compiler_flags: Dict[str, List[str]] = field(default_factory=dict)
+        compiler_flags: Dict[str, List[str]] = field(default_factory=dict)
     
     def get_flags_for_compiler(self, compiler_name: str) -> List[str]:
         """Get compiler-specific flags."""
@@ -3628,8 +3610,7 @@ class NativeCompiler:
             if set(cached_metadata.flags_used) != set(unit.compiler_flags):
                 return True
                 
-            # Check dependencies (headers) - for simplicity in this prompt, 
-                        # or we re-hash some key dependencies here.
+                                    # or we re-hash some key dependencies here.
             
             return False
             
@@ -3654,8 +3635,7 @@ class NativeCompilationStage(BuildStageInterface):
         self.build_mode = build_mode
         
     def check_preconditions(self, context: Dict[str, Any]) -> None:
-        """Verify that required inputs are available."""
-        if 'source_metadata' not in context and 'sources_by_language' not in context:
+                if 'source_metadata' not in context and 'sources_by_language' not in context:
              raise BuildPreconditionError(
                 "Stage 4 requires 'source_metadata' or 'sources_by_language'"
             )
@@ -3850,8 +3830,7 @@ class ObjectFileValidator:
             return False, f"Failed to read object file: {e}"
             
     def _validate_symbols(self, object_file: Path) -> Tuple[bool, str]:
-        """Validate that object file contains symbols."""
-        try:
+                try:
             symbols = self._extract_symbols(object_file)
             
             if not symbols:
@@ -3926,8 +3905,7 @@ class ObjectFileValidator:
         except subprocess.TimeoutExpired:
             return []
         except FileNotFoundError:
-            # nm not available
-            return []
+                        return []
         except Exception:
             return []
             
@@ -4082,13 +4060,11 @@ class NativeValidationStage(BuildStageInterface):
         validation_data = context['native_validation']
         
         if not validation_data.get('all_valid', False):
-            # Generate detailed error report
-            results = validation_data.get('validation_results', [])
+                        results = validation_data.get('validation_results', [])
             failed = [r for r in results if not r.get('overall_valid', False)]
             
             error_lines = ["Object file validation failed:"]
-            for failed_result in failed[:3]:  # Show first 3 failures
-                error_lines.append(f"  - {failed_result['object_file']}")
+            for failed_result in failed[:3]:                  error_lines.append(f"  - {failed_result['object_file']}")
                 for issue in failed_result.get('issues', []):
                     error_lines.append(f"    * {issue}")
                     
@@ -4416,8 +4392,7 @@ class LinkingStage(BuildStageInterface):
         self.enable_lto = enable_lto
         
     def check_preconditions(self, context: Dict[str, Any]) -> None:
-        """Verify required inputs available."""
-        if 'native_validation' not in context:
+                if 'native_validation' not in context:
             raise BuildPreconditionError(
                 "Stage 5 requires 'native_validation' from Stage 4.5"
             )
@@ -4759,8 +4734,7 @@ class AdapterGenerationStage(BuildStageInterface):
         self.contract_dir = contract_dir
         
     def check_preconditions(self, context: Dict[str, Any]) -> None:
-        """Verify required inputs available."""
-        if 'toolchain' not in context:
+                if 'toolchain' not in context:
             raise BuildPreconditionError(
                 "Stage 6 requires 'toolchain' for adapter compilation"
             )
@@ -4974,7 +4948,7 @@ class PackageAssembler:
         init_content = '''"""
 Polyglot FFI Contract Verifier
 
-Generated by Module 03: Build Process & Toolchain Integration
+created by Module 03: Build Process & Toolchain Integration
 """
 
 version = "1.0.0"
@@ -4994,8 +4968,7 @@ import argparse
 from pathlib import Path
 
 def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
+        parser = argparse.ArgumentParser(
         description='Polyglot FFI Contract Verifier'
     )
     
@@ -5027,9 +5000,7 @@ if __name__ == '__main__':
 '''
         (package_dir / 'cli.py').write_text(cli_content)
         
-        # Generate __main__.py for python -m invocation
-        main_content = '''"""Main entry point for python -m verification_tool."""
-from .cli import main
+                main_content = '''from .cli import main
 import sys
 
 if __name__ == '__main__':
@@ -5072,8 +5043,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
         self.output_dir = output_dir
         
     def check_preconditions(self, context: Dict[str, Any]) -> None:
-        """Verify all required components available."""
-        if 'linking' not in context:
+                if 'linking' not in context:
             raise BuildPreconditionError(
                 "Stage 7 requires 'linking' from Stage 5"
             )
@@ -5170,8 +5140,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
         adapter_metadata = context.get('adapter_generation', {}).get('adapter_metadata', [])
         manifest.adapters = adapter_metadata
         
-        # Add toolchain info
-        if 'toolchain' in context:
+                if 'toolchain' in context:
             toolchain = context['toolchain']
             manifest.toolchain_info = {
                 'compiler': toolchain.compiler_name,
@@ -5207,8 +5176,7 @@ class GateValidationResult:
         self.successes.append(message)
         
     def add_error(self, message: str):
-        """Add error message and mark as failed."""
-        self.errors.append(message)
+                self.errors.append(message)
         self.passed = False
         
     def add_warning(self, message: str):
@@ -5965,8 +5933,7 @@ class CacheManager:
                     entry_time = entry_time.replace(tzinfo=datetime.timezone.utc)
                 age = now - entry_time
             except ValueError:
-                # Fallback implementation if parsing fails
-                age = datetime.timedelta(days=0)
+                                age = datetime.timedelta(days=0)
             
             if age.days < 1:
                 stats.entries_less_than_1_day += 1
@@ -6431,8 +6398,7 @@ class BuildOptimizationAdvisor:
         
         # Poor parallelization
         if profile.parallel_compilation_speedup < 2.0 and profile.total_compilation_time > 5.0:
-             # Only complain about parallelism if build is slow enough to matter
-            recommendations.append(
+                         recommendations.append(
                 f"Poor parallel speedup ({profile.parallel_compilation_speedup:.1f}x). Consider:\n"
                 "  - Reducing dependencies between files\n"
                 "  - Balancing compilation unit sizes"
@@ -6984,8 +6950,7 @@ class CompleteBuildPipeline:
         # Stage 3: Dependency Resolution
         if self.config.enable_dependency_resolution:
             # Requires implemented EnhancedDependencyResolutionStage
-            # For now, we'll assume it exists or use a mock if not fully implemented in prev prompts
-            # In real complete code this would be the actual class
+                        # In real complete code this would be the actual class
             pass 
         
         # Stage 4: Native Compilation
@@ -7056,8 +7021,7 @@ class CompleteBuildPipeline:
                 context = stage.execute(context)
             
             # Build completion validation
-                        # If not in context, we might skip or fail. 
-            # For this integration implementation, we'll do a basic check
+                                    # For this integration implementation, we'll do a basic check
             
             # Generate performance profile
             total_time = time.time() - start_time

@@ -180,8 +180,7 @@ class InterfaceUnit(IREntity):
     normalization_version: str = "1.0.0"
     creation_timestamp: Optional[str] = None
 
-    # Contained entities
-    symbols: List['SymbolEntity'] = field(default_factory=list)
+        symbols: List['SymbolEntity'] = field(default_factory=list)
     types: List['TypeEntity'] = field(default_factory=list)
 
     # Defaults for base fields

@@ -121,8 +121,7 @@ class TestStressScenarios:
                     library_path=library,
                     verbose=False
                 )
-                # If it doesn't raise, that's also acceptable (graceful handling)
-                print(f"{description}: Handled gracefully")
+                                print(f"{description}: Handled gracefully")
             except Exception as e:
                 # Expected - should have clear error message
                 assert str(e), f"{description}: Error message should not be empty"

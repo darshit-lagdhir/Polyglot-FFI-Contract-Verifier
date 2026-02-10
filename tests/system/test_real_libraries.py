@@ -60,8 +60,7 @@ class TestRealLibraries:
                 print(f"INFO: libclang not available: {e}")
                 return
             else:
-                # Log error but don't fail (system test)
-                print(f"System test error: {e}")
+                                print(f"System test error: {e}")
     
     def test_multiple_libraries_sequential(self, temp_dir):
         """System test: Multiple libraries sequentially."""

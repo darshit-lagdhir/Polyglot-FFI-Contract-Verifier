@@ -18,8 +18,7 @@ class MyPlugin(PipelinePlugin):
         self.pipeline = pipeline
         
     def register_rules(self, registry):
-        """Register custom constraint rules."""
-        pass
+                pass
         
     def get_hooks(self):
         """Return a dict of hooks."""

@@ -160,8 +160,7 @@ class OptimizedTypeDeduplicator:
         # Generate entity ID
         # Important: In a real system we'd determine the correct EntityKind
         # For optimization purposes, we use a generic TYPE_SYMBOL or similar if appropriate,
-        # but here we'll follow the pattern or the prompt's simplify logic.
-        entity_id = IREntity.generate_id(EntityKind.TYPE_SYMBOL, struct_hash)
+                entity_id = IREntity.generate_id(EntityKind.TYPE_SYMBOL, struct_hash)
 
         # Cache both keys
         self.type_cache[cache_key] = entity_id
@@ -248,8 +247,7 @@ class OptimizedPaddingComputer:
         if self._has_no_padding(fields_data, total_size):
             return []
 
-        # Use vectorized computation if available
-        if HAS_NUMPY and len(fields_data) > 10:
+                if HAS_NUMPY and len(fields_data) > 10:
             return self._compute_padding_vectorized(fields_data, total_size)
 
         return self._compute_padding_sequential(fields_data, total_size)
@@ -295,8 +293,7 @@ class OptimizedPaddingComputer:
             field_size = field.get('type', {}).get('size', 0)
             current_offset = field_offset + field_size
 
-        # Trailing padding
-        if total_size > current_offset:
+                if total_size > current_offset:
             trailing_size = total_size - current_offset
             padding_regions.append(
                 PaddingEntity(byte_offset=current_offset, size_bytes=trailing_size, reason="structure end")

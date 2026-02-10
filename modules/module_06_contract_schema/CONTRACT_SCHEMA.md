@@ -50,7 +50,6 @@ ownership, nullability, and ABI compatibility.
 
 ---
 
-## : Clause Type System & Constraint Taxonomy ✅
 
 **Status:** Complete  
 **Focus:** Typed clause hierarchy with constraint-specific semantics.

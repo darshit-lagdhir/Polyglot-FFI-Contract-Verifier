@@ -570,8 +570,7 @@ class TestContractArtifactManager:
         # Index should exist
         assert manager.index_path.exists()
         
-        # Index should contain entry
-        index = manager._load_index()
+                index = manager._load_index()
         assert len(index['contracts']) == 1
     
     def test_save_multiple_artifacts(self, temp_dir):

@@ -535,8 +535,7 @@ class TestReferentialValidator:
         assert any("Parent entity" in e.error_message for e in result.errors)
 
 class TestConstraintValidator:
-    """Test ConstraintValidator."""
-    
+        
     def test_valid_constraints(self):
         context = ValidationContext()
         validator = ConstraintValidator(context)

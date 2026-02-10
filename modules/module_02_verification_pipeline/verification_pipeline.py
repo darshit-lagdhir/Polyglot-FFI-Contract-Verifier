@@ -60,8 +60,7 @@ class StageState(Enum):
     EXECUTING = "executing"       # Stage is currently running
     COMPLETED = "completed"       # Successfully finished, postconditions satisfied
     FAILED = "failed"             # Error encountered, postconditions not satisfied
-    SKIPPED = "skipped"           # Skipped due to config or upstream failure
-
+    SKIPPED = "skipped"           
 # ───────────────────────────────────────────────────────────────────
 # 1.2 Error Classification
 # ───────────────────────────────────────────────────────────────────
@@ -620,8 +619,7 @@ class PipelineExecutionLog:
         })
     
     def log_stage_failed(self, stage: PipelineStage, error: Exception) -> None:
-        """Log that a stage failed."""
-        self.entries.append({
+                self.entries.append({
             "event": "stage_failed",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "stage_name": stage.STAGE_NAME,
@@ -762,8 +760,7 @@ class VerificationPipeline:
                 break
                 
             except StageError as e:
-                # Stage execution failed
-                self.execution_log.log_stage_failed(stage, e)
+                                self.execution_log.log_stage_failed(stage, e)
                 print(f"ERROR: Stage '{e.stage_name}' failed: {e}")
                 if e.details:
                     print(f"Details: {e.details}")
@@ -1433,8 +1430,7 @@ class ArtifactSchema:
             if field.required and field.name not in artifact_data:
                 errors.append(f"Missing required field: {field.name}")
         
-        # Validate field types and constraints
-        for field in self.fields:
+                for field in self.fields:
             if field.name not in artifact_data:
                 continue
             
@@ -1447,8 +1443,7 @@ class ArtifactSchema:
                     f"expected {field.field_type}, got {type(value).__name__}"
                 )
             
-            # Constraint checking
-            if field.constraints:
+                        if field.constraints:
                 constraint_errors = self._check_constraints(field.name, value, field.constraints)
                 errors.extend(constraint_errors)
             
@@ -1473,8 +1468,7 @@ class ArtifactSchema:
         return type_checks.get(expected_type, lambda v: True)(value)
     
     def _check_constraints(self, field_name: str, value: Any, constraints: Dict) -> List[str]:
-        """Check if value satisfies constraints."""
-        errors = []
+                errors = []
         
         if "min" in constraints and value < constraints["min"]:
             errors.append(f"Field {field_name} below minimum: {value} < {constraints['min']}")
@@ -1571,7 +1565,6 @@ class SchemaRegistry:
         self.register_schema(pipeline_log_schema)
 
 # ───────────────────────────────────────────────────────────────────
-# 3.2 Provenance Chain Validator
 # ───────────────────────────────────────────────────────────────────
 
 class ProvenanceChainValidator:
@@ -1632,8 +1625,7 @@ class ProvenanceChainValidator:
         if self._has_cycle(dep_graph):
             errors.append("Provenance chain contains cycle (artifact depends on itself)")
         
-        # Verify hash chains
-        for path, artifact in artifacts:
+                for path, artifact in artifacts:
             provenance = artifact["provenance"]
             for input_path, declared_hash in provenance["input_artifact_hashes"].items():
                 if not os.path.exists(input_path):
@@ -2142,8 +2134,7 @@ class StructLayoutExtractor:
                     }
                     result.append(padding_field)
         
-        # Check for trailing padding
-        if fields:
+                if fields:
             last_field = fields[-1]
             last_end = last_field["offset_bytes"] + last_field["size_bytes"]
             
@@ -2181,8 +2172,7 @@ class NativeInterfaceIngestionStage(PipelineStage):
     
     def _execute_impl(self) -> None:
         """Extract native interface from header file."""
-        # Check libclang availability
-        if not LIBCLANG_AVAILABLE:
+                if not LIBCLANG_AVAILABLE:
             raise StageError(
                 "libclang not available. Install with: pip install libclang",
                 stage_name=self.STAGE_NAME,
@@ -2863,12 +2853,10 @@ class IRNormalizationStage(PipelineStage):
 # ═══════════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────────
-# 6.1 Constraint Types
 # ───────────────────────────────────────────────────────────────────
 
 class ConstraintType(Enum):
-    """Types of constraints that can be synthesized."""
-    NON_NULL = "non_null"
+        NON_NULL = "non_null"
     NULLABLE = "nullable"
     CONDITIONALLY_NULL = "conditionally_null"
     BUFFER_SIZE = "buffer_size"
@@ -2889,14 +2877,10 @@ class Constraint:
     """
     constraint_id: str
     constraint_type: ConstraintType
-    target: str  # What this constrains (e.g., "param_data", "return_value")
-    confidence: float  # 0.0 to 1.0
+    target: str      confidence: float  # 0.0 to 1.0
     rationale: str  # Human-readable explanation
     derivation_rule: str  # Which rule produced this
-    evidence: List[str]  # Evidence supporting this constraint
-    related_target: Optional[str] = None  # For relational constraints
-    conditions: Optional[List[Dict[str, str]]] = None  # For conditional constraints
-    
+    evidence: List[str]      related_target: Optional[str] = None      conditions: Optional[List[Dict[str, str]]] = None      
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         result = {
@@ -2978,7 +2962,6 @@ class NamingPatternAnalyzer:
         return any(pattern in name_lower for pattern in NamingPatternAnalyzer.BUFFER_PATTERNS)
 
 # ───────────────────────────────────────────────────────────────────
-# 6.3 Constraint Synthesizer
 # ───────────────────────────────────────────────────────────────────
 
 class ConstraintSynthesizer:
@@ -3006,19 +2989,16 @@ class ConstraintSynthesizer:
         constraints = []
         func_name = function["name"]
         
-        # Synthesize parameter constraints
-        for param in function.get("parameters", []):
+                for param in function.get("parameters", []):
             param_constraints = self._synthesize_parameter_constraints(
                 func_name, param, function["parameters"]
             )
             constraints.extend(param_constraints)
         
-        # Synthesize return value constraints
-        return_constraints = self._synthesize_return_constraints(func_name, function)
+                return_constraints = self._synthesize_return_constraints(func_name, function)
         constraints.extend(return_constraints)
         
-        # Synthesize calling convention constraint
-        conv_constraint = self._synthesize_calling_convention_constraint(func_name, function)
+                conv_constraint = self._synthesize_calling_convention_constraint(func_name, function)
         if conv_constraint:
             constraints.append(conv_constraint)
         
@@ -3030,15 +3010,13 @@ class ConstraintSynthesizer:
         param: Dict[str, Any],
         all_params: List[Dict[str, Any]]
     ) -> List[Constraint]:
-        """Synthesize constraints for a parameter."""
-        constraints = []
+                constraints = []
         param_name = param["name"]
         param_type = self.type_registry.get(param["type_id"], {})
         
         # Check if pointer type
         if param_type.get("kind") == "pointer":
-            # Nullability constraint
-            null_constraint = self._infer_nullability(func_name, param_name, param, param_type)
+                        null_constraint = self._infer_nullability(func_name, param_name, param, param_type)
             constraints.append(null_constraint)
             
             # Check for buffer-length relationship
@@ -3068,8 +3046,7 @@ class ConstraintSynthesizer:
         param: Dict,
         param_type: Dict
     ) -> Constraint:
-        """Infer nullability constraint for pointer parameter."""
-        # Check naming patterns
+                # Check naming patterns
         if NamingPatternAnalyzer.suggests_nullable(param_name):
             confidence = 0.8
             constraint_type = ConstraintType.NULLABLE
@@ -3186,8 +3163,7 @@ class ConstraintSynthesizer:
         return pointee.get("kind") == "pointer" and not param_type.get("is_const")
     
     def _create_output_parameter_constraint(self, func_name: str, param_name: str) -> Constraint:
-        """Create constraint for output parameter."""
-        self.constraint_counter += 1
+                self.constraint_counter += 1
         constraint_id = f"{func_name}_OUTPUT_PARAMETER_{param_name}_{self.constraint_counter}"
         
         return Constraint(
@@ -3209,8 +3185,7 @@ class ConstraintSynthesizer:
         func_name: str,
         param_name: str
     ) -> Constraint:
-        """Create ownership transfer in constraint."""
-        self.constraint_counter += 1
+                self.constraint_counter += 1
         constraint_id = f"{func_name}_OWNERSHIP_IN_{param_name}_{self.constraint_counter}"
         
         return Constraint(
@@ -3232,8 +3207,7 @@ class ConstraintSynthesizer:
         func_name: str,
         function: Dict
     ) -> List[Constraint]:
-        """Synthesize constraints for return value."""
-        constraints = []
+                constraints = []
         return_type = self.type_registry.get(function["return_type_id"], {})
         
         if return_type.get("kind") == "pointer":
@@ -3263,8 +3237,7 @@ class ConstraintSynthesizer:
         func_name: str,
         function: Dict
     ) -> Optional[Constraint]:
-        """Synthesize calling convention constraint."""
-        calling_conv = function.get("calling_convention", "cdecl")
+                calling_conv = function.get("calling_convention", "cdecl")
         platform = self.ir.get("platform", {})
         
         # Determine expected convention
@@ -3325,8 +3298,7 @@ class ContractSynthesisStage(PipelineStage):
         type_registry = ir_artifact["type_registry"]
         synthesizer = ConstraintSynthesizer(ir_artifact, type_registry)
         
-        # Synthesize constraints for each function
-        function_contracts = []
+                function_contracts = []
         for function in ir_artifact.get("functions", []):
             constraints = synthesizer.synthesize_function_constraints(function)
             
@@ -3383,8 +3355,7 @@ class ContractSynthesisStage(PipelineStage):
             return type_id
     
     def _collect_warnings(self, function_contracts: List[Dict]) -> List[str]:
-        """Collect warnings from low-confidence constraints."""
-        warnings = []
+                warnings = []
         
         for func in function_contracts:
             for constraint in func["constraints"]:
@@ -3558,8 +3529,7 @@ class CheckGenerator:
             # Generic check (placeholder)
             gen.add_line(f"def {check_func_name}(*args):")
             gen.indent()
-            gen.add_line("# TODO: Implement check for " + constraint_type)
-            gen.add_line("pass")
+            gen.add_line("            gen.add_line("pass")
             gen.dedent()
         
         return gen.get_code()
@@ -3572,7 +3542,7 @@ class CheckGenerator:
         
         gen.add_line(f"def _check_NON_NULL_{target}({target}):")
         gen.indent()
-        gen.add_line('"""Enforce NON_NULL constraint."""')
+        gen.add_line('')
         gen.add_line(f"if {target} is None:")
         gen.indent()
         gen.add_line("raise ContractViolation(")
@@ -3595,7 +3565,7 @@ class CheckGenerator:
         
         gen.add_line(f"def _check_BUFFER_SIZE_{target}({target}, {related}):")
         gen.indent()
-        gen.add_line('"""Enforce BUFFER_SIZE constraint."""')
+        gen.add_line('')
         gen.add_line(f"if {target} is not None:")
         gen.indent()
         gen.add_line(f"if len({target}) < {related}:")
@@ -3620,7 +3590,7 @@ class CheckGenerator:
         
         gen.add_line(f"def _check_NULL_TERMINATED_{target}({target}):")
         gen.indent()
-        gen.add_line('"""Enforce NULL_TERMINATED constraint."""')
+        gen.add_line('')
         gen.add_line(f"if {target} is not None:")
         gen.indent()
         gen.add_line(f"if b'\\x00' not in {target}:")
@@ -3657,7 +3627,7 @@ class AdapterGenerator:
         # Header
         gen.add_line('"""')
         gen.add_line("Auto-generated adapter module")
-        gen.add_line("DO NOT EDIT - Generated by AdapterGenerationStage")
+        gen.add_line("DO NOT EDIT - created by AdapterGenerationStage")
         gen.add_line('"""')
         gen.add_line()
         
@@ -3669,7 +3639,7 @@ class AdapterGenerator:
         # Exception classes (inline for now)
         gen.add_line("class ContractViolation(Exception):")
         gen.indent()
-        gen.add_line('"""Contract constraint violated."""')
+        gen.add_line('')
         gen.add_line("def __init__(self, constraint_id, message, **metadata):")
         gen.indent()
         gen.add_line("super().__init__(message)")
@@ -3949,12 +3919,10 @@ class TestCaseGenerator:
         if not func_ir:
             return test_cases
         
-        # Generate positive test (all constraints satisfied)
-        positive_test = self._generate_positive_test(func_contract, func_ir)
+                positive_test = self._generate_positive_test(func_contract, func_ir)
         test_cases.append(positive_test)
         
-        # Generate negative tests (one constraint violated each)
-        negative_tests = self._generate_negative_tests(func_contract, func_ir)
+                negative_tests = self._generate_negative_tests(func_contract, func_ir)
         test_cases.extend(negative_tests)
         
         # Generate boundary tests
@@ -4063,15 +4031,13 @@ class TestCaseGenerator:
         return None
     
     def _generate_negative_tests(self, func_contract: Dict, func_ir: Dict) -> List[Dict]:
-        """Generate negative test cases (constraint violations)."""
-        tests = []
+                tests = []
         
         for constraint in func_contract.get("constraints", []):
             self.test_counter += 1
             test_id = f"test_{func_contract['name']}_{self.test_counter:03d}_neg"
             
-            # Generate inputs that violate this constraint
-            inputs = self._generate_inputs_violating_constraint(
+                        inputs = self._generate_inputs_violating_constraint(
                 constraint, func_contract, func_ir
             )
             
@@ -4098,8 +4064,7 @@ class TestCaseGenerator:
         func_contract: Dict,
         func_ir: Dict
     ) -> Dict:
-        """Generate inputs that violate specific constraint."""
-        # Start with valid inputs
+                # Start with valid inputs
         inputs = {}
         for param in func_ir.get("parameters", []):
             param_type = self.ir["type_registry"].get(param["type_id"], {})
@@ -4107,8 +4072,7 @@ class TestCaseGenerator:
                 param_type, param["name"], func_contract
             )
         
-        # Modify to violate target constraint
-        constraint_type = constraint["type"]
+                constraint_type = constraint["type"]
         target = constraint["target"].replace("param_", "")
         
         if constraint_type == "non_null":
@@ -4131,8 +4095,7 @@ class TestCaseGenerator:
                 }
                 inputs[related] = {
                     "type": "int",
-                    "value": 100,  # Claim large size
-                    "generator": "oversized_claim"
+                    "value": 100,                      "generator": "oversized_claim"
                 }
         
         elif constraint_type == "null_terminated":
@@ -4210,14 +4173,12 @@ class CoverageAnalyzer:
         
         Returns coverage report.
         """
-        # Collect all constraint IDs
-        all_constraints = set()
+                all_constraints = set()
         for func in contract.get("functions", []):
             for constraint in func.get("constraints", []):
                 all_constraints.add(constraint["constraint_id"])
         
-        # Collect exercised constraints
-        exercised_constraints = set()
+                exercised_constraints = set()
         constraint_test_map: Dict[str, List[str]] = {}
         
         for test in test_cases:
@@ -4626,8 +4587,7 @@ class TestExecutor:
         expected: Dict,
         actual: Dict
     ) -> str:
-        """Generate diagnostic message for failed test."""
-        category = test_case.get("category", "unknown")
+                category = test_case.get("category", "unknown")
         
         if category == "negative" and actual["type"] == "success":
             return (
@@ -4704,8 +4664,7 @@ class ExecutionSummarizer:
             elif result["validation_result"] == "FAIL":
                 by_category[category]["failed"] += 1
         
-        # Collect exercised constraints
-        all_constraints = set()
+                all_constraints = set()
         for result in test_results:
             all_constraints.update(result.get("constraints_exercised", []))
         
@@ -4792,8 +4751,7 @@ class VerificationExecutionStage(PipelineStage):
         # Generate summary
         summary = ExecutionSummarizer.summarize(test_results)
         
-        # Collect failures for detailed reporting
-        failures = [r for r in test_results if r["validation_result"] == "FAIL"]
+                failures = [r for r in test_results if r["validation_result"] == "FAIL"]
         
         # Build execution log
         provenance = self.create_provenance([test_plan_path, adapter_metadata_path])
@@ -4838,12 +4796,10 @@ class VerificationExecutionStage(PipelineStage):
 # ═══════════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────────
-# 10.1 Failure Categories and Severity
 # ───────────────────────────────────────────────────────────────────
 
 class FailureCategory(Enum):
-    """Categories of verification failures."""
-    UNCAUGHT_VIOLATION = "uncaught_violation"
+        UNCAUGHT_VIOLATION = "uncaught_violation"
     FALSE_POSITIVE = "false_positive"
     NATIVE_BUG = "native_bug"
     CONTRACT_INCOMPLETE = "contract_incomplete"
@@ -4852,14 +4808,12 @@ class FailureCategory(Enum):
     UNKNOWN = "unknown"
 
 class Severity(Enum):
-    """Failure severity levels."""
-    CRITICAL = "CRITICAL"
+        CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
 
 # ───────────────────────────────────────────────────────────────────
-# 10.2 Failure Classifier
 # ───────────────────────────────────────────────────────────────────
 
 class FailureClassifier:
@@ -5067,8 +5021,7 @@ class HTMLReportGenerator:
         
         html.append("</table>")
         
-        # Failure Analysis
-        if failures:
+                if failures:
             html.append("<h2>Failure Analysis</h2>")
             
             for failure in failures:
@@ -5231,10 +5184,8 @@ class MarkdownReportGenerator:
         
         md.append("")
         
-        # Failures
-        if failures:
-            md.append("## Failure Analysis")
-            md.append("")
+                if failures:
+            md.append("            md.append("")
             
             for failure in failures:
                 test_id = failure.get("test_id", "unknown")
@@ -5295,8 +5246,7 @@ class DiagnosticsReportingStage(PipelineStage):
         with open(contract_path, 'r', encoding='utf-8') as f:
             contract = json.load(f)
         
-        # Analyze failures
-        test_results = execution_log.get("test_results", [])
+                test_results = execution_log.get("test_results", [])
         test_cases_map = {tc["test_id"]: tc for tc in test_plan.get("test_cases", [])}
         
         failure_analysis = []
@@ -5307,8 +5257,7 @@ class DiagnosticsReportingStage(PipelineStage):
                 test_id = result["test_id"]
                 test_case = test_cases_map.get(test_id, {})
                 
-                # Classify failure
-                classification = FailureClassifier.classify(result, test_case)
+                                classification = FailureClassifier.classify(result, test_case)
                 
                 # Generate remediation
                 remediation = RemediationGenerator.generate(classification, result, test_case)
@@ -5492,8 +5441,7 @@ class CompletePipeline:
             return result
         
         except Exception as e:
-            # Pipeline failed - build error result
-            elapsed = 0.0
+                        elapsed = 0.0
             if self.start_time is not None:
                 elapsed = time.time() - self.start_time
             
@@ -5586,8 +5534,7 @@ class CompletePipeline:
         if self.start_time is not None:
             elapsed = time.time() - self.start_time
         
-        # Load execution log if available
-        execution_log_path = os.path.join(self.output_dir, "execution_log.json")
+                execution_log_path = os.path.join(self.output_dir, "execution_log.json")
         if os.path.exists(execution_log_path):
             with open(execution_log_path, 'r') as f:
                 execution_log = json.load(f)
@@ -6106,8 +6053,7 @@ class ParallelPipelineExecutor:
             print(f"Executing level {level_num + 1}/{len(levels)}: {len(level_stages)} stage(s)")
             
             if not self._execute_level(level_stages):
-                return False  # Level failed
-        
+                return False          
         return True
     
     def _compute_execution_levels(self, dep_graph: DependencyGraph) -> List[List[str]]:
@@ -6211,8 +6157,7 @@ class PerformanceProfiler:
         start_time = time.time()
         start_memory = 0
         
-        # Try to get memory info if psutil available
-        try:
+                try:
             import psutil
             process = psutil.Process()
             start_cpu = process.cpu_times()
@@ -6437,7 +6382,6 @@ def verify_optimized(
 # ═══════════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────────
-# 13.1 Custom Constraint Base
 # ───────────────────────────────────────────────────────────────────
 
 class CustomConstraint(ABC):
@@ -6447,8 +6391,7 @@ class CustomConstraint(ABC):
     Users extend this to create domain-specific constraint types.
     """
     
-    CONSTRAINT_TYPE: str  # Unique constraint type identifier
-    
+    CONSTRAINT_TYPE: str      
     def __init__(self, constraint_type: str, target: str, **metadata):
         """
         Initialize constraint.
@@ -6621,8 +6564,7 @@ class RuleRegistry:
 # ───────────────────────────────────────────────────────────────────
 
 class HookPoints:
-    """Enumeration of available hook points."""
-    
+        
     # Pipeline-level
     PRE_PIPELINE = "pre_pipeline"
     POST_PIPELINE = "post_pipeline"
@@ -6680,8 +6622,7 @@ class HookManager:
             try:
                 func(context, **kwargs)
             except Exception as e:
-                # Log but don't fail - hooks shouldn't break pipeline
-                print(f"Warning: Hook {func.__name__} failed: {e}")
+                                print(f"Warning: Hook {func.__name__} failed: {e}")
     
     def list_hooks(self, hook_point: Optional[str] = None) -> Dict[str, int]:
         """

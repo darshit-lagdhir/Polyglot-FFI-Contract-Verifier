@@ -82,8 +82,7 @@ class SchemaValidator:
     """Validates IR entities conform to schema."""
 
     def validate_entity(self, entity: IREntity) -> List[str]:
-        """Validate entity against schema."""
-        errors = []
+                errors = []
 
         # All entities must have ID and kind
         if not entity.entity_id:
@@ -450,8 +449,7 @@ class GraphValidator:
 # ============================================================================
 
 class PlatformValidator:
-    """Validates IR against platform constraints."""
-
+    
     def __init__(self, interface_unit: InterfaceUnit) -> None:
         self.interface_unit = interface_unit
 

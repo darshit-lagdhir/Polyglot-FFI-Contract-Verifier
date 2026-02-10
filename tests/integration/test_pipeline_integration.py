@@ -33,8 +33,7 @@ class TestPipelineIntegration:
             assert hasattr(pipeline, 'execute')
             
         except Exception as e:
-            # Expected if libclang not available
-            if "libclang" in str(e).lower():
+                        if "libclang" in str(e).lower():
                 print("INFO: libclang not available")
                 return
             else:

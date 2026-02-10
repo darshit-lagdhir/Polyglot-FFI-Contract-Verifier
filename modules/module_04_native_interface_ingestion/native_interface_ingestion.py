@@ -194,8 +194,7 @@ class ProvenanceInfo:
     location: SourceLocation
     extent: Optional[SourceRange] = None
 
-    # Include chain (list of header files leading to this declaration)
-    include_chain: List[str] = field(default_factory=list)
+        include_chain: List[str] = field(default_factory=list)
     include_depth: int = 0
 
     # Header classification
@@ -300,7 +299,7 @@ class Diagnostic:
 
         # Explanation
         if self.analysis:
-            lines.append(f"  Explanation: {self.explanation}")
+            lines.append(f"  analysis: {self.explanation}")
 
         # Impact
         if self.impact:
@@ -470,7 +469,6 @@ class AttributeInfo:
         return data
 
 # ============================================================================
-# EXTERNAL SYMBOL (ENHANCED IN PROMPT 2)
 # ============================================================================
 
 @dataclass
@@ -569,7 +567,7 @@ class ExternalSymbol:
         return f"ExternalSymbol(name='{self.name}', kind='{self.kind}')"
 
 # ============================================================================
-# TYPE INFO (STUB FOR PROMPT 1)
+# TYPE INFO (STUB FOR )
 # ============================================================================
 
 @dataclass
@@ -798,8 +796,7 @@ class TypedefInfo:
     typedef_name: str           # The typedef identifier
     underlying_type: str        # Direct underlying type
     canonical_type: str         # Fully resolved canonical type
-    typedef_chain: List[str]    # Complete chain: [name, ..., canonical]
-
+    typedef_chain: List[str]    
     # Completeness
     is_forward_declaration: bool = False
     is_incomplete: bool = False
@@ -874,8 +871,7 @@ class TypeInfo:
 
         typedef_info: Optional[TypedefInfo] = None
 
-    # Simplified typedef chain (for quick access)
-    typedef_chain: List[str] = field(default_factory=list)
+        typedef_chain: List[str] = field(default_factory=list)
 
         namespaces: List[str] = field(default_factory=list)
     is_template_instantiation: bool = False
@@ -1006,8 +1002,7 @@ class PaddingInfo:
 
     offset_bytes: int
     size_bytes: int
-    reason: str  # 'inter-field', 'trailing', 'explicit'
-
+    reason: str  
     def to_dict(self) -> Dict[str, Any]:
         """Serialize padding info."""
         return {
@@ -1766,8 +1761,7 @@ class RecordLayoutExtractor:
         try:
             field_info.type_info = self.type_extractor.extract_type(field_type)
         except Exception:
-            pass  # Type extraction may fail for complex types
-
+            pass  
         return field_info
 
     def _detect_padding(self, layout: RecordLayout):
@@ -1803,8 +1797,7 @@ class RecordLayoutExtractor:
                 )
                 layout.padding_regions.append(padding)
 
-        # Detect trailing padding
-        if sorted_fields:
+                if sorted_fields:
             last_field = sorted_fields[-1]
             last_end = last_field.offset_bytes + last_field.size_bytes
 
@@ -1856,8 +1849,7 @@ class TypedefResolver:
         visited = set()
         current_type = typedef_type
 
-        # Traverse typedef chain
-        max_depth = 100  # Prevent infinite loops
+                max_depth = 100  # Prevent infinite loops
         depth = 0
 
         while current_type.kind == CXTypeKind.TYPEDEF and depth < max_depth:
@@ -1915,8 +1907,7 @@ class TypedefResolver:
         canonical_type_cx = libclang.clang_getCanonicalType(underlying_type_cx)
         canonical_type_spelling = self.type_extractor._get_type_spelling(canonical_type_cx)
 
-        # Resolve complete chain
-        try:
+                try:
             typedef_chain = self.resolve_typedef_chain(libclang.clang_getIDEType(typedef_cursor))
         except CircularTypedefError:
             typedef_chain = [typedef_name, "<circular>"]
@@ -2477,8 +2468,7 @@ class CppExtractor:
         return info
 
     def get_mangled_name(self, cursor: 'CXIDE') -> Optional[str]:
-        """Get mangled name if available."""
-        if hasattr(libclang, 'clang_IDE_getMangling'):
+                if hasattr(libclang, 'clang_IDE_getMangling'):
              cxstr = libclang.clang_IDE_getMangling(cursor)
              return clang_string_to_python(cxstr)
         return None
@@ -2574,8 +2564,7 @@ class TypeExtractor:
                  # Check if type spelling suggests template (heuristic fallback + cursor check)
                  if '<' in type_spelling and '>' in type_spelling:
                      type_info.is_template_instantiation = True
-                     # Attempt detailed extraction
-                     tpl_info = self._cpp_extractor.extract_template_info(decl_cursor)
+                                          tpl_info = self._cpp_extractor.extract_template_info(decl_cursor)
                      if 'arguments' in tpl_info:
                          type_info.template_arguments = tpl_info['arguments']
 
@@ -2712,8 +2701,7 @@ class TypeExtractor:
         # Detect struct vs union (requires cursor)
         type_info.record_kind = 'struct'  # Default assumption
 
-        # Important: Full layout extraction requires cursor, which is not available
-        # from CXType alone. Layout extraction happens when processing cursors
+                # from CXType alone. Layout extraction happens when processing cursors
         # in ClangFrontend. This method sets up basic record info.
 
     def _extract_enum_info(self, cxtype: 'CXType', type_info: TypeInfo):
@@ -2973,8 +2961,7 @@ class ValidationError(IngestionError):
     pass
 
 class CircularTypedefError(IngestionError):
-    """Error raised when circular typedef chain detected."""
-    pass
+        pass
 
 # ============================================================================
 # MODULE METADATA
@@ -3082,8 +3069,7 @@ def _load_libclang():
             continue
 
     if names:
-        # Only print diagnostics if we actually had candidates but all failed
-        print("DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
+                print("DEBUG: Failed to load libclang from candidates. Errors:\n" + "\n".join(errors), file=sys.stderr)
 
     return None
 
@@ -3348,10 +3334,7 @@ if LIBCLANG_AVAILABLE:
     bind('clang_IDE_getTemplateArgumentType', [CXIDE, ctypes.c_uint], CXType)
     bind('clang_IDE_getTemplateArgumentValue', [CXIDE, ctypes.c_uint], ctypes.c_longlong)
     bind('clang_IDE_getTemplateArgumentUnsignedValue', [CXIDE, ctypes.c_uint], ctypes.c_ulonglong)
-    # Mangling might not be available in all liblclang versions, wrap in try/except if needed,
-    # but here we use simple bind. If symbol missing, it will be None/fail at runtime if called.
-    # We will check availability before calling.
-    bind('clang_IDE_getMangling', [CXIDE], CXString)
+                bind('clang_IDE_getMangling', [CXIDE], CXString)
 
 # Helper functions
 def clang_string_to_python(cxstring: CXString) -> str:
@@ -3768,8 +3751,7 @@ class IncrementalIngestionOrchestrator:
             validation_passed=True
         )
 
-        # Attach diagnostic report if available
-        if hasattr(frontend, '_diagnostic_collector'):
+                if hasattr(frontend, '_diagnostic_collector'):
              artifact.report = frontend._diagnostic_collector.get_report()
 
         # Store in cache
@@ -4062,9 +4044,7 @@ class ClangFrontend(CompilerFrontend):
         # TODO: Support multiple headers via virtual header
         header_path = str(context.header_files[0])
 
-        # Parse with detailed preprocessing record to capture macros
-        options = 0x01  # CXTranslationUnit_DetailedPreprocessingRecord
-
+                options = 0x01  
         translation_unit = libclang.clang_parseTranslationUnit(
             index,
             header_path.encode('utf-8'),
@@ -4177,8 +4157,7 @@ class ClangFrontend(CompilerFrontend):
         Returns:
             TypeInfo if found, None otherwise
         """
-                # Full implementation in later prompts
-        return None
+                        return None
 
     def _process_cursor(self, cursor: CXIDE) -> Optional[ExternalSymbol]:
         """
@@ -4212,8 +4191,7 @@ class ClangFrontend(CompilerFrontend):
             except Exception:
                 return None
 
-                # Add location to symbol if available
-                if macro_info.source_file:
+                                if macro_info.source_file:
                     symbol.source_location = SourceLocation(
                         file_path=macro_info.source_file,
                         line=macro_info.line_number or 0,
@@ -4345,8 +4323,7 @@ class ClangFrontend(CompilerFrontend):
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)
 
-                # Extract detailed layout
-                layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
+                                layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
                 symbol_type_info.record_layout = layoutValue
             except Exception:
                 pass
@@ -4356,8 +4333,7 @@ class ClangFrontend(CompilerFrontend):
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)
 
-                # Extract detailed enum info
-                enum_meta = self._enum_extractor.extract_enum_info(cursor, cursor_type)
+                                enum_meta = self._enum_extractor.extract_enum_info(cursor, cursor_type)
 
                 # Update TypeInfo with enum metadata
                 symbol_type_info.enum_enumerators = enum_meta['enumerators']
@@ -4516,8 +4492,7 @@ class ArtifactValidator:
         # FFI hazard detection
         report.ffi_hazards.extend(self._detect_ffi_hazards(artifact))
 
-        # Determine pass/fail
-        report.passed = report.error_count() == 0
+                report.passed = report.error_count() == 0
 
         return report
 

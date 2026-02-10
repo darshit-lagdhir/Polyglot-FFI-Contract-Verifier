@@ -64,8 +64,7 @@ class TestCacheManager:
         # Lookup should succeed
         result = cache.lookup("test_stage", "1.0.0", inputs)
         
-        # Important: lookup returns None if validation fails
-        # For this test, we just verify no exception
+                # For this test, we just verify no exception
         assert result is None or isinstance(result, dict)
     
     def test_cache_invalidation(self, temp_dir):

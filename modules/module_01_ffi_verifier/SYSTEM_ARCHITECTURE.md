@@ -295,7 +295,6 @@ See [`docs/VERIFICATION_EXECUTION_IMPLEMENTATION.md`](docs/VERIFICATION_EXECUTIO
 
 See [`docs/RUNTIME_MONITORING_IMPLEMENTATION.md`](docs/RUNTIME_MONITORING_IMPLEMENTATION.md) for detailed documentation.
 
-### 0: Diagnostics Mapping and Failure Classification
 - Automatic categorization of failures (buffer overflow, null pointer, etc.)
 - Severity assessment and exploitability analysis
 - Traceability from raw crashes to specific contract constraints
@@ -468,8 +467,7 @@ The system is organized as a deterministic, artifact-driven pipeline:
 
 ```
 Polyglot-FFI-Contract-Verifier/
-├── polyglot_ffi_verifier/     # Main package
-│   ├── __init__.py            # Package API
+├── polyglot_ffi_verifier/     │   ├── __init__.py            # Package API
 │   ├── __main__.py            # CLI entry point
 │   ├── context.py             # Execution context
 │   ├── pipeline.py            # Pipeline orchestration
@@ -505,8 +503,7 @@ Polyglot-FFI-Contract-Verifier/
 │       └── test_system_stability.py
 ├── docs/                      # Documentation
 │   ├── architecture/          # System design
-│   ├── implementation/        # Implementation details
-│   ├── api/                   # API reference
+│   ├── implementation/        │   ├── api/                   # API reference
 │   └── operations/            # Operational guides
 ├── examples/                  # Usage
 │   └── demo/
@@ -802,7 +799,6 @@ Each command supports:
 - No shared mutable state
 - Artifacts are inspectable, diffable, and versioned
 
-### 5. Failure Isolation
 - Errors classified by type and handled appropriately
 - Failures in one stage don't corrupt downstream artifacts
 - Clear error messages with actionable suggestions
@@ -827,8 +823,7 @@ Polyglot Ffi Contract Verifier/
 │       ├── __init__.py
 │       ├── execution_context.py    # ExecutionContext and Builder
 │       └── orchestration.py        # Orchestration and CLI
-├── polyglot_ffi_verifier.py        # Main entry point
-└── validate_orchestration.py             # Validation suite
+├── polyglot_ffi_verifier.py        └── validate_orchestration.py             # Validation suite
 ```
 
 ## Usage Examples
@@ -1654,7 +1649,6 @@ The synthesis process makes the implicit assumptions of C developers explicit an
 4.  **`ConservativeDefaultPolicy`**: Provides safe fallback behaviors when evidence is missing, favoring safety over permissiveness.
 5.  **`ConstraintIDGenerator`**: Produces deterministic, human-readable IDs for every constraint for traceability.
 
-## Constraint Derivation Rules
 
 The engine implements 10 core derivation rules:
 
@@ -1800,7 +1794,6 @@ The system produces a modular Python package in the `adapters/` directory:
 4.  **`<lib>_ownership.py`**: A runtime tracker that monitors memory ownership (borrowed vs. transferred) to detect use-after-transfer and double-free errors.
 5.  **`adapter_metadata.json`**: Records generation details, including provenance, statistics, and enforced constraints.
 
-## Constraint Enforcement Patterns
 
 ### Nullability
 Generated wrappers perform `if ptr is None or not bool(ptr)` checks before passing pointers to native code, raising `NullPointerViolation` if the contract specifies `non_null`.
@@ -1835,7 +1828,6 @@ except exceptions.FFIContractViolation as e:
     print(f"Contract violation detected: {e}")
 ```
 
-## Implementation Details
 
 - **`AdapterGenerator`**: The main orchestrator that sequences module generation.
 - **`FunctionWrapperGenerator`**: Generates the `ctypes` function signatures and the logic for pre/post-condition checks.
@@ -1957,7 +1949,6 @@ The parent process uses the subprocess return code to detect abnormal terminatio
 - Addresses near `0x0` are classified as **Null Pointer Dereferences**.
 - Crashes during tests with `BufferSizeViolation` expectations are flagged as **Buffer Overflows**.
 
-## Classification of Failures
 
 1.  **SUCCESS**: Test returned exact expected value or raised expected exception.
 2.  **FAILURE**: Test returned wrong value or wrong exception.
@@ -1995,7 +1986,6 @@ This document details the implementation of **0: Diagnostics Mapping** for the P
 
 Diagnostics Mapping transforms raw execution results (test outcomes and native crashes) into human-understandable, semantic insights. It bridges the gap between technical symptoms (e.g., "Access Violation at 0x0") and contract violations (e.g., "Missing null check for parameter 'cfg'").
 
-## Failure Classification
 
 The `FailureClassifier` uses a decision tree to categorize failures:
 
@@ -2086,7 +2076,6 @@ Provides a high-level overview of the library's safety status. Includes "summary
 ### Test Results
 A statistical breakdown of the verification run, showing total tests executed, passed, failed, and the calculated pass rate.
 
-### Detailed Violations
 Prioritized by severity (Critical > High > Medium > Low). Each violation card includes:
 - **Constraint Reference**: The specific contract ID.
 - **Description**: Clear explanation of the observed failure.
@@ -2094,7 +2083,6 @@ Prioritized by severity (Critical > High > Medium > Low). Each violation card in
 - **Evidence**: Test case IDs and failure symptoms (crashes/exceptions).
 - **Remediation**: Actionable, step-by-step instructions to fix the issue.
 
-### Verified Constraints
 A list of all contract constraints that were successfully verified with no observed violations, providing confidence in the "green" parts of the FFI surface.
 
 ### Recommendations
@@ -2150,7 +2138,7 @@ Copy `templates/gitlab_ci.yml` (or use the content) to your `.gitlab-ci.yml`.
 Uses GitLab's artifact storage to preserve verification reports.
 
 ### Jenkins
-Use the provided `Jenkinsfile` template. Requires a Windows agent with Python 3.11+.
+Use the provided `Jenkinsfile` template. Requires a Windows System with Python 3.11+.
 
 ## Config
 
@@ -2165,7 +2153,6 @@ The CI behavior can be controlled via `configs/ffi_verifier.yml` or environment 
 | `FFI_VERIFIER_STRICT` | If `true`, fails on any violation (not just critical) | `false` |
 | `FFI_VERIFIER_TIMEOUT` | Global execution timeout in seconds | `600` |
 
-### Failure Policy
 
 The `failure_policy` section in the config file determines when a build should fail:
 - `block_on_critical`: Fail the build if any Critical (crash-prone) violations are found.
@@ -2491,13 +2478,11 @@ The Polyglot FFI Contract Verifier operates in a trusted development environment
 
 ## Sensitive Information Handling
 
-### Artifacts May Contain:
 - Function names, parameter names (likely not sensitive)
 - Struct layouts (likely not sensitive)
 - File paths (potentially sensitive - could reveal directory structure)
 - Platform details (likely not sensitive)
 
-### Artifacts Do NOT Contain:
 - Source code implementations
 - Data values from memory
 - Secrets, API keys, passwords
@@ -2646,7 +2631,6 @@ Use Valgrind or AddressSanitizer for comprehensive leak detection.
 - **Limited Support:** Heavily templated headers (slow ingestion)
 - **Not Supported:** Headers requiring C++ compiler (use extern "C" wrappers)
 
-### Constraint Types
 - **Supported:** Nullability, buffer sizes, struct layouts, ownership, calling conventions
 - **Not Supported:** Alignment constraints beyond struct layout
 - **Not Supported:** Endianness constraints
@@ -2797,14 +2781,11 @@ class ConfigError(PolyglotFFIError):
     """Invalid user configuration."""
 
 class IngestionError(PolyglotFFIError):
-    """Failures during native interface parsing."""
-
+    
 class SynthesisError(PolyglotFFIError):
-    """Failures during contract synthesis."""
-
+    
 class VerificationError(PolyglotFFIError):
-    """Failures during test execution (not test failures)."""
-```
+    ```
 
 ## Exit Codes
 
@@ -2820,7 +2801,6 @@ The CLI uses standard exit codes to communicate status to automation tools:
 
 ## Recovery Strategies
 
-### 1. Verification Failures
 If a verification test fails (e.g., native code crash):
 - **Action**: The `MonitoredVerificationExecutor` catches the subprocess exit code.
 - **Recovery**: Log the failure as a `Critical Violation` and continue to the next test.
@@ -2960,7 +2940,6 @@ This guide provides practical recommendations for users and maintainers to get t
 - **Enable Debugging**: Use `--debug` flag if ingestion is failing. It prints libclang details.
 - **Isolate Crashes**: If verification hangs, check the `execution_log.json` to see which test ran last. The crash is likely in that function.
 
-## For Maintainers
 
 ### 1. Extending the System
 - **Follow Phase Isolation**: If adding a feature, place it in the appropriate phase. Do not mix ingestion logic with verification logic.
@@ -3021,12 +3000,10 @@ The script simulates the verification of a vulnerable library, showing exactly w
 
 ## Diagnostics
 
-### "Libclang analysis failed"
 - If you see this warning in integration tests, it means `libclang` is not installed or configured.
 - The test will fall back to using a mock interface to verify the rest of the pipeline.
 - To fix: `pip install libclang` and ensure LLVM is installed.
 
-### "Context setup failed"
 - Ensure you are running from the project root or PYTHONPATH includes `src`.
 
 ## Validation Script
@@ -3213,7 +3190,6 @@ set LIBCLANG_PATH=C:\Program Files\LLVM\bin\libclang.dll
 export LIBCLANG_PATH=/usr/lib/llvm-16/lib/libclang.so
 ```
 
-#### Issue: Native interface ingestion fails
 
 **Symptom:**
 ```
@@ -3231,7 +3207,6 @@ ERROR: Failed to parse header file
 clang -fsyntax-only -v interface.h
 ```
 
-#### Issue: Tests fail with "Import Error"
 
 **Symptom:**
 ```

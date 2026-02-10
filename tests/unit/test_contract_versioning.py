@@ -626,8 +626,7 @@ class TestContractDiffer:
         )
         contract2 = ContractDocument(header=header2)
         
-        # Relaxing constraint: non-nullable → nullable
-        param2 = ConstraintParameter("nullable", True, "boolean")
+                param2 = ConstraintParameter("nullable", True, "boolean")
         clause2 = ContractClause(
             "clause_1",
             ClauseType.NULLABILITY,

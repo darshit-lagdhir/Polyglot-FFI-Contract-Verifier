@@ -232,8 +232,7 @@ class TestSubjectReference:
         assert ref.entity_id == 'param_data'
 
 class TestConstraintParameter:
-    """Test ConstraintParameter entity."""
-    
+        
     def test_integer_parameter(self):
         param = ConstraintParameter(
             name="min_size",

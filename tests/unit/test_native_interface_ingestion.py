@@ -417,8 +417,7 @@ class TestIngestionErrors:
         assert isinstance(error, Exception)
     
     def test_error_can_be_raised(self):
-        """Test errors can be raised and caught."""
-        with pytest.raises(ConfigError) as exc_info:
+                with pytest.raises(ConfigError) as exc_info:
             raise ConfigError("test config error")
         
         assert "test config error" in str(exc_info.value)
@@ -501,22 +500,19 @@ class TestClangFrontend:
     """Test Clang frontend integration."""
     
     def test_clang_frontend_requires_libclang(self):
-        """Test that ClangFrontend raises error when libclang unavailable."""
-        if not LIBCLANG_AVAILABLE:
+                if not LIBCLANG_AVAILABLE:
             with pytest.raises(ToolchainError) as exc_info:
                 ClangFrontend()
             assert "libclang not available" in str(exc_info.value)
         else:
-            # If libclang is available, test creation succeeds
-            frontend = ClangFrontend()
+                        frontend = ClangFrontend()
             assert frontend.compiler_name == 'clang'
             assert frontend.compiler_version is not None
     
     def test_clang_args_construction(self):
         """Test building Clang command-line arguments."""
         if not LIBCLANG_AVAILABLE:
-            # When libclang unavailable, test that we can't create frontend
-            with pytest.raises(ToolchainError):
+                        with pytest.raises(ToolchainError):
                 ClangFrontend()
             return
             
@@ -543,10 +539,8 @@ class TestClangFrontend:
         assert '-fms-extensions' in args
     
     def test_parse_headers_requires_headers(self):
-        """Test parsing fails without headers."""
-        if not LIBCLANG_AVAILABLE:
-            # When libclang unavailable, test that we can't create frontend
-            with pytest.raises(ToolchainError):
+                if not LIBCLANG_AVAILABLE:
+                        with pytest.raises(ToolchainError):
                 ClangFrontend()
             return
             
@@ -574,8 +568,7 @@ class TestClangCompilationUnit:
         """Test disposal doesn't crash with None pointers."""
         unit = ClangCompilationUnit(index=None, translation_unit=None)
         
-        # Should not raise
-        unit.dispose()
+                unit.dispose()
         
         assert unit.index is None
         assert unit.translation_unit is None
@@ -825,8 +818,7 @@ class TestPaddingInfo:
         assert padding.reason == 'inter-field'
     
     def test_trailing_padding(self):
-        """Test trailing padding."""
-        padding = PaddingInfo(
+                padding = PaddingInfo(
             offset_bytes=12,
             size_bytes=4,
             reason='trailing'
@@ -1576,11 +1568,9 @@ class TestCircularTypedefError:
         assert "Circular" in str(error)
 
 class TestTypeInfoWithTypedef:
-    """Test TypeInfo with typedef chain."""
-    
+        
     def test_type_with_typedef_chain(self):
-        """Test TypeInfo with typedef chain."""
-        tinfo = TypeInfo(
+                tinfo = TypeInfo(
             name='Count',
             canonical_name='int',
             kind='typedef',
@@ -1962,8 +1952,7 @@ class TestProvenanceInfo:
         assert prov.is_public_header
 
     def test_provenance_with_include_chain(self):
-        """Test provenance with include chain."""
-        loc = SourceLocation('config.h', 20, 1)
+                loc = SourceLocation('config.h', 20, 1)
         
         prov = ProvenanceInfo(
             location=loc,
@@ -2139,8 +2128,7 @@ class TestIngestionReport:
         report.add_diagnostic(Diagnostic(severity='warning', message='Warning'))
         assert report.success is True
         
-        # Add error - now failure
-        report.add_diagnostic(Diagnostic(severity='error', message='Error'))
+                report.add_diagnostic(Diagnostic(severity='error', message='Error'))
         assert report.success is False
 
     def test_has_errors(self):
@@ -2478,8 +2466,7 @@ class TestCppSupport:
         # but ClangFrontend._parse_translation_unit does the work.
         # Let's try to use the frontend to extract symbols.
         
-        # Important: This might fail if system headers are missing depending on env.
-        # But for this simple struct, it should work.
+                # But for this simple struct, it should work.
         
         try:
             # We can't easily run full ingestion here without potentially hitting environmental issues.
@@ -2751,8 +2738,7 @@ class TestIngestionOrchestrator:
         assert orch.diagnostic_collector == collector
 
     def test_config_validation_no_headers(self):
-        """Test configuration validation fails without headers."""
-        orch = IngestionOrchestrator()
+                orch = IngestionOrchestrator()
         
         config = IngestionConfig(header_files=[])
         
@@ -2762,8 +2748,7 @@ class TestIngestionOrchestrator:
         assert "No header files" in errors[0]
 
     def test_config_validation_missing_header(self, tmp_path):
-        """Test configuration validation fails with missing header."""
-        orch = IngestionOrchestrator()
+                orch = IngestionOrchestrator()
         
         missing_header = tmp_path / 'missing.h'
         config = IngestionConfig(header_files=[missing_header])
@@ -2790,8 +2775,7 @@ class TestIncludeDependencyGraph:
         """Test adding and tracking dependencies."""
         graph = IncludeDependencyGraph()
         
-        # Add simpler chain: A -> B -> C
-        graph.add_include('A.h', 'B.h')
+                graph.add_include('A.h', 'B.h')
         graph.add_include('B.h', 'C.h')
         
         # Check immediate dependencies
@@ -3212,8 +3196,7 @@ class TestModuleCompletion:
         assert MODULE_METADATA['prompts_completed'] == 20
 
     def test_all_exports_available(self):
-        """Test all public exports are available."""
-        from modules.module_04_native_interface_ingestion.native_interface_ingestion import (
+                from modules.module_04_native_interface_ingestion.native_interface_ingestion import (
             IngestionOrchestrator,
             IngestionConfig,
             RawInterfaceArtifact,

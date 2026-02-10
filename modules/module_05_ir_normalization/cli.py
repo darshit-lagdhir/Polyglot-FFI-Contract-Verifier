@@ -525,8 +525,7 @@ For more information: https://pfcv.readthedocs.io/module_05/
 # ============================================================================
 
 def main():
-    """Main CLI entry point."""
-    parser = create_parser()
+        parser = create_parser()
     args = parser.parse_args()
 
     if not args.command:

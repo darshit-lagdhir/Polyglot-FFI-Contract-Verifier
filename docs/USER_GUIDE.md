@@ -82,8 +82,7 @@ power users and integration scenarios.
 
 ## Table of Contents
 
-1. [Custom Constraints](#custom-constraints)
-2. [Plugin Development](#plugin-development)
+1. [Custom Constraints](2. [Plugin Development](#plugin-development)
 3. [Performance Optimization](#performance-optimization)
 4. [CI/CD Integration](#cicd-integration)
 5. [Incremental Verification](#incremental-verification)
@@ -91,11 +90,9 @@ power users and integration scenarios.
 
 ---
 
-## 1. Custom Constraints
 
 Define domain-specific constraints for your FFI interfaces.
 
-### Example: SIMD Alignment Constraint
 
 ```python
 from modules.module_02_verification_pipeline.verification_pipeline import CustomConstraint
@@ -660,8 +657,7 @@ class DomainPlugin(PipelinePlugin):
     PLUGIN_VERSION = "1.0.0"
     
     def register_rules(self, registry):
-        # Register domain-specific rules
-        pass
+                pass
 ```
 
 Use across projects:
@@ -692,7 +688,6 @@ result = verify_extensible(
 
 ## CI/CD Integration
 
-### Fail Fast on Critical Issues
 
 ```python
 result = verify("interface.h", "library.dll")
@@ -761,7 +756,6 @@ Check constraint coverage in report:
 
 ---
 
-## Maintenance
 
 ### Keep Documentation Updated
 
@@ -829,7 +823,6 @@ class HandleValidConstraint(CustomConstraint):
 
 ## Anti-Patterns to Avoid
 
-### ❌ Ignoring Verification Failures
 
 Don't just disable failing tests. Investigate and fix.
 
@@ -898,7 +891,6 @@ Download LLVM from https://llvm.org/builds/ and add to PATH.
 
 ## Verification Errors
 
-### Header parsing failed
 
 **Error:**
 ```
@@ -922,7 +914,6 @@ result = verify(
 
 ---
 
-### Library loading failed
 
 **Error:**
 ```
@@ -947,7 +938,6 @@ ldd library.so
 
 ---
 
-### All tests failing
 
 **Possible causes:**
 1. Incorrect calling convention
@@ -998,7 +988,6 @@ result = verify_optimized("interface.h", "library.dll", profile=True)
 
 ---
 
-## Test Failures
 
 ### False positives
 

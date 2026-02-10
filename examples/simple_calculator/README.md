@@ -47,7 +47,6 @@ python verify.py
 - Null pointer handling
 - Boundary value testing
 
-## Files Explained
 
 ### calculator.h
 

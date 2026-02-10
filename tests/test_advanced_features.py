@@ -104,15 +104,12 @@ def test_dependency_graph():
     print("✓ DependencyGraph tests passed\n")
 
 def test_optimized_api():
-    """Test optimized API availability."""
-    print("Testing verify_optimized API...")
+        print("Testing verify_optimized API...")
     
-    # API is available
-    assert callable(verify_optimized)
+        assert callable(verify_optimized)
     print("  ✓ verify_optimized() API available")
     
-    # Test with invalid inputs (should raise ValueError)
-    try:
+        try:
         verify_optimized("nonexistent.h", "nonexistent.dll", cache=False)
         assert False, "Should have raised ValueError"
     except ValueError as e:

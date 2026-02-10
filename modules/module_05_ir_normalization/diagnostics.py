@@ -150,8 +150,7 @@ class DiagnosticMessage:
             for i, solution in enumerate(self.solutions, 1):
                 lines.append(f"  {i}. {solution}")
 
-        # Technical details
-        if self.technical_details:
+                if self.technical_details:
             lines.append("\nTechnical Details:")
             for key, value in self.technical_details.items():
                 lines.append(f"  {key}: {value}")

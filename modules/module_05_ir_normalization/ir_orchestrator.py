@@ -109,12 +109,10 @@ class ConfigError(OrchestrationError):
     pass
 
 class NormalizationFailure(OrchestrationError):
-    """Normalization stage failed."""
-    pass
+        pass
 
 class ValidationFailure(OrchestrationError):
-    """Validation stage failed."""
-    pass
+        pass
 
 # ============================================================================
 # PROGRESS REPORTING

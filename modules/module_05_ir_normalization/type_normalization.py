@@ -82,8 +82,7 @@ class NormalizationError(Exception):
     pass
 
 class CircularTypedefError(NormalizationError):
-    """Circular typedef chain detected."""
-    pass
+        pass
 
 class TypeResolutionError(NormalizationError):
     """Type reference cannot be resolved."""
@@ -94,8 +93,7 @@ class TypeResolutionError(NormalizationError):
 # ============================================================================
 
 class TypedefResolver:
-    """Resolves typedef chains to canonical types."""
-
+    
     def __init__(self) -> None:
         self.typedef_map: Dict[str, str] = {}
         self.typedef_chains: Dict[str, List[str]] = {}
@@ -399,8 +397,7 @@ class TypeNormalizationPipeline:
             struct.add_field(field)
             current_offset = raw_field.byte_offset + raw_field.size_bytes
 
-        # Add trailing padding
-        if raw_type.size_bytes > current_offset:
+                if raw_type.size_bytes > current_offset:
             trailing_size = raw_type.size_bytes - current_offset
             trailing_padding = PaddingEntity(
                 byte_offset=current_offset,

@@ -103,8 +103,7 @@ class DeserializationError(Exception):
     pass
 
 class IntegrityError(Exception):
-    """Contract integrity verification failed."""
-    pass
+        pass
 
 # ============================================================================
 # CONTRACT SERIALIZER
@@ -298,8 +297,7 @@ class ContractDeserializer:
             if not result:
                 raise DeserializationError("Contract failed schema validation")
         except Exception as e:
-            # If validation fails due to missing context, that's okay
-            # We're just checking basic structure here
+                        # We're just checking basic structure here
             if "entity_index" not in str(e):
                 raise DeserializationError(f"Contract validation failed: {e}")
 

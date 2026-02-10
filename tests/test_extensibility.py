@@ -16,8 +16,7 @@ from verification_pipeline import (
 )
 
 def test_custom_constraint():
-    """Test custom constraint base class."""
-    print("Testing CustomConstraint...")
+        print("Testing CustomConstraint...")
     
     class TestConstraint(CustomConstraint):
         CONSTRAINT_TYPE = 'test_positive'
@@ -128,13 +127,11 @@ def test_hook_manager():
     assert 'hook2' in executed
     print("  ✓ Hook execution works")
     
-    # Test hook failure doesn't break execution
-    def failing_hook(context, **kwargs):
+        def failing_hook(context, **kwargs):
         raise ValueError("Hook failed")
     
     manager.register(HookPoints.POST_PIPELINE, failing_hook)
-    manager.execute(HookPoints.POST_PIPELINE, context)  # Should not raise
-    print("  ✓ Hook failure handling works")
+    manager.execute(HookPoints.POST_PIPELINE, context)      print("  ✓ Hook failure handling works")
     
     print("✓ HookManager tests passed\n")
 
@@ -243,15 +240,12 @@ def test_rule_templates():
     print("✓ RuleTemplates tests passed\n")
 
 def test_extensible_api():
-    """Test extensible API availability."""
-    print("Testing verify_extensible API...")
+        print("Testing verify_extensible API...")
     
-    # API is available
-    assert callable(verify_extensible)
+        assert callable(verify_extensible)
     print("  ✓ verify_extensible() API available")
     
-    # Test with invalid inputs (should raise ValueError)
-    try:
+        try:
         verify_extensible("nonexistent.h", "nonexistent.dll")
         assert False, "Should have raised ValueError"
     except ValueError as e:

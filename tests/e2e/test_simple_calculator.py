@@ -64,8 +64,7 @@ class TestSimpleCalculatorE2E:
             assert hasattr(result, 'success')
             
         except Exception as e:
-            # If verification fails due to missing dependencies (libclang, etc.),
-            # that's acceptable for this test
+                        # that's acceptable for this test
             if "libclang" in str(e).lower() or "clang" in str(e).lower():
                 print(f"INFO: Missing libclang: {e}")
                 return
@@ -119,16 +118,13 @@ class TestVerifyAPI:
                 verbose=False
             )
             
-            # Should return result even if it fails
-            assert result is not None
+                        assert result is not None
             
         except Exception as e:
-            # Expected to fail, but should be a controlled failure
-            assert "libclang" in str(e).lower() or "not found" in str(e).lower()
+                        assert "libclang" in str(e).lower() or "not found" in str(e).lower()
     
     def test_verify_with_missing_files(self, temp_dir):
-        """Should raise error for missing files."""
-        with pytest.raises((ValueError, FileNotFoundError, OSError)):
+                with pytest.raises((ValueError, FileNotFoundError, OSError)):
             verify(
                 header_path="nonexistent.h",
                 library_path="nonexistent.dll",

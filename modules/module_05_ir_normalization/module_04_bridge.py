@@ -48,8 +48,7 @@ class InvalidArtifactError(ConversionError):
     pass
 
 class UnsupportedTypeError(ConversionError):
-    """Module 04 contains unsupported type construct."""
-    pass
+        pass
 
 class MissingFieldError(ConversionError):
     """Required field missing from Module 04 artifact."""
@@ -487,8 +486,7 @@ class Module04Bridge:
                 symbol = self.symbol_converter.convert_symbol(s_data)
                 interface_unit.symbols.append(symbol)
             except Exception as e:
-                # Log or re-raise
-                print(f"Warning: Symbol conversion failed: {e}")
+                                print(f"Warning: Symbol conversion failed: {e}")
 
         # Register all converted types
         for entity_id, entity in self.deduplicator.entity_cache.items():

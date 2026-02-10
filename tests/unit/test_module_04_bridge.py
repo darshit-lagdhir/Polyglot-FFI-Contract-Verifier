@@ -259,8 +259,7 @@ class TestModule04BridgeFull:
         }
         result = bridge.convert_artifact(art_data)
         assert len(result.interface_unit.symbols) == 1
-        # Should contain at least 'int' (from return type)
-        assert len(result.interface_unit.types) >= 1
+                assert len(result.interface_unit.types) >= 1
         
     def test_missing_version_raises(self, bridge):
         with pytest.raises(InvalidArtifactError):

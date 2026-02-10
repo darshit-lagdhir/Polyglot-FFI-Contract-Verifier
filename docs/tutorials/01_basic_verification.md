@@ -148,7 +148,6 @@ The report shows:
 | divide_zero_numerator | Boundary | ✓ PASS |
 | divide_negative | Positive | ✓ PASS |
 
-### Constraint Coverage
 
 - **add()**: 2 constraints tested (100%)
 - **divide()**: 3 constraints tested (100%)
@@ -173,13 +172,11 @@ Recompile and re-run verification:
 cl /LD calculator.c /Fe:calculator.dll  # Windows
 gcc -shared -fPIC calculator.c -o libcalculator.so  # Linux
 
-# Verify again
 python verify.py
 ```
 
 ---
 
-## : Understand Failure
 
 Now you should see:
 

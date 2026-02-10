@@ -12,13 +12,10 @@ execution:
   enable_crash_detection: true
   subprocess_timeout: 60
 
-# Failure policy
 failure_policy:
-  strict_mode: false  # Fail on any violation
-  block_on_critical: true
+  strict_mode: false    block_on_critical: true
   block_on_high: false
-  max_violations: 10  # Fail if more than N violations
-
+  max_violations: 10  
 # Reporting
 reporting:
   generate_html: true

@@ -66,12 +66,10 @@ class TestHookManager:
         manager = HookManager()
         
         context = HookContext('test-id', None, {})
-        # Should not raise
-        manager.execute(HookPoints.PRE_PIPELINE, context)
+                manager.execute(HookPoints.PRE_PIPELINE, context)
     
     def test_hook_failure_doesnt_break_execution(self):
-        """Failed hook should not prevent other hooks from running."""
-        manager = HookManager()
+                manager = HookManager()
         
         executed = []
         
@@ -85,8 +83,7 @@ class TestHookManager:
         manager.register(HookPoints.PRE_PIPELINE, success_hook)
         
         context = HookContext('test-id', None, {})
-        # Should not raise
-        manager.execute(HookPoints.PRE_PIPELINE, context)
+                manager.execute(HookPoints.PRE_PIPELINE, context)
         
         # Success hook should still execute
         assert 'success' in executed

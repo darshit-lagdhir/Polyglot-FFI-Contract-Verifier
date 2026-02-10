@@ -143,8 +143,7 @@ class TestOptimizedPaddingComputer:
         ]
         total_size = (2 + i % 5) * 16
         padding = comp.compute_padding(fields, total_size)
-        # Should have one gap per field except last, plus trailing 
-        # Actually in this setup: offset 0 (size 8), offset 16 (size 8), ...
+                # Actually in this setup: offset 0 (size 8), offset 16 (size 8), ...
         # gaps at 8 (size 8), 24 (size 8), ...
         assert len(padding) >= 1
 

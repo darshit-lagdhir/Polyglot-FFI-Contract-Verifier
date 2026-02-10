@@ -42,8 +42,7 @@ class TestSourceEnumerationStage:
         """Test precondition checking."""
         stage = SourceEnumerationStage(tmp_path)
         
-        # Missing environment should fail
-        with pytest.raises(BuildPreconditionError):
+                with pytest.raises(BuildPreconditionError):
             stage.check_preconditions({})
         
         # Valid environment should pass
@@ -75,12 +74,10 @@ class TestSourceEnumerationStage:
         """Test postcondition validation."""
         stage = SourceEnumerationStage(tmp_path)
         
-        # Missing source_files should fail
-        with pytest.raises(BuildPostconditionError):
+                with pytest.raises(BuildPostconditionError):
             stage.validate_postconditions({})
         
-        # Empty source_files should fail
-        with pytest.raises(BuildPostconditionError):
+                with pytest.raises(BuildPostconditionError):
             stage.validate_postconditions({
                 'source_files': {'c_sources': [], 'headers': [], 'python_sources': []},
                 'source_hashes': {}
@@ -136,8 +133,7 @@ class TestPipelineCheckpoint:
         assert loaded_context['number'] == 42
 
     def test_list_checkpoints(self, tmp_path):
-        """Test listing available checkpoints."""
-        manager = PipelineCheckpoint(tmp_path)
+                manager = PipelineCheckpoint(tmp_path)
         
         manager.save_checkpoint(BuildStage.SOURCE_ENUMERATION, {})
         manager.save_checkpoint(BuildStage.SOURCE_VALIDATION, {})
@@ -283,8 +279,7 @@ class TestDependencyGraph:
         
         graph = DependencyGraph()
         
-        # Create chain: a -> b -> c
-        # (a depends on b, b depends on c)
+                # (a depends on b, b depends on c)
         # Order should be c, b, a
         for name in ['a', 'b', 'c']:
             meta = SourceMetadata(
@@ -315,8 +310,7 @@ class TestSourceHandlers:
         
         # Create test C file
         c_file = tmp_path / "main.c"
-        c_file.write_text('#include "local.h"\n#include <stdio.h>\nint main() {}')
-        
+        c_file.write_text('        
         assert handler.can_handle(c_file)
         
         metadata = handler.extract_metadata(c_file, tmp_path)
@@ -455,8 +449,7 @@ class TestDependencySpecification:
             hash="wronghash"
         )
         
-        # Verification should fail
-        assert dep_wrong.verify_hash(test_file) is False
+                assert dep_wrong.verify_hash(test_file) is False
 
 class TestDependencyLockFile:
     """Test dependency lock file."""
@@ -570,11 +563,9 @@ class TestDependencyResolver:
         assert len(resolver.conflicts) > 0
 
 class TestToolchainCapabilities:
-    """Test toolchain capabilities model."""
-
+    
     def test_capabilities_creation(self):
-        """Test creating toolchain capabilities."""
-        from modules.module_03_build_process.build_process import ToolchainCapabilities
+                from modules.module_03_build_process.build_process import ToolchainCapabilities
         
         caps = ToolchainCapabilities(
             language_standards={'c': ['c99', 'c11'], 'cpp': ['c++17']},
@@ -608,11 +599,9 @@ class TestToolchainCapabilities:
         assert restored.deterministic_output == original.deterministic_output
 
 class TestToolchainValidator:
-    """Test toolchain validator."""
-
+    
     def test_validator_creation(self, tmp_path):
-        """Test creating toolchain validator."""
-        from modules.module_03_build_process.build_process import (
+                from modules.module_03_build_process.build_process import (
             ToolchainValidator, ToolchainDescriptor
         )
         
@@ -771,8 +760,7 @@ class TestCompilerFlagManager:
         assert 'Conflicting' in issues[0]
 
     def _create_test_toolchain(self):
-        """Create test toolchain descriptor."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="MSVC",
@@ -981,8 +969,7 @@ class TestCompilerInvocation:
         assert 'test.o' in cmd
 
     def _create_test_toolchain(self):
-        """Create test toolchain."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="GCC",
@@ -1025,8 +1012,7 @@ class TestNativeCompiler:
         assert compiler.abi_config == abi_config
 
     def _create_test_toolchain(self):
-        """Create test toolchain."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="GCC",
@@ -1095,8 +1081,7 @@ class TestValidationResult:
         assert result.overall_valid is True
 
     def test_validation_result_with_issues(self):
-        """Test validation result with failures."""
-        from modules.module_03_build_process.build_process import ValidationResult
+                from modules.module_03_build_process.build_process import ValidationResult
         
         result = ValidationResult(
             object_file=Path("bad.o"),
@@ -1139,8 +1124,7 @@ class TestObjectFileValidator:
         assert validator.toolchain == toolchain
 
     def _create_test_toolchain(self):
-        """Create test toolchain."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="GCC",
@@ -1231,8 +1215,7 @@ class TestLinker:
         assert linker.toolchain == toolchain
 
     def _create_test_toolchain(self):
-        """Create test toolchain."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="GCC",
@@ -1392,8 +1375,7 @@ class TestGateValidationResult:
         assert result.passed is True
         
     def test_gate_add_error(self):
-        """Test adding error marks gate result as failed."""
-        from modules.module_03_build_process.build_process import GateValidationResult
+                from modules.module_03_build_process.build_process import GateValidationResult
         
         result = GateValidationResult(gate_name="Test")
         result.add_error("Something went wrong")
@@ -1654,8 +1636,7 @@ class TestDeterministicFlagManager:
         assert any('__TIME__' in f for f in flags)
         
     def _create_test_toolchain(self):
-        """Create test toolchain."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         return ToolchainDescriptor(
             compiler_name="GCC",
@@ -1776,8 +1757,7 @@ class TestBuildOptimizationAdvisor:
         assert any('compilation' in r.lower() for r in recommendations)
 
 class TestBuildErrorDetail:
-    """Test build error detail."""
-    
+        
     def test_error_creation(self):
         """Test creating build error."""
         from modules.module_03_build_process.build_process import BuildErrorDetail
@@ -1917,8 +1897,7 @@ class TestCrossPlatformPath:
         assert '/' in posix or path == Path("test/path")
 
 class TestPlatformToolchainAdapter:
-    """Test platform toolchain adapter."""
-    
+        
     def test_adapter_creation(self):
         """Test creating adapter."""
         from modules.module_03_build_process.build_process import (

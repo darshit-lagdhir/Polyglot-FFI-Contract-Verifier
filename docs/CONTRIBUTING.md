@@ -24,8 +24,7 @@ Thank you for your interest in contributing!
 ## Project Structure
 
 ```
-polyglot_ffi_verifier/     # Main package
-├── __init__.py            # Package API
+polyglot_ffi_verifier/     ├── __init__.py            # Package API
 ├── context.py             # Execution context
 ├── pipeline.py            # Pipeline orchestration
 ├── ingestion.py           # Native interface extraction

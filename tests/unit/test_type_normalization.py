@@ -292,7 +292,6 @@ class TestEnumNormalization:
         assert len(normalized.enumerators) == 2
 
 # Add 60 more tests for complete coverage...
-# (Tests for: function pointers, typedef chains, error cases,
 #  complex structures, nested types, validation, etc.)
 
 if __name__ == '__main__':

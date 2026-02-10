@@ -46,12 +46,10 @@ class TestBuildPhilosophy:
             'abi_conventions': 'msvc_x64'
         }
         
-        # Should not raise
-        philosophy.validate_configuration(config)
+                philosophy.validate_configuration(config)
     
     def test_validate_missing_required_keys_fails(self):
-        """Test that missing required configuration keys cause failure."""
-        philosophy = BuildPhilosophy()
+                philosophy = BuildPhilosophy()
         
         config = {
             'toolchain_version': '19.29',
@@ -144,8 +142,7 @@ class TestBuildEnums:
     """Test build process enumerations."""
     
     def test_build_domain_enum(self):
-        """Test BuildDomain enumeration."""
-        assert BuildDomain.NATIVE_VERIFICATION_TOOLING.value == "native_verification_tooling"
+                assert BuildDomain.NATIVE_VERIFICATION_TOOLING.value == "native_verification_tooling"
         assert BuildDomain.ORCHESTRATION_ADAPTER_TOOLING.value == "orchestration_adapter_tooling"
         assert BuildDomain.VERIFICATION_TARGETS.value == "verification_targets"
     
@@ -162,19 +159,16 @@ class TestBuildEnums:
         assert BuildMode.CI.value == "ci"
 
 class TestToolchainDetection:
-    """Test toolchain detection and validation."""
-    
+        
     def test_toolchain_detector_creation(self):
-        """Test creating a ToolchainDetector instance."""
-        from modules.module_03_build_process.build_process import ToolchainDetector
+                from modules.module_03_build_process.build_process import ToolchainDetector
         
         detector = ToolchainDetector()
         assert detector is not None
         assert len(detector.detected_toolchains) == 0
     
     def test_toolchain_descriptor_creation(self):
-        """Test creating a ToolchainDescriptor."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         descriptor = ToolchainDescriptor(
             compiler_name="MSVC",
@@ -203,8 +197,7 @@ class TestToolchainDetection:
         assert descriptor.default_structure_packing == 8
     
     def test_toolchain_descriptor_serialization(self):
-        """Test toolchain descriptor JSON serialization."""
-        from modules.module_03_build_process.build_process import ToolchainDescriptor
+                from modules.module_03_build_process.build_process import ToolchainDescriptor
         
         original = ToolchainDescriptor(
             compiler_name="Clang",
@@ -240,8 +233,7 @@ class TestToolchainDetection:
         assert restored.deterministic_output == original.deterministic_output
     
     def test_toolchain_requirement_validator_creation(self):
-        """Test creating a ToolchainRequirementValidator."""
-        from modules.module_03_build_process.build_process import ToolchainRequirementValidator
+                from modules.module_03_build_process.build_process import ToolchainRequirementValidator
         
         requirements = {
             'required_target_os': 'Windows',

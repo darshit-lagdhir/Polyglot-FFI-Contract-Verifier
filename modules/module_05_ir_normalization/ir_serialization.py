@@ -105,8 +105,7 @@ class IREntityFactory:
             header_origin=data.get('header_origin'),
             ingestion_timestamp=data.get('ingestion_timestamp')
         )
-        # Override generated ID if present in data to maintain stability exactly
-        if 'entity_id' in data:
+                if 'entity_id' in data:
             meta.entity_id = data['entity_id']
         return meta
 
@@ -483,7 +482,7 @@ def serialize_deterministically(obj: Any) -> str:
 def compute_artifact_hash(artifact: IRArtifact) -> str:
     """Compute deterministic hash of IR artifact."""
     # We use a copy of to_dict but potentially without volatile fields like creation_timestamp
-    # if alignment between runs is needed. But prompt 1.3 says "No timestamps (or fixed timestamps)".
+    # if alignment between runs is needed. But .3 says "No timestamps (or fixed timestamps)".
     # Let's override creation_timestamp for hashing if we want absolute determinism across time.
     data = artifact.to_dict()
     # For hashing, we might want to stabilize the timestamp if it's meant to be part of the content ID
@@ -523,8 +522,7 @@ def deserialize_compressed(input_path: Path) -> IRArtifact:
 # ============================================================================
 
 class IntegrityError(Exception):
-    """Artifact integrity check failed."""
-    pass
+        pass
 
 class IRArtifactManager:
     """Manages IR artifact storage and retrieval."""

@@ -131,7 +131,6 @@ Result of verification pipeline execution.
 
 ---
 
-### CustomConstraint
 
 Base class for custom user-defined constraints.
 

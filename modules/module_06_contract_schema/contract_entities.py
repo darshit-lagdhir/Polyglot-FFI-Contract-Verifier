@@ -29,25 +29,21 @@ class GenerationMode(Enum):
 
 class Severity(Enum):
     """Clause violation severity."""
-    FATAL = "fatal"         # Undefined behavior, immediate failure
-    ERROR = "error"         # Incorrect usage, block in strict mode
+    FATAL = "fatal"             ERROR = "error"         # Incorrect usage, block in strict mode
     WARNING = "warning"     # Potential issue, continue
     ADVISORY = "advisory"   # Informational only
 
 class ClauseType(Enum):
     """Semantic category of contract clause."""
     LAYOUT = "layout"                   # Structure layout matching
-    SIZE = "size"                       # Size constraints
-    ALIGNMENT = "alignment"             # Alignment requirements
-    NULLABILITY = "nullability"         # Null pointer constraints
-    OWNERSHIP = "ownership"             # Memory ownership
+    SIZE = "size"                           ALIGNMENT = "alignment"             # Alignment requirements
+    NULLABILITY = "nullability"             OWNERSHIP = "ownership"             # Memory ownership
     LIFETIME = "lifetime"               # Value lifetime
     RELATIONAL = "relational"           # Multi-entity relationships
     CALLING_CONVENTION = "calling_convention"  # Call mechanism
     ABI_COMPATIBILITY = "abi_compatibility"    # Version compatibility
     INITIALIZATION = "initialization"   # Memory initialization
-    MUTABILITY = "mutability"          # Modification constraints
-    THREAD_SAFETY = "thread_safety"    # Concurrency assumptions
+    MUTABILITY = "mutability"              THREAD_SAFETY = "thread_safety"    # Concurrency assumptions
 
 class SubjectKind(Enum):
     """Kind of IR entity referenced by clause."""

@@ -180,8 +180,7 @@ class CompleteValidationResult:
             for error in self.referential_result.errors:
                 lines.append(f"  {error}")
         
-        # Constraint layer
-        if self.constraint_result:
+                if self.constraint_result:
             lines.append(f"Constraint Validation: {'PASS' if self.constraint_result.passed else 'FAIL'}")
             for error in self.constraint_result.errors:
                 lines.append(f"  {error}")
@@ -345,8 +344,7 @@ class ReferentialValidator:
             passed=True
         )
         
-        # Check IR artifact available
-        if not self.context.ir_artifact:
+                if not self.context.ir_artifact:
             result.add_error(
                 code="E_REF_001",
                 message="IR artifact not provided for referential validation",
@@ -533,19 +531,16 @@ class ContractValidator:
         result.schema_result = self.schema_validator.validate(contract)
         
         if not result.schema_result.passed:
-            # Schema validation failed, stop here
-            return result
+                        return result
         
         # Layer 2: Referential validation
         if not skip_referential:
             result.referential_result = self.referential_validator.validate(contract)
             
             if not result.referential_result.passed:
-                # Referential validation failed, stop here
-                return result
+                                return result
         
-        # Layer 3: Constraint validation
-        if not skip_constraint:
+                if not skip_constraint:
             result.constraint_result = self.constraint_validator.validate(contract)
         
         return result

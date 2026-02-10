@@ -106,8 +106,7 @@ def test_examples():
     print("TEST 4: EXAMPLES")
     print("=" * 60)
     
-    # Check simple_calculator example (assuming it was created in previous prompts)
-    example_path = Path("examples/simple_calculator")
+        example_path = Path("examples/simple_calculator")
     if not example_path.exists():
          print(f"✓ Skipping examples check (directory {example_path} does not exist in this environment)")
          return True
