@@ -231,7 +231,7 @@ class ContractDiff:
     overall_impact: CompatibilityImpact = CompatibilityImpact.NEUTRAL
     
     def has_breaking_changes(self) -> bool:
-                if self.removed_clauses:
+        if self.removed_clauses:
             return True
         
         for comparison in self.modified_clauses:

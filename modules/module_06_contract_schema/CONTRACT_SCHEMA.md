@@ -324,11 +324,50 @@ tests/unit/
 
 ---
 
+
+## Advanced Contract Diffing & Impact Analysis ✅
+
+**Status:** Complete  
+**Focus:** Semantic change analysis, impact assessment, and migration path generation.
+
+### Implemented Components
+
+#### Semantic Diffing Engine (`contract_diff_advanced.py`)
+- **Impact Classification**:
+  - `ChangeImpact`: Categorizes changes as BREAKING, COMPATIBLE, or NEUTRAL.
+  - `ChangeCategory`: Precise identification of what changed (Value, Type, Addition, Removal).
+
+- **Specialized Analyzers**:
+  - `NullabilityChangeAnalyzer`: Detects nullability tightening (Breaking) vs. relaxation (Compatible).
+  - `SizeChangeAnalyzer`: Analyzes size requirement increases (Breaking) vs. decreases (Compatible).
+  - `OwnershipChangeAnalyzer`: Identifies breaking changes in memory management responsibility.
+
+- **Migration Guidance**:
+  - `MigrationStep`: Provides actionable instructions for resolving breaking changes.
+  - `MigrationGuide`: Consolidated transition path between versions.
+
+- **Orchestration**:
+  - `AdvancedContractDiffer`: Advanced wrapper around basic diffing for semantic insight.
+  - `AdvancedDiffResult`: Rich reporting including summary formatting and breaking change highlights.
+
+### Key Features
+- **Semantic Understanding**: Interprets the *meaning* of changes (e.g., tightening a constraint is Breaking).
+- **Migration Synthesis**: Automatically generates code examples and instructions for developers.
+- **Rich Reporting**: Human-friendly terminal summaries and structured data for CI/CD.
+- **Configurable Impact**: Easily extended with new clausal analyzers.
+- **Effort Estimation**: Provides rough effort estimates for version transitions (Low/Medium/High).
+
+### Testing
+- 100 unit tests in `tests/unit/test_contract_diff_advanced.py`
+- All tests passing ✅
+
+---
+
 ## Progress Summary
 
-**Module Progress:** 6/15 components complete (40.0%)  
-**Total Tests:** 373 (All passing ✅)  
-**Total Lines:** ~4,450 lines of implementation code
+**Module Progress:** 7/15 components complete (46.7%)  
+**Total Tests:** 473 (All passing ✅)  
+**Total Lines:** ~5,200 lines of implementation code
 
 **Implemented:**
 - ✅ Foundational Entity Model
@@ -337,8 +376,9 @@ tests/unit/
 - ✅ Versioning & Evolution
 - ✅ Serialization & Persistence
 - ✅ Automated Contract Synthesis
+- ✅ Advanced Contract Diffing & Impact Analysis
 
-**Next:** Contract Diffing & Change Detection
+**Next:** Contract CLI Interface & User Commands
 
 ---
 
