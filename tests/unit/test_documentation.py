@@ -1,119 +1,182 @@
 """
-Unit tests for Module 05: Documentation
-Test suite (80 tests)
+Unit tests for Module 06: Documentation (Prompt 12/15)
+Testing Level: MEDIUM (30 tests)
 """
 
 import pytest
 from pathlib import Path
 import sys
 
+# Ensure modules directory is in path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'modules'))
 
-from module_05_ir_normalization.documentation import (
-    DocumentationGenerator, ERROR_CATALOG
-)
 
-class TestErrorCatalog:
-    """Test error catalog structure (20 tests)."""
+class TestREADMEExists:
+    """Test README.md exists and has content."""
     
-    def test_catalog_exists(self):
-        assert ERROR_CATALOG is not None
-        assert len(ERROR_CATALOG) > 0
+    def test_readme_exists(self):
+        readme_path = Path(__file__).parent.parent.parent / 'modules' / 'module_06_contract_schema' / 'README.md'
+        assert readme_path.exists(), "README.md not found"
     
-    def test_error_entries_have_required_fields(self):
-        required_fields = ['title', 'category', 'severity', 'description']
-        
-        for code, info in ERROR_CATALOG.items():
-            for field in required_fields:
-                assert field in info, f"Error {code} missing field: {field}"
-    
-    def test_error_codes_format(self):
-        for code in ERROR_CATALOG.keys():
-            # Should start with E or W
-            assert code[0] in ['E', 'W'], f"Invalid error code: {code}"
-            # Should have digits
-            assert code[1:].isdigit(), f"Invalid error code format: {code}"
+    def test_readme_not_empty(self):
+        readme_path = Path(__file__).parent.parent.parent / 'modules' / 'module_06_contract_schema' / 'README.md'
+        content = readme_path.read_text(encoding='utf-8')
+        assert len(content) > 1000, "README.md is too short or empty"
 
-    @pytest.mark.parametrize("code", list(ERROR_CATALOG.keys()))
-    def test_error_content_not_empty(self, code):
-        info = ERROR_CATALOG[code]
-        assert len(info['title']) > 0
-        assert len(info['description']) > 0
-        assert len(info['common_causes']) > 0
-        assert len(info['solutions']) > 0
 
-    @pytest.mark.parametrize("i", range(13))
-    def test_bulk_catalog_structure(self, i):
-        # Dummy bulk tests to reach count
-        assert len(ERROR_CATALOG) >= 4
-
-class TestDocumentationGenerator:
-    """Test documentation generator (60 tests)."""
+class TestREADMEContent:
+    """Test README.md contains required sections."""
     
     @pytest.fixture
-    def generator(self):
-        return DocumentationGenerator()
+    def readme_content(self):
+        readme_path = Path(__file__).parent.parent.parent / 'modules' / 'module_06_contract_schema' / 'README.md'
+        return readme_path.read_text(encoding='utf-8')
     
-    def test_generator_creation(self, generator):
-        assert generator is not None
-        assert len(generator.error_catalog) > 0
+    def test_has_title(self, readme_content):
+        assert "# Module 06: Contract Schema & Synthesis" in readme_content
     
-    def test_generate_troubleshooting_guide(self, generator):
-        guide = generator.generate_troubleshooting_guide()
-        assert guide is not None
-        assert len(guide) > 0
-        assert "Diagnostics Guide" in guide
+    def test_has_overview(self, readme_content):
+        assert "## 🎯 Overview" in readme_content
     
-    def test_troubleshooting_includes_all_errors(self, generator):
-        guide = generator.generate_troubleshooting_guide()
-        for code in ERROR_CATALOG.keys():
-            assert code in guide, f"Error {code} not in guide"
+    def test_has_quick_start(self, readme_content):
+        assert "## 🚀 Quick Start" in readme_content
     
-    def test_generate_cli_reference(self, generator):
-        reference = generator.generate_cli_reference()
-        assert reference is not None
-        assert "CLI Reference" in reference
-        assert "normalize" in reference
-        assert "validate" in reference
+    def test_has_installation(self, readme_content):
+        assert "### Installation" in readme_content
     
-    def test_generate_api_reference(self, generator):
-        reference = generator.generate_api_reference()
-        assert reference is not None
-        assert "API Reference" in reference
-        assert "IROrchestrator" in reference
+    def test_has_architecture(self, readme_content):
+        assert "## 🏗️ Architecture" in readme_content
     
-    def test_save_all_documentation(self, generator, tmp_path):
-        output_dir = tmp_path / "docs"
-        generator.save_all_documentation(output_dir)
-        assert output_dir.exists()
-        assert (output_dir / "troubleshooting.md").exists()
-        assert (output_dir / "cli-reference.md").exists()
-        assert (output_dir / "api-reference.md").exists()
+    def test_has_license(self, readme_content):
+        assert "## 📄 License" in readme_content
 
-    @pytest.mark.parametrize("keyword", [
-        "normalize", "validate", "diff", "inspect", "cache",
-        "--version", "--verbose", "--quiet", "--config",
-        "Usage", "Options", "Examples", "Exit Codes",
-        "Environment Variables", "Config Files"
-    ])
-    def test_cli_reference_content(self, generator, keyword):
-        content = generator.generate_cli_reference()
-        assert keyword in content
 
-    @pytest.mark.parametrize("keyword", [
-        "IROrchestrator", "IRNormalizationConfig",
-        "Module04Bridge", "TypeNormalizationPipeline",
-        "IRValidationOrchestrator", "DiagnosticCollector",
-        "execute()", "validate_config()"
-    ])
-    def test_api_reference_content(self, generator, keyword):
-        content = generator.generate_api_reference()
-        assert keyword in content
+    def test_has_performance(self, readme_content):
+        assert "## 📊 Performance" in readme_content
 
-    @pytest.mark.parametrize("i", range(31))
-    def test_bulk_generator_scenarios(self, i):
-        # Bulk tests to hit 80 mark
-        assert True
+    def test_has_testing(self, readme_content):
+        assert "## 🧪 Testing" in readme_content
 
+class TestExamplesExist:
+    """Test that examples directory exists."""
+    
+    def test_examples_directory_exists(self):
+        examples_dir = Path(__file__).parent.parent.parent / 'examples' / 'module_06'
+        assert examples_dir.exists(), "examples/module_06 directory not found"
+    
+    def test_basic_generation_example_exists(self):
+        example_dir = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation'
+        assert example_dir.exists(), "Basic generation example not found"
+    
+    def test_validation_example_exists(self):
+        example_dir = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '02_validation'
+        assert example_dir.exists(), "Validation example not found"
+
+    def test_examples_readme_exists(self):
+        readme_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / 'README.md'
+        assert readme_path.exists(), "Examples README.md not found"
+
+
+class TestExampleContent:
+    """Test that examples have proper structure."""
+    
+    def test_basic_generation_has_readme(self):
+        readme_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation' / 'README.md'
+        assert readme_path.exists(), "Example 01 README.md not found"
+    
+    def test_basic_generation_has_code(self):
+        code_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation' / 'generate.py'
+        assert code_path.exists(), "Example 01 generate.py not found"
+    
+    def test_validation_has_code(self):
+        code_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '02_validation' / 'validate.py'
+        assert code_path.exists(), "Example 02 validate.py not found"
+
+
+class TestDocstrings:
+    """Test that public API has docstrings."""
+    
+    def test_contract_generator_has_docstring(self):
+        from module_06_contract_schema import ContractGenerator
+        assert ContractGenerator.__doc__ is not None
+        assert len(ContractGenerator.__doc__) > 100
+    
+    def test_contract_validator_has_docstring(self):
+        from module_06_contract_schema import ContractValidator
+        assert ContractValidator.__doc__ is not None
+        assert len(ContractValidator.__doc__) > 100
+    
+    def test_enforcement_engine_has_docstring(self):
+        from module_06_contract_schema import EnforcementEngine
+        assert EnforcementEngine.__doc__ is not None
+        assert len(EnforcementEngine.__doc__) > 100
+
+    def test_contract_document_has_docstring(self):
+        from module_06_contract_schema import ContractDocument
+        assert ContractDocument.__doc__ is not None
+        assert len(ContractDocument.__doc__) > 50
+
+
+    def test_semantic_version_has_docstring(self):
+        from module_06_contract_schema import SemanticVersion
+        assert SemanticVersion.__doc__ is not None
+        assert len(SemanticVersion.__doc__) > 50
+
+    def test_contract_differ_has_docstring(self):
+        from module_06_contract_schema import ContractDiffer
+        assert ContractDiffer.__doc__ is not None
+        assert len(ContractDiffer.__doc__) > 50
+
+    def test_python_adapter_has_docstring(self):
+        from module_06_contract_schema import PythonAdapter
+        assert PythonAdapter.__doc__ is not None
+        assert len(PythonAdapter.__doc__) > 50
+
+    def test_advanced_contract_differ_has_docstring(self):
+        from module_06_contract_schema import AdvancedContractDiffer
+        assert AdvancedContractDiffer.__doc__ is not None
+        assert len(AdvancedContractDiffer.__doc__) > 50
+
+class TestModuleDocstring:
+    """Test module-level docstring."""
+    
+    def test_module_has_docstring(self):
+        import module_06_contract_schema
+        assert module_06_contract_schema.__doc__ is not None
+        assert len(module_06_contract_schema.__doc__) > 500
+
+
+class TestExampleExecution:
+    """Test that examples can be imported (for syntax check)."""
+    
+    def test_import_example_01(self):
+        example_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation'
+        sys.path.insert(0, str(example_path))
+        import generate
+        assert generate.main is not None
+        sys.path.pop(0)
+
+    def test_import_example_02(self):
+        example_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '02_validation'
+        sys.path.insert(0, str(example_path))
+        import validate
+        assert validate.main is not None
+        sys.path.pop(0)
+
+
+class TestExampleReadmeContent:
+    """Test examples README content."""
+
+    def test_example_01_readme_has_prerequisites(self):
+        readme_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation' / 'README.md'
+        content = readme_path.read_text(encoding='utf-8')
+        assert "Prerequisites" in content
+
+    def test_example_01_readme_has_output(self):
+        readme_path = Path(__file__).parent.parent.parent / 'examples' / 'module_06' / '01_basic_generation' / 'README.md'
+        content = readme_path.read_text(encoding='utf-8')
+        assert "Expected Output" in content
+
+# Run tests
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

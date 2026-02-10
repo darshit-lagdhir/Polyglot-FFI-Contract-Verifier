@@ -497,9 +497,16 @@ class ConstraintValidator:
 
 class ContractValidator:
     """
-    Complete contract validator.
+    Complete multi-layer contract validator.
     
-    Orchestrates all three validation layers.
+    The ContractValidator orchestrates the three validation layers:
+    1. Schema Layer: Verifies structural integrity against JSON schema.
+    2. Referential Layer: Ensures all symbol identifiers exist in the IR artifact.
+    3. Constraint Layer: Checks for logical consistency between constraints.
+    
+    Attributes:
+        context (ValidationContext): Validation settings and behavior
+        schema_validator (SchemaValidator): Structural integrity checker
     """
     
     def __init__(self, context: Optional[ValidationContext] = None):

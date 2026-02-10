@@ -232,7 +232,13 @@ class LanguageAdapter(ABC):
 # ============================================================================
 
 class PythonAdapter(LanguageAdapter):
-    """Python-specific enforcement adapter."""
+    """
+    Python-specific enforcement adapter for runtime data inspection.
+    
+    The PythonAdapter implements the lower-level checks for Python objects.
+    It supports nullability checks for None, size checks for sized collections, 
+    alignment checks for ctypes pointers, and structural layout verification.
+    """
     
     def __init__(self, mode: EnforcementMode = EnforcementMode.STRICT):
         self.mode = mode
@@ -321,9 +327,17 @@ class PythonAdapter(LanguageAdapter):
 
 class EnforcementEngine:
     """
-    Contract enforcement engine.
+    Contract enforcement engine for runtime FFI verification.
     
-    Orchestrates runtime enforcement using language adapters.
+    The EnforcementEngine provides the infrastructure to verify contract 
+    constraints at runtime. It hooks into FFI call boundaries (pre-call 
+    and post-call) and uses language-specific adapters to perform the 
+    actual data inspections.
+    
+    Attributes:
+        contract (ContractDocument): The contract being enforced
+        adapter (LanguageAdapter): Language-specific data inspector
+        mode (EnforcementMode): Active enforcement strategy (STRICT/AUDIT/etc)
     """
     
     def __init__(

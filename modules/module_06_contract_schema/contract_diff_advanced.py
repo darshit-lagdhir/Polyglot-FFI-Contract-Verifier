@@ -210,7 +210,13 @@ class OwnershipChangeAnalyzer:
         return p.value if p else None
 
 class AdvancedContractDiffer:
-    """Orchestrates detailed semantic comparison between contract versions."""
+    """
+    Orchestrates detailed semantic comparison between contract versions.
+    
+    The AdvancedContractDiffer goes beyond basic ID matching to perform 
+    deep parameter analysis for specific clause types (Nullability, Size, 
+    Ownership). It identifies breaking changes and produces migration guides.
+    """
     def __init__(self):
         self.basic_differ = ContractDiffer()
         self.null_analyzer = NullabilityChangeAnalyzer()

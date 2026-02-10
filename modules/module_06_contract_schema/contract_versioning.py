@@ -273,7 +273,13 @@ class ContractDiff:
 # ============================================================================
 
 class ContractDiffer:
-    """Computes diff between contract versions."""
+    """
+    Computes structural differences between contract versions.
+    
+    The ContractDiffer compares two ContractDocument instances to identify 
+    added, removed, and modified clauses. It performs initial impact 
+    assessment for simple parameter changes (e.g., nullability relaxation).
+    """
     
     def diff(
         self,

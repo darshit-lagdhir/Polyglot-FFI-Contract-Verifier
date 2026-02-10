@@ -201,7 +201,23 @@ class RelationalClauseGenerator:
         return GeneratedClause(clause, 0.75, "Detected buffer-length naming pattern", function.entity_id)
 
 class ContractGenerator:
-    """Orchestrates the synthesis of a complete ContractDocument from IR input."""
+    """
+    Generate contracts from IR artifacts.
+    
+    The ContractGenerator analyzes IR artifacts and produces contracts with
+    conservative default constraints. Clauses are generated based on structural
+    information and naming heuristics.
+    
+    Attributes:
+        config (GenerationConfig): Active configuration
+        layout_gen (LayoutClauseGenerator): Layout clause generator
+        nullability_gen (NullabilityClauseGenerator): Nullability generator
+        
+    Example:
+        >>> generator = ContractGenerator()
+        >>> contract = generator.generate(ir_artifact, "my_interface")
+        >>> print(f"Generated {len(contract.clauses)} clauses")
+    """
     
     def __init__(self, config: Optional[GenerationConfig] = None):
         self.config = config or GenerationConfig()
