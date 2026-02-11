@@ -534,7 +534,7 @@ def resolve_calling_convention(
     Resolve function calling convention.
 
     Priority:
-    1. Explicit function attribute
+        1. Explicit function attribute
     2. Platform default
     """
     # Check explicit attribute

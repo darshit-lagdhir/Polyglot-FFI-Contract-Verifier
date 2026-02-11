@@ -253,7 +253,7 @@ def quick_validate(contract: ContractDocument) -> bool:
 
     Example:
         >>> if quick_validate(contract):
-        ...     print("Contract structure is valid")
+            ...     print("Contract structure is valid")
     """
     validator = ContractValidator()
     result = validator.validate(contract, skip_referential=True, skip_constraint=True)

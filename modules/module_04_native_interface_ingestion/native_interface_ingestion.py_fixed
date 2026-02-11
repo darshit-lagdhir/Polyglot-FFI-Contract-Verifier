@@ -1496,8 +1496,8 @@ class EnumExtractor:
             try:
                 enumerator = self._extract_enumerator(child_cursor)
                 enumerators.append(enumerator)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
             return CXChildVisitResult.CONTINUE
 
@@ -1694,8 +1694,8 @@ class RecordLayoutExtractor:
             try:
                 field_info = self._extract_field(child_cursor)
                 fields.append(field_info)
-            except Exception:
-                pass  # Skip problematic fields
+        except Exception:
+            pass  # Skip problematic fields
 
             return CXChildVisitResult.CONTINUE
 
@@ -2399,8 +2399,8 @@ class CppExtractor:
                 if name:
                     # Prepend to keep outer-to-inner order
                     namespaces.insert(0, name)
-                else:
-                    namespaces.insert(0, "(anonymous)")
+            else:
+                namespaces.insert(0, "(anonymous)")
 
             # Continue traversal up
             parent = libclang.clang_getIDESemanticParent(parent)
@@ -2602,8 +2602,8 @@ class TypeExtractor:
                     type_info.typedef_info = self._typedef_resolver.extract_typedef_info(
                         decl_cursor
                     )
-            except CircularTypedefError:
-                type_info.typedef_chain = [type_spelling, "<circular>"]
+        except CircularTypedefError:
+            type_info.typedef_chain = [type_spelling, "<circular>"]
 
         # Cache and return
         self._type_cache[type_spelling] = type_info
@@ -3035,8 +3035,8 @@ def _load_libclang():
                 for candidate in candidates:
                     try:
                         return ctypes.CDLL(str(candidate))
-                    except OSError:
-                        pass
+                except OSError:
+                    pass
         except (OSError, subprocess.SubprocessError):
             continue
 
@@ -3046,24 +3046,21 @@ def _load_libclang():
         if name:
             try:
                 return ctypes.CDLL(name)
-            except OSError:
-                pass
-            except Exception:
-                pass
-
-    except (OSError, Exception):
-        pass
+        except OSError:
+            pass
+except Exception:
+    pass
 
     # Strategy 3: Platform specific candidates & globs
     names = []
     if sys.platform == "win32":
         names = ["libclang.dll", "libclang-13.dll", "libclang-14.dll"]
-    elif sys.platform == "darwin":
-        names = ["libclang.dylib"]
+elif sys.platform == "darwin":
+    names = ["libclang.dylib"]
         names.extend(glob.glob("/opt/homebrew/opt/llvm*/lib/libclang.dylib"))
         names.extend(glob.glob("/usr/local/opt/llvm*/lib/libclang.dylib"))
-    elif sys.platform.startswith("linux"):
-        names = ["libclang.so", "libclang.so.1", "libclang-14.so.1"]
+elif sys.platform.startswith("linux"):
+    names = ["libclang.so", "libclang.so.1", "libclang-14.so.1"]
 
         # Explicitly check versioned llvm directories
         for ver in range(10, 19):
@@ -3286,7 +3283,7 @@ class CXDiagnosticSeverity(IntEnum):
 
 # Function prototypes
 if LIBCLANG_AVAILABLE:
-
+    
     def bind(name, argtypes=None, restype=None):
         try:
             func = getattr(libclang, name)
@@ -3856,8 +3853,8 @@ class InputHasher:
             if header_path.exists():
                 with open(header_path, "rb") as f:
                     hasher.update(f.read())
-            else:
-                # If file doesn't exist, hash its name to at least capture the
+        else:
+            # If file doesn't exist, hash its name to at least capture the
                 # intent
                 hasher.update(str(header_path).encode("utf-8"))
 
@@ -4103,8 +4100,8 @@ class ClangFrontend(CompilerFrontend):
         for name, value in context.macro_definitions.items():
             if value:
                 args.append(f"-D{name}={value}")
-            else:
-                args.append(f"-D{name}")
+        else:
+            args.append(f"-D{name}")
 
         # Target triple
         if context.target_triple:
@@ -4147,8 +4144,8 @@ class ClangFrontend(CompilerFrontend):
                 symbol = self._process_cursor(child_cursor)
                 if symbol:
                     symbols.append(symbol)
-            except Exception:
-                # Log but continue traversal
+        except Exception:
+            # Log but continue traversal
                 pass
 
             return CXChildVisitResult.RECURSE
@@ -4200,8 +4197,8 @@ class ClangFrontend(CompilerFrontend):
                     )
 
                     return symbol
-            except Exception:
-                return None
+        except Exception:
+            return None
 
         # Get cursor name
         name_cxstr = libclang.clang_getIDESpelling(cursor)
@@ -4334,8 +4331,8 @@ class ClangFrontend(CompilerFrontend):
 
                 layoutValue = self._record_extractor.extract_record_layout(cursor, cursor_type)
                 symbol_type_info.record_layout = layoutValue
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if kind == CXIDEKind.ENUM_DECL:
             try:
@@ -4352,22 +4349,22 @@ class ClangFrontend(CompilerFrontend):
                 symbol_type_info.enum_max_value = enum_meta["max_value"]
                 symbol_type_info.enum_is_bitmask = enum_meta["is_bitmask"]
                 symbol_type_info.enum_is_sequential = enum_meta["is_sequential"]
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if symbol_kind == "function":
             try:
                 signature = self._function_extractor.extract_function_signature(cursor)
                 symbol.function_signature = signature
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if symbol_kind == "variable":
             try:
                 var_info = self._variable_extractor.extract_global_variable(cursor)
                 symbol.global_variable_info = var_info
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
             try:
@@ -4380,8 +4377,8 @@ class ClangFrontend(CompilerFrontend):
 
                 # Make sure the type_info in TypeExtractor is also updated
                 self._type_extractor.extract_type(cursor_type)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         try:
             attributes: List[AttributeInfo] = self._attribute_extractor.extract_attributes(cursor)
@@ -4843,8 +4840,8 @@ class VirtualHeaderGenerator:
             try:
                 relative = header.relative_to(include_path)
                 return str(relative)
-            except ValueError:
-                continue
+        except ValueError:
+            continue
 
         # Fall back to absolute path
         return str(header)
@@ -4945,8 +4942,8 @@ class Profiler:
 
         try:
             yield
-        finally:
-            end = time.time()
+    finally:
+        end = time.time()
             section_name, section_start = self.stack.pop()
             duration = end - section_start
 
@@ -4955,8 +4952,8 @@ class Profiler:
                 existing.duration += duration
                 existing.call_count += 1
                 existing.end_time = end
-            else:
-                self.sections[section_name] = ProfileSection(
+        else:
+            self.sections[section_name] = ProfileSection(
                     name=section_name, start_time=section_start, end_time=end, duration=duration
                 )
 
@@ -5185,9 +5182,9 @@ class IngestionOrchestrator:
 
             return artifact
 
-        finally:
-            if self._memory_tracking_enabled:
-                tracemalloc.stop()
+    finally:
+        if self._memory_tracking_enabled:
+            tracemalloc.stop()
 
     def _ingest_internal(self, config: IngestionConfig) -> RawInterfaceArtifact:
         """Internal ingestion with profiling sections."""
@@ -5212,8 +5209,8 @@ class IngestionOrchestrator:
                         config.header_files, config.include_paths
                     )
                     context.header_files = [virtual_header_path]
-                except Exception as e:
-                    self.diagnostic_collector.add_warning(
+            except Exception as e:
+                self.diagnostic_collector.add_warning(
                         f"Virtual header generation failed: {e}. Falling back to individual parsing.",
                         category="configuration",
                     )
@@ -5513,8 +5510,8 @@ def main():
 
         sys.exit(0)
 
-    except IngestionError as e:
-        print(f"Ingestion failed: {e}", file=sys.stderr)
+except IngestionError as e:
+    print(f"âœ— Ingestion failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 

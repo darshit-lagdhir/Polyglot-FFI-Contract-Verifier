@@ -434,20 +434,20 @@ Common Issues and Solutions
 ═══════════════════════════════════════════════════════════════════════════════
 
 1. "Structure size mismatch"
-   Cause: Padding computation doesn't match compiler layout
-   Fix: Check for packing attributes, compare with clang -fdump-record-layouts
+Cause: Padding computation doesn't match compiler layout
+Fix: Check for packing attributes, compare with clang -fdump-record-layouts
 
 2. "Type reference cannot be resolved"
-   Cause: Module 04 artifact incomplete or corrupted
-   Fix: Re-run Module 04 ingestion, verify all headers included
+Cause: Module 04 artifact incomplete or corrupted
+Fix: Re-run Module 04 ingestion, verify all headers included
 
 3. "Invalid artifact version"
-   Cause: Module 04 artifact version not supported
-   Fix: Update Module 04 to compatible version, or update Module 05
+Cause: Module 04 artifact version not supported
+Fix: Update Module 04 to compatible version, or update Module 05
 
 4. "Permission denied"
-   Cause: Cannot write to cache directory
-   Fix: Check permissions, use --cache-dir with writable location
+Cause: Cannot write to cache directory
+Fix: Check permissions, use --cache-dir with writable location
 
 For more help: https://pfcv.dev/troubleshooting
         """

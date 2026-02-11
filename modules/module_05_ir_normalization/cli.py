@@ -478,9 +478,9 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  pfcv-ir normalize raw_interface.json
-  pfcv-ir diff v1_ir.json v2_ir.json
-  pfcv-ir inspect ir_artifact.json --list-functions
+    pfcv-ir normalize raw_interface.json
+pfcv-ir diff v1_ir.json v2_ir.json
+pfcv-ir inspect ir_artifact.json --list-functions
 
 For more information: https://pfcv.readthedocs.io/module_05/
         """,

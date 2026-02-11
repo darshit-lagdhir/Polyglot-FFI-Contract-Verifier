@@ -2,7 +2,7 @@
 Module 06: Contract Schema - CLI Interface
 
 Command-line interface for contract operations:
-- generate: Create contracts from IR
+    - generate: Create contracts from IR
 - validate: Validate contract correctness
 - diff: Compare contract versions
 - inspect: Examine contract contents

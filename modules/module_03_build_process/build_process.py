@@ -640,7 +640,7 @@ class ToolchainDetector:
     def _detect_toolchain(
     self,
     compiler_path: Path,
-     compiler_name: str) -> ToolchainDescriptor:
+    compiler_name: str) -> ToolchainDescriptor:
         """
         Detect and validate a specific toolchain.
 
@@ -697,7 +697,7 @@ class ToolchainDetector:
 
     def _extract_compiler_version(
         self, compiler_path: Path, compiler_name: str) -> Tuple[str, str]:
-            """
+        """
         Extract version information from compiler.
 
         Args:
@@ -748,7 +748,7 @@ class ToolchainDetector:
                 # Format: "gcc (GCC) 11.2.0"
                 match = re.search(
     r'gcc.*\s+(\d+\.\d+\.\d+)', output, re.IGNORECASE)
-    if match:
+                if match:
                     full_version = match.group(1)
                     short_version = full_version.split('.')[0]  # 11
                     return short_version, full_version
@@ -763,8 +763,8 @@ class ToolchainDetector:
             raise BuildError(f"Failed to extract compiler version: {e}")
 
     def _detect_linker(self, compiler_path: Path,
-                       compiler_name: str) -> Tuple[Path, str, str]:
-                           """
+                    compiler_name: str) -> Tuple[Path, str, str]:
+        """
         Detect linker associated with compiler.
 
         Returns:
@@ -778,8 +778,8 @@ class ToolchainDetector:
             found_linker = shutil.which('ld') or shutil.which('lld')
             if found_linker:
                 linker_path = Path(found_linker)
-            else:
-                linker_path = compiler_path
+        else:
+            linker_path = compiler_path
 
         if not linker_path or not Path(linker_path).exists():
             raise BuildConfigError(
@@ -823,20 +823,20 @@ class ToolchainDetector:
                     text=True,
                     timeout=5
                 )
-        target_triple = result.stdout.strip()
+                target_triple = result.stdout.strip()
 
                 # Parse triple: x86_64-pc-linux-gnu
-        parts = target_triple.split('-')
-        target_arch = parts[0] if len(parts) > 0 else host_arch
-        target_os = parts[2] if len(parts) > 2 else host_os
-        target_abi = parts[3] if len(parts) > 3 else 'gnu'
+                parts = target_triple.split('-')
+                target_arch = parts[0] if len(parts) > 0 else host_arch
+                target_os = parts[2] if len(parts) > 2 else host_os
+                target_abi = parts[3] if len(parts) > 3 else 'gnu'
 
             except Exception:
                 # Fallback to host
-        target_os = host_os
-        target_arch = host_arch
-        target_abi = 'gnu'
-        target_triple = f"{target_arch}-unknown-{target_os.lower()}-{target_abi}"
+                target_triple = f"{host_os}-{host_arch}-unknown"
+                target_os = host_os
+                target_arch = host_arch
+                target_abi = 'unknown'
 
         return target_triple, target_os, target_arch, target_abi
 
@@ -935,8 +935,7 @@ class ToolchainRequirementValidator:
             min_version = self.requirements['minimum_compiler_version']
             if toolchain.compiler_name in min_version:
                 required = min_version[toolchain.compiler_name]
-        if self._compare_versions(
-    toolchain.compiler_version, required) < 0:
+                if self._compare_versions(toolchain.compiler_version, required) < 0:
                     raise BuildConfigError(
                         f"{toolchain.compiler_name} version {toolchain.compiler_version} "
                         f"is below minimum required version {required}"
@@ -1065,7 +1064,7 @@ class SourceEnumerationStage(BuildStageInterface):
         for category, files in source_files.items():
             for filepath in files:
                 relative_path = filepath.relative_to(self.source_root)
-        hash_value = self._hash_file(filepath)
+                hash_value = self._hash_file(filepath)
                 source_hashes[str(relative_path)] = hash_value
 
         total_files = sum(len(files) for files in source_files.values())
@@ -1149,8 +1148,8 @@ class SourceValidationStage(BuildStageInterface):
         for header in source_files.get('headers', []):
             try:
                 # Basic validation: check file is readable and not empty
-        content = header.read_text(encoding='utf-8')
-        if len(content.strip()) == 0:
+                content = header.read_text(encoding='utf-8')
+                if len(content.strip()) == 0:
                     validation_results['validation_errors'].append({
                         'file': str(header),
                         'error': 'Empty header file'
@@ -1267,7 +1266,7 @@ class PipelineCheckpoint:
 
     def save_checkpoint(self, stage: BuildStage,
                         context: Dict[str, Any]) -> Path:
-                            """
+        """
         Save build context as checkpoint after successful stage completion.
 
         Args:
@@ -1328,12 +1327,11 @@ class PipelineCheckpoint:
             List of (stage, timestamp) tuples
         """
         checkpoints = []
-        for checkpoint_file in sorted(
-    self.checkpoint_dir.glob("checkpoint_stage_*.pkl")):
+        for checkpoint_file in sorted(self.checkpoint_dir.glob("checkpoint_stage_*.pkl")):
             with open(checkpoint_file, 'rb') as f:
                 data = pickle.load(f)
-        stage = BuildStage(data['stage'])
-        timestamp = data['timestamp']
+                stage = BuildStage(data['stage'])
+                timestamp = data['timestamp']
                 checkpoints.append((stage, timestamp))
         return checkpoints
 
@@ -1412,7 +1410,7 @@ class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
                 self.build_context = stage.run(self.build_context)
 
                 # Save checkpoint after successful stage
-        if self.checkpoint_manager:
+                if self.checkpoint_manager:
                     self.checkpoint_manager.save_checkpoint(
                         stage.stage_number,
                         self.build_context
@@ -1437,7 +1435,7 @@ class EnhancedBuildProcessOrchestrator(BuildProcessOrchestrator):
     def _generate_failure_diagnostic(
     self,
     stage: BuildStageInterface,
-     error: BuildError):
+    error: BuildError):
         """
         Generate detailed diagnostic report for build failure.
 
@@ -1626,7 +1624,7 @@ class DependencyGraph:
             for v in adj[u]:
                 in_degree[v] -= 1
         if in_degree[v] == 0:
-                    queue.append(v)
+            queue.append(v)
 
         if len(result) != len(self.nodes):
             raise BuildError("Circular dependency detected in source graph")
@@ -1701,7 +1699,7 @@ class SourceHandler(ABC):
     def extract_metadata(
     self,
     file_path: Path,
-     source_root: Path) -> SourceMetadata:
+    source_root: Path) -> SourceMetadata:
         """Extract metadata from source file."""
         pass
 
@@ -1709,7 +1707,7 @@ class SourceHandler(ABC):
     def extract_dependencies(
     self,
     file_path: Path,
-     source_root: Path) -> List[str]:
+    source_root: Path) -> List[str]:
         """Extract dependencies from source file."""
         pass
 
@@ -1723,7 +1721,7 @@ class CSourceHandler(SourceHandler):
     def extract_metadata(
     self,
     file_path: Path,
-     source_root: Path) -> SourceMetadata:
+    source_root: Path) -> SourceMetadata:
         """Extract metadata from C/C++ source."""
         content = file_path.read_text(encoding='utf-8', errors='ignore')
         relative_path = file_path.relative_to(source_root)
@@ -1750,7 +1748,7 @@ class CSourceHandler(SourceHandler):
     def extract_dependencies(
     self,
     file_path: Path,
-     source_root: Path) -> List[str]:
+    source_root: Path) -> List[str]:
         """Extract #include dependencies from C/C++ source."""
         content = file_path.read_text(encoding='utf-8', errors='ignore')
 
@@ -1764,8 +1762,8 @@ class CSourceHandler(SourceHandler):
             # Skip system includes for dependency graph (they are external)
             if not self._is_system_include(include_path):
                 # Resolve relative to source directory
-        full_path = (file_path.parent / include_path).resolve()
-        if full_path.exists():
+                full_path = (file_path.parent / include_path).resolve()
+                if full_path.exists():
                     dependencies.append(str(full_path))
 
         return dependencies
@@ -1805,7 +1803,7 @@ class PythonSourceHandler(SourceHandler):
     def extract_metadata(
     self,
     file_path: Path,
-     source_root: Path) -> SourceMetadata:
+    source_root: Path) -> SourceMetadata:
         """Extract metadata from Python source."""
         content = file_path.read_text(encoding='utf-8', errors='ignore')
         relative_path = file_path.relative_to(source_root)
@@ -1832,7 +1830,7 @@ class PythonSourceHandler(SourceHandler):
     def extract_dependencies(
     self,
     file_path: Path,
-     source_root: Path) -> List[str]:
+    source_root: Path) -> List[str]:
         """Extract import dependencies from Python source."""
         content = file_path.read_text(encoding='utf-8')
 
@@ -1955,13 +1953,13 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
             for dep in dependencies:
                 # We only add edges for dependencies that are within our source root
                 # and thus exist in our node map
-        if dep in source_metadata_map:
+                if dep in source_metadata_map:
                     dependency_graph.add_edge(
-    str(file_path), dep, metadata.dependency_type)
+                        str(file_path), dep, metadata.dependency_type)
 
         print(f"  Processed {len(source_metadata_map)} source files")
         print(f"  Dependency graph: {len(dependency_graph.nodes)} nodes, "
-              f"{len(dependency_graph.edges)} edges")
+            f"{len(dependency_graph.edges)} edges")
 
         # Detect circular dependencies
         cycles = dependency_graph.detect_cycles()
@@ -1986,7 +1984,7 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
             'edges': [
                 {'from': edge.from_source,
     'to': edge.to_source,
-     'type': edge.edge_type}
+    'type': edge.edge_type}
         for edge in dependency_graph.edges
             ]
         }
@@ -2008,7 +2006,7 @@ class EnhancedSourceEnumerationStage(BuildStageInterface):
 
         # Verify at least some sources found - Disabled for flexible testing/empty projects
         # if len(context['source_metadata']) == 0:
-                #        "Stage 1 found no processable source files"
+            #        "Stage 1 found no processable source files"
         #    )
 
     def _find_handler(self, file_path: Path) -> Optional[SourceHandler]:
@@ -2313,17 +2311,12 @@ class DependencyResolver:
             dep.version}")
                     return True
                 else:
-                    print(
-    f"    âœ— Cache verification failed: {
-        dep.name} {
-            dep.version}")
+                    print(f"    âœ— Cache verification failed: {dep.name} {dep.version}")
                     cache_path.unlink()
                     return False
             else:
-                print(
-    f"    âš  No hash for verification: {
-        dep.name} {
-            dep.version}")
+                print(f"    âš  No hash for verification: {dep.name} {dep.version}")
+                return True
         return True
 
         # Not in cache - would need to download
@@ -2447,7 +2440,7 @@ class EnhancedDependencyResolutionStage(BuildStageInterface):
             # Parse "package==version" format
             if '==' in line:
                 name, version = line.split('==')
-        dep = DependencySpecification(
+                dep = DependencySpecification(
                     name=name.strip(),
                     version=version.strip(),
                     source='pypi',
@@ -2545,10 +2538,9 @@ class ToolchainValidator:
     """
 
     def __init__(self, toolchain: 'ToolchainDescriptor',
-                 cache_dir: Optional[Path] = None):
-                     self.toolchain = toolchain
-        self.cache_dir = cache_dir or Path.home() / '.build_cache' / \
-                                                'toolchain_validation'
+                cache_dir: Optional[Path] = None):
+        self.toolchain = toolchain
+        self.cache_dir = cache_dir or Path.home() / '.build_cache' / 'toolchain_validation'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.capabilities = ToolchainCapabilities()
@@ -2595,38 +2587,38 @@ class ToolchainValidator:
     def _load_cached_validation(self) -> Optional[ToolchainCapabilities]:
         cache_key = self._get_cache_key()
         cache_file = self.cache_dir / f"{cache_key}.json"
-        
+
         if not cache_file.exists():
             return None
-        
+
         try:
             with open(cache_file, 'r') as f:
                 data = json.load(f)
-            
+
             # Verify cache is recent (within 30 days)
             cached_time = datetime.datetime.fromisoformat(data['timestamp'])
             age = datetime.datetime.now(datetime.timezone.utc) - cached_time
-            
+
             if age.days > 30:
                 print("  Cache expired (>30 days old)")
-        return None
-            
+                return None
+
             # Verify compiler hash matches
             if data.get('compiler_hash') != self.toolchain.compiler_executable_hash:
                 print("  Cache invalid (compiler changed)")
-        return None
-            
+                return None
+
             return ToolchainCapabilities.from_dict(data['capabilities'])
-        
+
         except Exception as e:
             print(f"  Cache load failed: {e}")
             return None
-    
+
     def _cache_validation(self):
         """Cache validation results."""
         cache_key = self._get_cache_key()
         cache_file = self.cache_dir / f"{cache_key}.json"
-        
+
         data = {
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'compiler_name': self.toolchain.compiler_name,
@@ -2634,10 +2626,10 @@ class ToolchainValidator:
             'compiler_hash': self.toolchain.compiler_executable_hash,
             'capabilities': self.capabilities.to_dict(),
         }
-        
+
         with open(cache_file, 'w') as f:
             json.dump(data, f, indent=2)
-    
+
     def _get_cache_key(self) -> str:
         key_parts = [
             self.toolchain.compiler_name,
@@ -2645,92 +2637,92 @@ class ToolchainValidator:
             self.toolchain.target_architecture,
         ]
         return '-'.join(key_parts).replace('/', '_').replace('\\', '_')
-    
+
     def _detect_language_standards(self):
         """Detect supported language standards."""
         print("  Detecting language standards...")
-        
+
         standards = {
             'c': [],
             'cpp': []
         }
-        
+
         # Use GCC/Clang style flags by default, but handle MSVC separately if needed
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         # Test C standards
         c_stds = [('c99', '/std:c11' if is_msvc else '-std=c99'),
-                  ('c11', '/std:c11' if is_msvc else '-std=c11'),
-                  ('c17', '/std:clatest' if is_msvc else '-std=c17')]
-        
+                ('c11', '/std:c11' if is_msvc else '-std=c11'),
+                ('c17', '/std:clatest' if is_msvc else '-std=c17')]
+
         for name, flag in c_stds:
             if self._test_compile_flag(flag, language='c'):
                 standards['c'].append(name)
-        
+
         # Test C++ standards
         cpp_stds = [('c++14', '/std:c++14' if is_msvc else '-std=c++14'),
                     ('c++17', '/std:c++17' if is_msvc else '-std=c++17'),
                     ('c++20', '/std:c++20' if is_msvc else '-std=c++20')]
-        
+
         for name, flag in cpp_stds:
             if self._test_compile_flag(flag, language='cpp'):
                 standards['cpp'].append(name)
-        
+
         self.capabilities.language_standards = standards
         print(f"    C: {standards['c']}")
         print(f"    C++: {standards['cpp']}")
-    
+
     def _detect_sanitizers(self):
         """Detect supported sanitizers."""
         print("  Detecting sanitizers...")
-        
+
         sanitizers = []
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         # Test common sanitizers
         test_sanitizers = [
             ('asan', '/fsanitize=address' if is_msvc else '-fsanitize=address'),
             ('ubsan', '-fsanitize=undefined'),
             ('tsan', '-fsanitize=thread'),
         ]
-        
+
         for name, flag in test_sanitizers:
             if self._test_compile_flag(flag):
                 sanitizers.append(name)
-        
+
         self.capabilities.sanitizers = sanitizers
         print(f"    Supported: {sanitizers}")
-    
+
     def _detect_optimization_support(self):
         """Detect supported optimization levels."""
         print("  Detecting optimization support...")
-        
+
         opt_levels = []
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         levels = ['/O1', '/O2', '/Ox'] if is_msvc else ['-O0', '-O1', '-O2', '-O3', '-Os']
-        
+
         for level in levels:
             if self._test_compile_flag(level):
                 opt_levels.append(level.lstrip('-/'))
-        
+
         # Test LTO
         lto_flag = '/GL' if is_msvc else '-flto'
         lto_supported = self._test_compile_flag(lto_flag)
-        
+
         self.capabilities.optimization_levels = opt_levels
         self.capabilities.supports_lto = lto_supported
-        
+
         print(f"    Levels: {opt_levels}")
         print(f"    LTO: {lto_supported}")
-    
+
     def _detect_debug_formats(self):
         """Detect supported debug formats."""
         print("  Detecting debug formats...")
-        
+
         formats = []
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         if is_msvc:
             if self._test_compile_flag('/Zi'):
                 formats.append('pdb')
@@ -2742,18 +2734,18 @@ class ToolchainValidator:
                 formats.append('dwarf4')
             if self._test_compile_flag('-gdwarf-5'):
                 formats.append('dwarf5')
-            
+
             # Generic debug
             if not formats and self._test_compile_flag('-g'):
                 formats.append('default')
-        
+
         self.capabilities.debug_formats = formats
         print(f"    Formats: {formats}")
-    
+
     def _validate_abi_compatibility(self):
         """Validate ABI compatibility through structure layout test."""
         print("  Validating ABI compatibility...")
-        
+
         # Create ABI test program
         test_program = r'''
 #include <stdio.h>
@@ -2768,18 +2760,18 @@ struct TestStruct {
 int main() {
     size_t size = sizeof(struct TestStruct);
     size_t offset_b = offsetof(struct TestStruct, b);
-    
+
     // Expected: 12 bytes with 4-byte alignment/padding
     // or 8 bytes if tightly packed
     printf("%zu %zu\n", size, offset_b);
     return 0;
 }
 '''
-        
+
         try:
             output = self._compile_and_run(test_program, 'c')
             size, offset = map(int, output.strip().split())
-            
+
             # Validate reasonable structure layout
             if size >= 8 and offset >= 4:
                 self.capabilities.abi_compatible = True
@@ -2788,14 +2780,14 @@ int main() {
             else:
                 print(f"    âš  Unusual structure layout (size: {size}, offset: {offset})")
                 self.capabilities.abi_compatible = False
-        
+
         except Exception as e:
             print(f"    âœ— ABI validation failed: {e}")
             self.capabilities.abi_compatible = False
-    
+
     def _validate_determinism(self):
-                print("  Validating determinism...")
-        
+        print("  Validating determinism...")
+
         test_program = r'''
 #include <stdio.h>
 int main() {
@@ -2803,16 +2795,16 @@ int main() {
     return 0;
 }
 '''
-        
+
         try:
             # Compile first time
             binary1 = self._compile_to_binary(test_program, 'c', 'test1')
             hash1 = self._hash_file(binary1)
-            
+
             # Compile second time (identical source)
             binary2 = self._compile_to_binary(test_program, 'c', 'test2')
             hash2 = self._hash_file(binary2)
-            
+
             if hash1 == hash2:
                 self.capabilities.deterministic_output = True
                 print(f"    âœ“ Deterministic output verified")
@@ -2821,18 +2813,18 @@ int main() {
                 print(f"      First:  {hash1[:16]}...")
                 print(f"      Second: {hash2[:16]}...")
                 self.capabilities.deterministic_output = False
-            
+
             # Cleanup
             binary1.unlink(missing_ok=True)
             binary2.unlink(missing_ok=True)
-        
+
         except Exception as e:
             print(f"    âœ— Determinism validation failed: {e}")
             self.capabilities.deterministic_output = False
-    
+
     def _run_smoke_test(self):
-                print("  Running smoke test...")
-        
+        print("  Running smoke test...")
+
         test_program = r'''
 #include <stdio.h>
 int main() {
@@ -2840,7 +2832,7 @@ int main() {
     return 0;
 }
 '''
-        
+
         try:
             output = self._compile_and_run(test_program, 'c')
             if 'smoke test passed' in output:
@@ -2849,32 +2841,32 @@ int main() {
                 raise BuildError(f"Smoke test produced unexpected output: {output}")
         except Exception as e:
             raise BuildError(f"Smoke test failed: {e}")
-    
+
     def _test_compile_flag(self, flag: str, language: str = 'c') -> bool:
         """
         Test if compiler accepts a specific flag.
-        
+
         Args:
             flag: Compiler flag to test
             language: Language ('c' or 'cpp')
-            
+
         Returns:
             True if flag is supported
         """
         test_program = 'int main() { return 0; }'
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         try:
             with tempfile.NamedTemporaryFile(mode='w', suffix='.c' if language == 'c' else '.cpp', delete=False) as f:
                 f.write(test_program)
-        source_file = Path(f.name)
-            
+            source_file = Path(f.name)
+
             output_file = source_file.with_suffix('.exe' if platform.system() == 'Windows' else '')
-            
+
             # Build command
             if is_msvc:
                 # MSVC: cl /nologo <flag> source.c /Fe:output.exe
-        cmd = [
+                cmd = [
                     str(self.toolchain.compiler_executable),
                     '/nologo',
                     flag,
@@ -2883,56 +2875,56 @@ int main() {
                 ]
             else:
                 # GCC/Clang: gcc <flag> source.c -o output
-        cmd = [
+                cmd = [
                     str(self.toolchain.compiler_executable),
                     flag,
                     str(source_file),
                     '-o', str(output_file)
                 ]
-            
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 timeout=10,
                 text=True
             )
-            
+
             success = result.returncode == 0
-            
+
             # Cleanup
             source_file.unlink(missing_ok=True)
             output_file.unlink(missing_ok=True)
             # MSVC also creates .obj
             if is_msvc:
                 source_file.with_suffix('.obj').unlink(missing_ok=True)
-            
+
             return success
-        
+
         except Exception:
             return False
-    
+
     def _compile_and_run(self, source_code: str, language: str) -> str:
         """
         Compile and execute test program.
-        
+
         Args:
             source_code: Source code to compile
             language: Language ('c' or 'cpp')
-            
+
         Returns:
             Program output
         """
         suffix = '.c' if language == 'c' else '.cpp'
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
             f.write(source_code)
             source_file = Path(f.name)
-        
+
         try:
             # Compile
             output_file = source_file.with_suffix('.exe' if platform.system() == 'Windows' else '')
-            
+
             if is_msvc:
                 compile_cmd = [
                     str(self.toolchain.compiler_executable),
@@ -2946,17 +2938,17 @@ int main() {
                     str(source_file),
                     '-o', str(output_file)
                 ]
-            
+
             compile_result = subprocess.run(
                 compile_cmd,
                 capture_output=True,
                 timeout=10,
                 text=True
             )
-            
+
             if compile_result.returncode != 0:
                 raise BuildError(f"Compilation failed: {compile_result.stderr or compile_result.stdout}")
-            
+
             # Execute
             run_result = subprocess.run(
                 [str(output_file)],
@@ -2964,29 +2956,29 @@ int main() {
                 timeout=5,
                 text=True
             )
-            
+
             if run_result.returncode != 0:
                 raise BuildError(f"Execution failed with code {run_result.returncode}")
-            
+
             return run_result.stdout
-        
+
         finally:
             source_file.unlink(missing_ok=True)
             output_file.unlink(missing_ok=True)
             if is_msvc:
                 source_file.with_suffix('.obj').unlink(missing_ok=True)
-    
+
     def _compile_to_binary(self, source_code: str, language: str, name: str) -> Path:
         """Compile source to binary and return path."""
         suffix = '.c' if language == 'c' else '.cpp'
         is_msvc = self.toolchain.compiler_name == 'MSVC'
-        
+
         with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
             f.write(source_code)
             source_file = Path(f.name)
-        
+
         output_file = self.cache_dir / f"{name}{'.exe' if platform.system() == 'Windows' else ''}"
-        
+
         if is_msvc:
             compile_cmd = [
                 str(self.toolchain.compiler_executable),
@@ -3000,15 +2992,15 @@ int main() {
                 str(source_file),
                 '-o', str(output_file)
             ]
-        
+
         subprocess.run(compile_cmd, capture_output=True, timeout=10, check=True)
-        
+
         source_file.unlink()
         if is_msvc:
             source_file.with_suffix('.obj').unlink(missing_ok=True)
-            
+
         return output_file
-    
+
     def _hash_file(self, filepath: Path) -> str:
         """Compute SHA256 hash of file."""
         sha256 = hashlib.sha256()
@@ -3025,53 +3017,53 @@ int main() {
 class ABIConfig:
     """
     Comprehensive ABI configuration for a build target.
-    
+
     Specifies all ABI-relevant settings including structure packing,
     calling conventions, exception handling, and name mangling.
     """
     # Platform identification
     platform: str  # "Windows-x86_64", "Linux-x86_64", etc.
-    
+
     # Structure layout
     structure_packing: int = 8
     structure_packing_required: bool = True
-    
+
     # Calling conventions
     default_calling_convention: str = "platform_default"
     function_conventions: Dict[str, str] = field(default_factory=dict)
-    
+
     # Exception handling
     exceptions_enabled: bool = True
     exception_model: str = "default"  # "seh", "dwarf2", "sjlj"
-    
+
     # RTTI
     rtti_enabled: bool = True
-    
+
     # Name mangling
     name_mangling_scheme: str = "platform_default"  # "msvc", "itanium"
-    
-        compiler_flags: Dict[str, List[str]] = field(default_factory=dict)
-    
+
+    compiler_flags: Dict[str, List[str]] = field(default_factory=dict)
+
     def get_flags_for_compiler(self, compiler_name: str) -> List[str]:
         """Get compiler-specific flags."""
         return self.compiler_flags.get(compiler_name.lower(), [])
-    
+
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> 'ABIConfig':
         """Load ABI configuration from YAML file."""
         with open(yaml_path, 'r') as f:
             data = yaml.safe_load(f)
-        
+
         spec = data.get('abi_specification', {})
-        
+
         # Parse structure packing
         packing_config = spec.get('structure_packing', {})
         structure_packing = packing_config.get('default', 8)
-        
+
         # Parse calling conventions
         cc_config = spec.get('calling_convention', {})
         default_cc = cc_config.get('default', 'platform_default')
-        
+
         # Parse compiler flags
         compiler_flags: Dict[str, List[str]] = {}
         for section in ['structure_packing', 'calling_convention', 'exception_handling', 'rtti']:
@@ -3081,19 +3073,19 @@ class ABIConfig:
                 if compiler not in compiler_flags:
                     compiler_flags[compiler] = []
         if isinstance(flag_list, str):
-                    compiler_flags[compiler].append(flag_list)
-                else:
-                    compiler_flags[compiler].extend(flag_list)
-        
+            compiler_flags[compiler].append(flag_list)
+        else:
+            compiler_flags[compiler].extend(flag_list)
+
         return cls(
             platform=spec.get('platform', 'unknown'),
             structure_packing=structure_packing,
             default_calling_convention=default_cc,
-            exceptions_enabled=spec.get('exception_handling', {}).get('enabled', True),
+        exceptions_enabled=spec.get('exception_handling', {}).get('enabled', True),
             rtti_enabled=spec.get('rtti', {}).get('enabled', True),
             compiler_flags=compiler_flags
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -3110,68 +3102,68 @@ class ABIConfig:
 class CompilerFlagManager:
     """
     Manages compiler flags with ABI awareness and conflict resolution.
-    
+
     Handles flag priority, conflict detection, and platform-specific
     flag generation.
     """
-    
+
     def __init__(self, abi_config: ABIConfig, toolchain: ToolchainDescriptor):
         self.abi_config = abi_config
         self.toolchain = toolchain
         self.global_flags: List[str] = []
         self.target_flags: Dict[str, List[str]] = {}
         self.file_flags: Dict[str, List[str]] = {}
-    
+
     def add_global_flags(self, flags: List[str]):
         """Add flags that apply to all compilations."""
         self.global_flags.extend(flags)
-    
+
     def add_target_flags(self, target: str, flags: List[str]):
         """Add flags for a specific build target."""
         if target not in self.target_flags:
             self.target_flags[target] = []
         self.target_flags[target].extend(flags)
-    
+
     def add_file_flags(self, file_path: str, flags: List[str]):
         """Add flags for a specific source file."""
         if file_path not in self.file_flags:
             self.file_flags[file_path] = []
         self.file_flags[file_path].extend(flags)
-    
+
     def get_flags_for_file(self, file_path: str, target: Optional[str] = None) -> List[str]:
         """
         Get resolved flags for compiling a specific file.
-        
+
         Priority (highest to lowest):
             1. File-specific flags
         2. Target-specific flags
         3. ABI configuration flags
         4. Global flags
-        
+
         Args:
             file_path: Path to source file
             target: Build target name
-            
+
         Returns:
             Resolved list of compiler flags
         """
         resolved = []
-        
+
         # Global flags (lowest priority)
         resolved.extend(self.global_flags)
-        
+
         # ABI configuration flags
         abi_flags = self.abi_config.get_flags_for_compiler(self.toolchain.compiler_name)
         resolved.extend(abi_flags)
-        
+
         # Target-specific flags
         if target and target in self.target_flags:
             resolved.extend(self.target_flags[target])
-        
+
         # File-specific flags (highest priority)
         if file_path in self.file_flags:
             resolved.extend(self.file_flags[file_path])
-        
+
         # Remove duplicates while preserving order
         seen = set()
         unique_flags = []
@@ -3179,51 +3171,51 @@ class CompilerFlagManager:
             if flag not in seen:
                 seen.add(flag)
                 unique_flags.append(flag)
-        
+
         return unique_flags
-    
+
     def validate_flags(self, flags: List[str]) -> List[str]:
         """
         Validate that flags are compatible and supported.
-        
+
         Args:
             flags: List of flags to validate
-            
+
         Returns:
             List of validation warnings/errors
         """
         issues = []
-        
+
         # Check for conflicting structure packing flags
         packing_flags = [f for f in flags if '/Zp' in f or '-fpack-struct' in f]
         if len(packing_flags) > 1:
             issues.append(f"Conflicting structure packing flags: {packing_flags}")
-        
+
         # Check for conflicting calling convention flags
         # Supporting both Windows and Posix flag styles
         cc_flags = [f for f in flags if f in ['/Gd', '/Gz', '/Gv', '-mregparm=3', '-mrtd']]
         if len(cc_flags) > 1:
             issues.append(f"Conflicting calling convention flags: {cc_flags}")
-        
+
         # Check for optimization conflicts
         opt_flags = [f for f in flags if f.startswith('-O') or f.startswith('/O')]
         if len(opt_flags) > 1:
             # Important: Multiple O flags are technically allowed but usually indicate a logic error in our manager
             issues.append(f"Multiple optimization flags: {opt_flags}")
-        
+
         return issues
 
 class ABIVerifier:
     """
     Runtime ABI verification for loaded libraries.
-    
+
     Validates that libraries conform to expected ABI conventions.
     """
-    
+
     def __init__(self, expected_abi: ABIConfig):
         self.expected_abi = expected_abi
         self.verification_results: List[Dict[str, Any]] = []
-    
+
     def verify_structure_layout(
         self,
         struct_name: str,
@@ -3232,36 +3224,36 @@ class ABIVerifier:
     ) -> bool:
         """
         Verify structure layout matches expectations.
-        
+
         Args:
             struct_name: Name of structure
             expected_size: Expected size in bytes
             expected_offsets: Expected field offsets
-            
+
         Returns:
             True if layout matches
         """
         # In real implementation, would use ctypes or FFI to inspect actual layout
         # For now, simulate verification success
-        
+
         result = {
             'struct_name': struct_name,
             'expected_size': expected_size,
             'verified': True,
             'issues': []
         }
-        
+
         self.verification_results.append(result)
         return True
-    
+
     def verify_calling_convention(self, function_name: str, expected_convention: str) -> bool:
         """
         Verify function uses expected calling convention.
-        
+
         Args:
             function_name: Name of function
             expected_convention: Expected calling convention
-            
+
         Returns:
             True if convention matches
         """
@@ -3271,14 +3263,14 @@ class ABIVerifier:
             'verified': True,
             'issues': []
         }
-        
+
         self.verification_results.append(result)
         return True
-    
+
     def generate_report(self) -> str:
         """Generate ABI verification report."""
         lines = ["ABI Verification Report", "=" * 50, ""]
-        
+
         for result in self.verification_results:
             if 'struct_name' in result:
                 lines.append(f"Structure: {result['struct_name']}")
@@ -3288,57 +3280,57 @@ class ABIVerifier:
                 lines.append(f"Function: {result['function_name']}")
                 lines.append(f"  Expected convention: {result['expected_convention']}")
                 lines.append(f"  Verified: {'âœ“' if result['verified'] else 'âœ—'}")
-            
+
             if result.get('issues'):
                 for issue in result['issues']:
                     lines.append(f"  Issue: {issue}")
-            
+
             lines.append("")
-        
+
         return '\n'.join(lines)
 
 class ABIDriftDetector:
     """
     Detects ABI changes between builds.
-    
+
     Compares current ABI against baseline to identify drift.
     """
-    
+
     def __init__(self, baseline_path: Optional[Path] = None):
         self.baseline_path = baseline_path
         self.baseline: Optional[Dict[str, Any]] = None
-        
+
         if baseline_path and baseline_path.exists():
             with open(baseline_path, 'r') as f:
                 self.baseline = json.load(f)
-    
+
     def record_baseline(self, abi_snapshot: Dict[str, Any], output_path: Path):
         """Record current ABI as baseline."""
         with open(output_path, 'w') as f:
             json.dump(abi_snapshot, f, indent=2)
-        
+
         print(f"  ABI baseline recorded: {output_path}")
-    
+
     def detect_drift(self, current_snapshot: Dict[str, Any]) -> List[str]:
         """
         Detect drift between baseline and current ABI.
-        
+
         Args:
             current_snapshot: Current ABI snapshot
-            
+
         Returns:
             List of drift descriptions
         """
         if not self.baseline:
             return ["No baseline available for drift detection"]
-        
+
         drift_items = []
-        
+
         # Compare structure layouts
         if 'structures' in self.baseline and 'structures' in current_snapshot:
             baseline_structs = self.baseline['structures']
             current_structs = current_snapshot['structures']
-            
+
             for struct_name, baseline_info in baseline_structs.items():
                 if struct_name not in current_structs:
                     drift_items.append(f"Structure removed: {struct_name}")
@@ -3349,20 +3341,20 @@ class ABIDriftDetector:
                             f"Structure size changed: {struct_name} "
                             f"({baseline_info['size']} â†’ {current_info['size']})"
                         )
-        
+
         # Compare symbols
         if 'symbols' in self.baseline and 'symbols' in current_snapshot:
             baseline_symbols = set(self.baseline['symbols'])
             current_symbols = set(current_snapshot['symbols'])
-            
+
             removed = baseline_symbols - current_symbols
             added = current_symbols - baseline_symbols
-            
+
             for sym in removed:
                 drift_items.append(f"Symbol removed: {sym}")
             for sym in added:
                 drift_items.append(f"Symbol added: {sym}")
-        
+
         return drift_items
 
 # ============================================================================
@@ -3378,21 +3370,21 @@ class CompilationMetadata:
     source_hash: str
     output_file: Path
     output_hash: Optional[str] = None
-    
+
     compiler_name: str = ""
     compiler_version: str = ""
     compiler_hash: str = ""
-    
+
     flags_used: List[str] = field(default_factory=list)
     dependencies: List[str] = field(default_factory=list)
-    
+
     compilation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     compilation_duration: float = 0.0
-    
+
     success: bool = False
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -3422,15 +3414,15 @@ class CompilationUnit:
     compiler_flags: List[str] = field(default_factory=list)
     include_paths: List[Path] = field(default_factory=list)
     defines: Dict[str, str] = field(default_factory=dict)
-    
+
     language: str = 'c'  # 'c' or 'cpp'
     build_mode: BuildMode = BuildMode.DEBUG
-    
+
     abi_config: Optional[ABIConfig] = None
     toolchain: Optional[ToolchainDescriptor] = None
-    
+
     metadata: Optional[CompilationMetadata] = None
-    
+
     def __post_init__(self):
         """Initialize metadata if not provided."""
         if self.metadata is None:
@@ -3440,7 +3432,7 @@ class CompilationUnit:
                 source_hash=source_hash,
                 output_file=self.output_file
             )
-            
+
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of file."""
         sha256 = hashlib.sha256()
@@ -3456,49 +3448,49 @@ class CompilerInvocation:
     """
     Manages compiler command-line construction and execution.
     """
-    
+
     def __init__(self, unit: CompilationUnit):
         self.unit = unit
-        
+
     def build_command(self) -> List[str]:
         """
         Build compiler command-line arguments.
-        
+
         Returns:
             List of command-line arguments
         """
         if not self.unit.toolchain:
             raise BuildError("Compilation unit missing toolchain")
-            
+
         cmd = [str(self.unit.toolchain.compiler_executable)]
-        
+
         # Add compiler flags
         cmd.extend(self.unit.compiler_flags)
-        
+
         # Add include paths
         for include_path in self.unit.include_paths:
             # Handle both MSVC and GCC/Clang style include flags
             if self.unit.toolchain.compiler_name == 'MSVC':
                 cmd.append(f'/I{include_path}')
-            else:
-                cmd.extend(['-I', str(include_path)])
-                
+        else:
+            cmd.extend(['-I', str(include_path)])
+
         # Add defines
         for name, value in self.unit.defines.items():
             if self.unit.toolchain.compiler_name == 'MSVC':
                 cmd.append(f'/D{name}={value}')
-            else:
-                cmd.append(f'-D{name}={value}')
-                
+        else:
+            cmd.append(f'-D{name}={value}')
+
         # Add debug symbols
         if self.unit.build_mode == BuildMode.DEBUG:
             if self.unit.toolchain.compiler_name == 'MSVC':
                 if '/Zi' not in cmd:
                     cmd.append('/Zi')
-            else:
-                if '-g' not in cmd:
-                    cmd.append('-g')
-                    
+        else:
+            if '-g' not in cmd:
+                cmd.append('-g')
+
         # Add input and output
         # MSVC uses /Fo for output file, others use -o
         if self.unit.toolchain.compiler_name == 'MSVC':
@@ -3513,22 +3505,22 @@ class CompilerInvocation:
             # Compile only
             if '-c' not in cmd:
                 cmd.append('-c')
-                
+
         return cmd
-        
+
     def execute(self) -> 'CompilationResult':
         """
         Execute compilation.
-        
+
         Returns:
             CompilationResult with success/failure information
         """
         cmd = self.build_command()
-        
+
         print(f"  Compiling: {self.unit.source_file.name}")
-        
+
         start_time = time.time()
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -3536,28 +3528,28 @@ class CompilerInvocation:
                 text=True,
                 timeout=60
             )
-            
+
             duration = time.time() - start_time
-            
+
             # Update metadata
             if self.unit.metadata:
                 self.unit.metadata.compilation_duration = duration
                 self.unit.metadata.success = (result.returncode == 0)
                 self.unit.metadata.flags_used = self.unit.compiler_flags
-                
-        if self.unit.toolchain:
-                    self.unit.metadata.compiler_name = self.unit.toolchain.compiler_name
-                    self.unit.metadata.compiler_version = self.unit.toolchain.compiler_version
-                    self.unit.metadata.compiler_hash = self.unit.toolchain.compiler_executable_hash
-                
+
+            if self.unit.toolchain:
+                self.unit.metadata.compiler_name = self.unit.toolchain.compiler_name
+                self.unit.metadata.compiler_version = self.unit.toolchain.compiler_version
+                self.unit.metadata.compiler_hash = self.unit.toolchain.compiler_executable_hash
+
                 # Parse warnings and errors
                 self._parse_compiler_output(result.stderr + result.stdout)
-                
-        if result.returncode == 0:
-                    # Compute output hash
-                    if self.unit.output_file.exists():
-                        self.unit.metadata.output_hash = self.unit._compute_hash(self.unit.output_file)
-            
+
+            if result.returncode == 0:
+                # Compute output hash
+                if self.unit.output_file.exists():
+                    self.unit.metadata.output_hash = self.unit._compute_hash(self.unit.output_file)
+
             if result.returncode == 0:
                 return CompilationResult(
                     success=True,
@@ -3573,7 +3565,7 @@ class CompilerInvocation:
                     error_message=result.stderr,
                     return_code=result.returncode
                 )
-                
+
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
             return CompilationResult(
@@ -3590,12 +3582,12 @@ class CompilerInvocation:
                 duration=duration,
                 error_message=str(e)
             )
-            
+
     def _parse_compiler_output(self, output: str):
         """Parse compiler output for warnings and errors."""
         if not self.unit.metadata:
             return
-            
+
         for line in output.splitlines():
             line_lower = line.lower()
             if 'error:' in line_lower or 'error C' in line:
@@ -3616,10 +3608,10 @@ class CompilationResult:
 class NativeCompiler:
     """
     Manages compilation of native sources to object files.
-    
+
     Handles dependency ordering, parallel compilation, and incremental builds.
     """
-    
+
     def __init__(
         self,
         toolchain: ToolchainDescriptor,
@@ -3631,9 +3623,9 @@ class NativeCompiler:
         self.abi_config = abi_config
         self.flag_manager = flag_manager
         self.max_workers = max_workers or os.cpu_count() or 1
-        
+
         self.compilation_cache: Dict[str, CompilationMetadata] = {}
-        
+
     def compile_sources(
         self,
         source_files: List[Path],
@@ -3644,18 +3636,18 @@ class NativeCompiler:
         Compile source files to object files.
         """
         print(f"  Compiling {len(source_files)} source files...")
-        
+
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create compilation units
         units = []
         for source_file in source_files:
             # Use appropriate object extension
             obj_ext = '.obj' if self.toolchain.compiler_name == 'MSVC' else '.o'
             output_file = output_dir / (source_file.stem + obj_ext)
-            
+
             flags = self.flag_manager.get_flags_for_file(str(source_file))
-            
+
             unit = CompilationUnit(
                 source_file=source_file,
                 output_file=output_file,
@@ -3665,24 +3657,24 @@ class NativeCompiler:
                 abi_config=self.abi_config,
                 toolchain=self.toolchain
             )
-            
+
             units.append(unit)
-            
+
         # Filter units that need recompilation
         units_to_compile = [
             unit for unit in units
             if self._needs_recompilation(unit)
         ]
-        
+
         if len(units_to_compile) < len(units):
             cached_count = len(units) - len(units_to_compile)
             print(f"    Using {cached_count} cached object files")
-            
+
         # Compile units in parallel
         results = []
         if units_to_compile:
             results.extend(self._compile_parallel(units_to_compile))
-            
+
         # Add results for cached units
         for unit in units:
             if unit not in units_to_compile:
@@ -3692,13 +3684,13 @@ class NativeCompiler:
                     duration=0.0,
                     output="(cached)"
                 ))
-                
+
         # Report results
         success_count = sum(1 for r in results if r.success)
         print(f"    Compiled {success_count}/{len(results)} successfully")
-        
+
         return results
-        
+
     def _compile_parallel(self, units: List[CompilationUnit]) -> List[CompilationResult]:
         """Compile units in parallel."""
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -3706,17 +3698,17 @@ class NativeCompiler:
                 executor.submit(self._compile_unit, unit): unit
         for unit in units
             }
-            
+
             results = []
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
                     results.append(result)
-                    
+
                     # Update cache on success
                     if result.success and result.unit.metadata:
                         self.compilation_cache[str(result.unit.source_file)] = result.unit.metadata
-        except Exception as e:
+                except Exception as e:
                     # Handle unexpected executor errors
                     unit = futures[future]
                     results.append(CompilationResult(
@@ -3725,14 +3717,14 @@ class NativeCompiler:
                         duration=0.0,
                         error_message=f"Executor error: {e}"
                     ))
-                    
+
         return results
-        
+
     def _compile_unit(self, unit: CompilationUnit) -> CompilationResult:
         """Compile a single unit."""
         invocation = CompilerInvocation(unit)
         return invocation.execute()
-        
+
     def _needs_recompilation(self, unit: CompilationUnit) -> bool:
         """
         Determine if unit needs recompilation.
@@ -3740,29 +3732,29 @@ class NativeCompiler:
         # Output doesn't exist
         if not unit.output_file.exists():
             return True
-            
+
         # Check cache
         cached_metadata = self.compilation_cache.get(str(unit.source_file))
         if cached_metadata:
             # Source changed
             if unit.metadata and cached_metadata.source_hash != unit.metadata.source_hash:
                 return True
-                
+
             # Compiler changed
             if cached_metadata.compiler_hash != self.toolchain.compiler_executable_hash:
                 return True
-                
+
             # Flags changed
             if set(cached_metadata.flags_used) != set(unit.compiler_flags):
                 return True
-                
+
                                     # or we re-hash some key dependencies here.
-            
+
             return False
-            
+
         # No cache - must compile
         return True
-        
+
     def _detect_language(self, source_file: Path) -> str:
         """Detect language from file extension."""
         suffix = source_file.suffix.lower()
@@ -3774,48 +3766,48 @@ class NativeCompilationStage(BuildStageInterface):
     """
     Stage 4: Native Compilation
     """
-    
+
     def __init__(self, output_dir: Path, build_mode: BuildMode = BuildMode.DEBUG):
         super().__init__("Native Compilation", BuildStage.NATIVE_COMPILATION)
         self.output_dir = output_dir
         self.build_mode = build_mode
-        
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         if 'source_metadata' not in context and 'sources_by_language' not in context:
-             raise BuildPreconditionError(
+            raise BuildPreconditionError(
                 "Stage 4 requires 'source_metadata' or 'sources_by_language'"
             )
-            
+
         if 'toolchain' not in context:
             raise BuildPreconditionError(
                 "Stage 4 requires 'toolchain' from toolchain detection"
             )
-            
+
         if 'abi_config' not in context:
             raise BuildPreconditionError(
                 "Stage 4 requires 'abi_config' for ABI enforcement"
             )
-            
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute native compilation."""
         print(f"  Compiling native sources...")
-        
+
         toolchain = context['toolchain']
         abi_config = context['abi_config']
-        
+
         # Create flag manager
         flag_manager = CompilerFlagManager(abi_config, toolchain)
-        
+
         # Create compiler
         compiler = NativeCompiler(toolchain, abi_config, flag_manager)
-        
+
         # Get sources
         sources_by_language = context.get('sources_by_language', {})
         c_sources = [Path(p) for p in sources_by_language.get('c', [])]
         cpp_sources = [Path(p) for p in sources_by_language.get('cpp', [])]
-        
+
         all_sources = c_sources + cpp_sources
-        
+
         if not all_sources:
             print("    No native sources to compile")
             context['native_compilation'] = {
@@ -3824,17 +3816,17 @@ class NativeCompilationStage(BuildStageInterface):
                 'success': True
             }
             return context
-            
+
         # Compile
         start_time = time.time()
         results = compiler.compile_sources(all_sources, self.output_dir, self.build_mode)
         total_duration = time.time() - start_time
-        
+
         # Collect results
         object_files = [str(r.unit.output_file) for r in results if r.success]
         compilation_metadata = [r.unit.metadata.to_dict() for r in results if r.unit.metadata]
         errors = [r.error_message for r in results if not r.success]
-        
+
         # Update context
         context['native_compilation'] = {
             'object_files': object_files,
@@ -3844,23 +3836,23 @@ class NativeCompilationStage(BuildStageInterface):
             'units_compiled': len(results),
             'success': all(r.success for r in results)
         }
-        
+
         print(f"    Total compilation time: {total_duration:.2f}s")
-        
+
         return context
-        
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         """Validate compilation succeeded."""
         if 'native_compilation' not in context:
             raise BuildPostconditionError("Stage 4 must produce 'native_compilation' in context")
-            
+
         compilation_data = context['native_compilation']
-        
+
         if not compilation_data.get('success', False):
             errors = compilation_data.get('compilation_errors', [])
             error_summary = '\n'.join(errors[:5])
             raise BuildPostconditionError(f"Native compilation failed:\n{error_summary}")
-            
+
         # Verify object files exist
         for obj_file in compilation_data.get('object_files', []):
             if not Path(obj_file).exists():
@@ -3876,17 +3868,17 @@ class Symbol:
     name: str
     symbol_type: str  # 'T' (text/code), 'D' (data), 'U' (undefined), etc.
     address: Optional[str] = None
-    
+
     @property
     def is_function(self) -> bool:
         """Check if symbol represents a function."""
         return self.symbol_type in ['T', 't']
-        
+
     @property
     def is_data(self) -> bool:
         """Check if symbol represents data."""
         return self.symbol_type in ['D', 'd', 'B', 'b']
-        
+
     @property
     def is_undefined(self) -> bool:
         """Check if symbol is undefined (external reference)."""
@@ -3895,129 +3887,129 @@ class Symbol:
 class ObjectFileValidator:
     """
     Validates compiled object files for correctness.
-    
+
     Performs format validation, symbol inspection, debug symbol checking,
     and ABI conformance verification.
     """
-    
+
     def __init__(self, toolchain: ToolchainDescriptor):
         self.toolchain = toolchain
-        
+
     def validate(self, object_file: Path) -> 'ValidationResult':
         """
         Perform comprehensive validation of object file.
-        
+
         Args:
             object_file: Path to object file
-            
+
         Returns:
             ValidationResult with all checks
         """
         print(f"    Validating: {object_file.name}")
-        
+
         result = ValidationResult(object_file=object_file)
-        
+
         # Format validation
         result.format_valid, format_msg = self._validate_format(object_file)
         if not result.format_valid:
             result.issues.append(format_msg)
-            
+
         # Symbol validation
         result.symbols_valid, symbol_msg = self._validate_symbols(object_file)
         if not result.symbols_valid:
             result.issues.append(symbol_msg)
-            
+
         # Debug symbol validation
         result.debug_symbols_valid, debug_msg = self._validate_debug_symbols(object_file)
         if not result.debug_symbols_valid:
             result.warnings.append(debug_msg)  # Warning, not error
-            
+
         # ABI conformance (basic check)
         result.abi_conformance_valid = True  # Simplified for now
-        
+
         # Self-test (simplified - would run actual test)
         result.self_test_passed = True  # Simplified for now
-        
+
         return result
-        
+
     def _validate_format(self, object_file: Path) -> Tuple[bool, str]:
         """Validate object file format."""
         if not object_file.exists():
             return False, f"Object file does not exist: {object_file}"
-            
+
         if object_file.stat().st_size == 0:
             return False, f"Object file is empty: {object_file}"
-            
+
         # Check magic bytes
         try:
             with open(object_file, 'rb') as f:
                 magic = f.read(4)
-                
+
             # ELF magic
             if magic[:4] == b'\x7fELF':
                 return True, "Valid ELF object file"
-                
+
             # PE magic (Windows)
             elif magic[:2] == b'MZ':
                 return True, "Valid PE object file"
-                
+
             # Mach-O magic (macOS)
             elif magic[:4] in [b'\xfe\xed\xfa\xce', b'\xfe\xed\xfa\xcf']:
                 return True, "Valid Mach-O object file"
-                
+
             # COFF magic (Windows object files)
             elif magic[:2] == b'\x4c\x01' or magic[:2] == b'\x64\x86':
                 return True, "Valid COFF object file"
-                
+
             else:
                 return False, f"Unrecognized object file format (magic: {magic.hex()})"
-                
+
         except Exception as e:
             return False, f"Failed to read object file: {e}"
-            
+
     def _validate_symbols(self, object_file: Path) -> Tuple[bool, str]:
-                try:
-                    symbols = self._extract_symbols(object_file)
-            
+        try:
+            symbols = self._extract_symbols(object_file)
+
             if not symbols:
                 return False, "Object file contains no symbols"
-                
+
             # Check for at least one function or data symbol
             has_function = any(s.is_function for s in symbols)
             has_data = any(s.is_data for s in symbols)
-            
+
             if not has_function and not has_data:
                 return False, "Object file contains no function or data symbols"
-                
+
             return True, f"Found {len(symbols)} symbols"
-            
+
         except Exception as e:
             return False, f"Symbol extraction failed: {e}"
-            
+
     def _validate_debug_symbols(self, object_file: Path) -> Tuple[bool, str]:
         """Check if debug symbols are present."""
         # Simplified - in real implementation would use proper debug info parser
         # For now, just check if file is larger than minimum (heuristic)
-        
+
         size = object_file.stat().st_size
-        
+
         # Very small files unlikely to have debug info
         if size < 1000:
             return False, "Object file too small to contain debug symbols"
-            
+
         return True, "Debug symbols likely present (heuristic check)"
-        
+
     def _extract_symbols(self, object_file: Path) -> List[Symbol]:
         """
         Extract symbols from object file.
-        
+
         Uses platform-specific tools (nm on Unix, dumpbin on Windows).
         """
         if platform.system() == 'Windows':
             return self._extract_symbols_windows(object_file)
         else:
             return self._extract_symbols_unix(object_file)
-            
+
     def _extract_symbols_unix(self, object_file: Path) -> List[Symbol]:
         """Extract symbols using nm (Unix/Linux/macOS)."""
         try:
@@ -4027,11 +4019,11 @@ class ObjectFileValidator:
                 text=True,
                 timeout=5
             )
-            
+
             symbols = []
             for line in result.stdout.splitlines():
                 parts = line.split()
-        if len(parts) >= 2:
+                if len(parts) >= 2:
                     # Format: [address] type name
                     if len(parts) == 3:
                         address, symbol_type, name = parts
@@ -4039,22 +4031,22 @@ class ObjectFileValidator:
                         # Undefined symbols have no address
                         symbol_type, name = parts[0], parts[1]
                         address = None
-                        
+
                     symbols.append(Symbol(
                         name=name,
                         symbol_type=symbol_type,
                         address=address
                     ))
-                    
+
             return symbols
-            
+
         except subprocess.TimeoutExpired:
             return []
         except FileNotFoundError:
-                        return []
+            return []
         except Exception:
             return []
-            
+
     def _extract_symbols_windows(self, object_file: Path) -> List[Symbol]:
         """Extract symbols using dumpbin (Windows)."""
         # Simplified - would use dumpbin /symbols in real implementation
@@ -4070,10 +4062,10 @@ class ValidationResult:
     debug_symbols_valid: bool = False
     abi_conformance_valid: bool = False
     self_test_passed: bool = False
-    
+
     issues: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    
+
     @property
     def overall_valid(self) -> bool:
         """Check if all critical validations passed."""
@@ -4083,7 +4075,7 @@ class ValidationResult:
             self.symbols_valid and
             self.abi_conformance_valid
         )
-        
+
     def generate_report(self) -> str:
         """Generate human-readable validation report."""
         lines = [
@@ -4097,21 +4089,21 @@ class ValidationResult:
             "",
             f"Overall: {'PASSED' if self.overall_valid else 'FAILED'}",
         ]
-        
+
         if self.issues:
             lines.append("")
             lines.append("Issues:")
             for issue in self.issues:
                 lines.append(f"  - {issue}")
-                
+
         if self.warnings:
             lines.append("")
             lines.append("Warnings:")
             for warning in self.warnings:
                 lines.append(f"  - {warning}")
-                
+
         return '\n'.join(lines)
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -4129,43 +4121,43 @@ class ValidationResult:
 class NativeValidationStage(BuildStageInterface):
     """
     Stage 4.5: Native Validation
-    
+
     Validates compiled object files for format correctness, symbol presence,
     debug information, and ABI conformance.
     """
-    
+
     def __init__(self):
         # Use a fractional stage number to indicate post-compilation validation
         super().__init__("Native Validation", BuildStage.NATIVE_COMPILATION)
         self.stage_name = "Native Validation (Post-Compilation)"
-        
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         """Verify compilation completed successfully."""
         if 'native_compilation' not in context:
             raise BuildPreconditionError(
                 "Stage 4.5 requires 'native_compilation' from Stage 4"
             )
-            
+
         if not context['native_compilation'].get('success', False):
             raise BuildPreconditionError(
                 "Cannot validate: native compilation failed"
             )
-            
+
         if 'toolchain' not in context:
             raise BuildPreconditionError(
                 "Stage 4.5 requires 'toolchain' for validation"
             )
-            
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute native validation."""
         print(f"  Validating compiled object files...")
-        
+
         toolchain = context['toolchain']
         validator = ObjectFileValidator(toolchain)
-        
+
         # Get object files from compilation
         object_files = context['native_compilation'].get('object_files', [])
-        
+
         if not object_files:
             print("    No object files to validate")
             context['native_validation'] = {
@@ -4173,47 +4165,47 @@ class NativeValidationStage(BuildStageInterface):
                 'all_valid': True
             }
             return context
-            
+
         # Validate each object file
         results = []
         for obj_file_str in object_files:
             obj_file = Path(obj_file_str)
             result = validator.validate(obj_file)
             results.append(result)
-            
+
         # Check if all validations passed
         all_valid = all(r.overall_valid for r in results)
-        
+
         # Report results
         passed = sum(1 for r in results if r.overall_valid)
         print(f"    Validated {passed}/{len(results)} object files")
-        
+
         # Update context
         context['native_validation'] = {
             'validation_results': [r.to_dict() for r in results],
             'all_valid': all_valid
         }
-        
+
         return context
-        
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         """Verify validation completed and passed."""
         if 'native_validation' not in context:
             raise BuildPostconditionError(
                 "Stage 4.5 must produce 'native_validation'"
             )
-            
+
         validation_data = context['native_validation']
-        
+
         if not validation_data.get('all_valid', False):
-                        results = validation_data.get('validation_results', [])
+            results = validation_data.get('validation_results', [])
             failed = [r for r in results if not r.get('overall_valid', False)]
-            
+
             error_lines = ["Object file validation failed:"]
             for failed_result in failed[:3]:                  error_lines.append(f"  - {failed_result['object_file']}")
         for issue in failed_result.get('issues', []):
-                    error_lines.append(f"    * {issue}")
-                    
+            error_lines.append(f"    * {issue}")
+
             raise BuildPostconditionError('\n'.join(error_lines))
 
 # ============================================================================
@@ -4227,23 +4219,23 @@ class LinkingMetadata:
     input_objects: List[Path] = field(default_factory=list)
     output_executable: Path = Path()
     output_hash: str = ""
-    
+
     linker_name: str = ""
     linker_version: str = ""
     linker_flags: List[str] = field(default_factory=list)
-    
+
     libraries_linked: List[str] = field(default_factory=list)
     lto_enabled: bool = False
-    
+
     link_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     link_duration: float = 0.0
-    
+
     success: bool = False
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
-    
+
     build_id: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -4270,17 +4262,17 @@ class LinkTarget:
     target_type: str  # 'executable' or 'shared_library'
     object_files: List[Path]
     output_path: Path
-    
+
     linker_flags: List[str] = field(default_factory=list)
     libraries: List[str] = field(default_factory=list)
     library_paths: List[Path] = field(default_factory=list)
-    
+
     enable_lto: bool = False
     strip_symbols: bool = False
-    
+
     toolchain: Optional[ToolchainDescriptor] = None
     metadata: Optional[LinkingMetadata] = None
-    
+
     def __post_init__(self):
         """Initialize metadata if not provided."""
         if self.metadata is None:
@@ -4292,27 +4284,27 @@ class LinkTarget:
 
 class Linker:
     """Manages linking of object files into executables and shared libraries."""
-    
+
     def __init__(self, toolchain: ToolchainDescriptor):
         self.toolchain = toolchain
-        
+
     def link(self, target: LinkTarget) -> 'LinkResult':
         """
         Link object files into executable or library.
-        
+
         Args:
             target: Link target specification
-            
+
         Returns:
             LinkResult with success/failure information
         """
         print(f"  Linking: {target.target_name}")
-        
+
         start_time = time.time()
-        
+
         # Build linker command
         cmd = self._build_link_command(target)
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -4320,9 +4312,9 @@ class Linker:
                 text=True,
                 timeout=120  # Linking can take longer than compilation
             )
-            
+
             duration = time.time() - start_time
-            
+
             # Update metadata
             if target.metadata:
                 target.metadata.link_duration = duration
@@ -4331,16 +4323,16 @@ class Linker:
                 target.metadata.linker_version = self.toolchain.compiler_version
                 target.metadata.linker_flags = target.linker_flags
                 target.metadata.lto_enabled = target.enable_lto
-                
+
                 # Parse warnings/errors
                 self._parse_linker_output(result.stderr + result.stdout, target.metadata)
-                
-        if result.returncode == 0:
-                    # Compute output hash
-                    if target.output_path.exists():
-                        target.metadata.output_hash = self._compute_hash(target.output_path)
-                        target.metadata.build_id = target.metadata.output_hash[:16]
-            
+
+            if result.returncode == 0:
+                # Compute output hash
+                if target.output_path.exists():
+                    target.metadata.output_hash = self._compute_hash(target.output_path)
+                    target.metadata.build_id = target.metadata.output_hash[:16]
+
             if result.returncode == 0:
                 return LinkResult(
                     success=True,
@@ -4356,7 +4348,7 @@ class Linker:
                     error_message=result.stderr,
                     return_code=result.returncode
                 )
-                
+
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
             return LinkResult(
@@ -4373,64 +4365,64 @@ class Linker:
                 duration=duration,
                 error_message=str(e)
             )
-            
+
     def _build_link_command(self, target: LinkTarget) -> List[str]:
         """Build linker command line."""
         cmd = [str(self.toolchain.linker_executable)]
-        
+
         # Add linker flags
         cmd.extend(target.linker_flags)
-        
+
         # Add LTO flag if enabled
         if target.enable_lto:
             # Check if this is MSVC or GCC/Clang
             if self.toolchain.compiler_name == 'MSVC':
                 if '/LTCG' not in cmd:
                     cmd.append('/LTCG')
-            else:
-                if '-flto' not in cmd:
-                    cmd.append('-flto')
-                    
+        else:
+            if '-flto' not in cmd:
+                cmd.append('-flto')
+
         # Add library paths
         for lib_path in target.library_paths:
             if self.toolchain.compiler_name == 'MSVC':
                 cmd.append(f'/LIBPATH:{lib_path}')
-            else:
-                cmd.extend(['-L', str(lib_path)])
-                
+        else:
+            cmd.extend(['-L', str(lib_path)])
+
         # Add object files
         for obj_file in target.object_files:
             cmd.append(str(obj_file))
-            
+
         # Add libraries
         for lib in target.libraries:
             if self.toolchain.compiler_name == 'MSVC':
                 if not lib.endswith('.lib'):
                     cmd.append(f"{lib}.lib")
-                else:
-                    cmd.append(lib)
             else:
-                cmd.extend(['-l', lib])
-                
+                cmd.append(lib)
+        else:
+            cmd.extend(['-l', lib])
+
         # Add output
         if self.toolchain.compiler_name == 'MSVC':
             cmd.append(f'/OUT:{target.output_path}')
         else:
             cmd.extend(['-o', str(target.output_path)])
-            
+
         # Add target-type specific flags
         if target.target_type == 'shared_library':
             if self.toolchain.compiler_name == 'MSVC':
                 if '/DLL' not in cmd:
                     cmd.append('/DLL')
-            else:
-                if '-shared' not in cmd:
-                    cmd.append('-shared')
+        else:
+            if '-shared' not in cmd:
+                cmd.append('-shared')
         if '-fPIC' not in cmd:
-                    cmd.append('-fPIC')
-                    
+            cmd.append('-fPIC')
+
         return cmd
-        
+
     def _parse_linker_output(self, output: str, metadata: LinkingMetadata):
         """Parse linker output for warnings and errors."""
         for line in output.splitlines():
@@ -4439,7 +4431,7 @@ class Linker:
                 metadata.errors.append(line.strip())
             elif 'warning:' in line_lower or 'warning LNK' in line:
                 metadata.warnings.append(line.strip())
-                
+
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of file."""
         sha256 = hashlib.sha256()
@@ -4463,29 +4455,29 @@ class LinkResult:
 
 class ExecutableValidator:
     """Validates linked executables and shared libraries."""
-    
+
     def validate_executable(self, executable: Path) -> Tuple[bool, List[str]]:
         """
         Validate executable correctness.
-        
+
         Returns: (is_valid, list_of_issues)
         """
         issues = []
-        
+
         # Check file exists
         if not executable.exists():
             issues.append(f"Executable does not exist: {executable}")
             return False, issues
-            
+
         # Check file is executable
         if not os.access(executable, os.X_OK):
             issues.append(f"File is not executable: {executable}")
-            
+
         # Check file size
         if executable.stat().st_size == 0:
             issues.append(f"Executable is empty: {executable}")
             return False, issues
-            
+
         # Platform-specific validation
         if platform.system() == 'Windows':
             valid, msg = self._validate_pe_executable(executable)
@@ -4495,31 +4487,31 @@ class ExecutableValidator:
             valid, msg = self._validate_elf_executable(executable)
             if not valid:
                 issues.append(msg)
-                
+
         return len(issues) == 0, issues
-        
+
     def _validate_pe_executable(self, executable: Path) -> Tuple[bool, str]:
         """Validate PE (Windows) executable."""
         try:
             with open(executable, 'rb') as f:
                 magic = f.read(2)
-                
+
             if magic != b'MZ':
                 return False, "Not a valid PE executable (missing MZ header)"
-                
+
             return True, ""
         except Exception as e:
             return False, f"Failed to validate PE: {e}"
-            
+
     def _validate_elf_executable(self, executable: Path) -> Tuple[bool, str]:
         """Validate ELF (Linux/Unix) executable."""
         try:
             with open(executable, 'rb') as f:
                 magic = f.read(4)
-                
+
             if magic != b'\x7fELF':
                 return False, "Not a valid ELF executable (missing ELF header)"
-                
+
             return True, ""
         except Exception as e:
             return False, f"Failed to validate ELF: {e}"
@@ -4527,48 +4519,48 @@ class ExecutableValidator:
 class LinkingStage(BuildStageInterface):
     """
     Stage 5: Linking & Executable Generation
-    
+
     Links validated object files into executables and shared libraries.
     """
-    
+
     def __init__(self, output_dir: Path, enable_lto: bool = False):
         super().__init__("Linking & Executable Generation", BuildStage.ADAPTER_GENERATION)
         self.stage_name = "Linking & Executable Generation"
         self.output_dir = output_dir
         self.enable_lto = enable_lto
-        
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         if 'native_validation' not in context:
             raise BuildPreconditionError(
                 "Stage 5 requires 'native_validation' from Stage 4.5"
             )
-            
+
         if not context['native_validation'].get('all_valid', False):
             raise BuildPreconditionError(
                 "Cannot link: object file validation failed"
             )
-            
+
         if 'toolchain' not in context:
             raise BuildPreconditionError(
                 "Stage 5 requires 'toolchain' for linking"
             )
-            
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute linking."""
         print(f"  Linking object files...")
-        
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         toolchain = context['toolchain']
         linker = Linker(toolchain)
-        
+
         # Get validated object files
         # They should be in native_compilation.object_files
         object_files = [
             Path(p)
             for p in context['native_compilation'].get('object_files', [])
         ]
-        
+
         if not object_files:
             print("    No object files to link")
             context['linking'] = {
@@ -4578,11 +4570,11 @@ class LinkingStage(BuildStageInterface):
                 'all_successful': True
             }
             return context
-            
+
         # Create link target (simplified - single executable for verification tool)
         target_ext = '.exe' if platform.system() == 'Windows' else ''
         target_path = self.output_dir / ("verification_tool" + target_ext)
-        
+
         target = LinkTarget(
             target_name="verification_tool",
             target_type="executable",
@@ -4591,24 +4583,24 @@ class LinkingStage(BuildStageInterface):
             enable_lto=self.enable_lto,
             toolchain=toolchain
         )
-        
+
         # Link
         start_time = time.time()
         result = linker.link(target)
         total_duration = time.time() - start_time
-        
+
         # Validate executable
         if result.success:
             validator = ExecutableValidator()
             valid, issues = validator.validate_executable(target.output_path)
-            
+
             if not valid:
                 result.success = False
                 result.error_message = f"Executable validation failed: {issues}"
-        if target.metadata:
+                if target.metadata:
                     target.metadata.success = False
                     target.metadata.errors.extend(issues)
-                    
+
         # Update context
         context['linking'] = {
             'executables': [str(target.output_path)] if result.success else [],
@@ -4617,29 +4609,29 @@ class LinkingStage(BuildStageInterface):
             'all_successful': result.success,
             'total_duration': total_duration
         }
-        
+
         if result.success:
             print(f"    Linked successfully: {target.output_path.name}")
         else:
             print(f"    Linking failed: {result.error_message}")
-            
+
         return context
-        
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         """Verify linking succeeded."""
         if 'linking' not in context:
             raise BuildPostconditionError(
                 "Stage 5 must produce 'linking' in context"
             )
-            
+
         linking_data = context['linking']
-        
+
         if not linking_data.get('all_successful', False):
             metadata = linking_data.get('linking_metadata', [])
             if metadata:
                 errors = metadata[0].get('errors', [])
-        error_summary = '\n'.join(errors[:5])
-        raise BuildPostconditionError(
+                error_summary = '\n'.join(errors[:5])
+                raise BuildPostconditionError(
                     f"Linking failed:\n{error_summary}"
                 )
             else:
@@ -4655,20 +4647,20 @@ class AdapterMetadata:
     contract_name: str
     contract_version: str
     contract_hash: str
-    
+
     adapter_source_file: Path
     adapter_source_hash: str
-    
+
     generator_name: str = "AdapterGenerator"
     generator_version: str = "1.0.0"
     generation_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    
+
     template_used: str = "c_adapter_template"
     template_hash: str = ""
-    
+
     validation_passed: bool = False
     validation_issues: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -4696,14 +4688,14 @@ class AdapterMetadata:
 class AdapterGenerator:
     """
     Generates runtime adapter code from contract specifications.
-    
+
     Produces C/C++ wrapper code that enforces contracts at FFI boundaries.
     """
-    
+
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
     def generate_adapter(
         self,
         contract: Dict[str, Any],
@@ -4711,35 +4703,35 @@ class AdapterGenerator:
     ) -> Tuple[Path, AdapterMetadata]:
         """
         Generate adapter source code from contract.
-        
+
         Args:
             contract: Contract specification
             target_language: Target language ('c', 'cpp', 'rust')
-            
+
         Returns:
             Tuple of (adapter_source_file, metadata)
         """
         contract_name = contract.get('library_name', 'unknown')
-        
+
         print(f"    Generating adapter for: {contract_name}")
-        
+
         # Compute contract hash
         contract_json = json.dumps(contract, sort_keys=True)
         contract_hash = hashlib.sha256(contract_json.encode()).hexdigest()
-        
+
         # Generate source code
         if target_language == 'c':
             adapter_source = self._generate_c_adapter(contract)
             source_file = self.output_dir / f"{contract_name}_adapter.c"
         else:
             raise BuildError(f"Unsupported target language: {target_language}")
-            
+
         # Write source file
         source_file.write_text(adapter_source)
-        
+
         # Compute source hash
         source_hash = hashlib.sha256(adapter_source.encode()).hexdigest()
-        
+
         # Create metadata
         metadata = AdapterMetadata(
             contract_name=contract_name,
@@ -4748,76 +4740,76 @@ class AdapterGenerator:
             adapter_source_file=source_file,
             adapter_source_hash=source_hash
         )
-        
+
         return source_file, metadata
-        
+
     def _generate_c_adapter(self, contract: Dict[str, Any]) -> str:
         """Generate C adapter source code."""
         lines = []
-        
+
         # Header
         lines.append("// Generated adapter code")
         lines.append(f"// Contract: {contract.get('library_name', 'unknown')}")
         lines.append(f"// Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}")
         lines.append("")
-        
+
         # Includes
         lines.append("#include <stdint.h>")
         lines.append("#include <stdbool.h>")
         lines.append("#include <errno.h>")
         lines.append("")
-        
+
         # Forward declarations
         lines.append("// Forward declarations")
         for func in contract.get('functions', []):
             sig = func.get('signature', '')
             lines.append(f"extern {sig};")
         lines.append("")
-        
+
         # Adapter functions
         for func in contract.get('functions', []):
             adapter_code = self._generate_function_adapter(func)
             lines.append(adapter_code)
             lines.append("")
-            
+
         return '\n'.join(lines)
-        
+
     def _generate_function_adapter(self, func: Dict[str, Any]) -> str:
         """Generate adapter for a single function."""
         name = func.get('name', 'unknown')
         signature = func.get('signature', 'void unknown(void)')
-        
+
         # Parse signature (simplified)
         # Real implementation would use proper C parser
         return_type = signature.split()[0] if ' ' in signature else 'void'
-        
+
         lines = []
         lines.append(f"// Adapter for: {name}")
         lines.append(f"{return_type} {name}_adapter(/* parameters */) {{")
-        
+
         # Precondition checks
         preconditions = func.get('preconditions', [])
         if preconditions:
             lines.append("    // Precondition validation")
             for precond in preconditions:
                 lines.append(f"    // TODO: Check {precond}")
-                
+
         # Call original function
         lines.append(f"    // Call original function")
         lines.append(f"    {return_type} result = {name}(/* args */);")
-        
+
         # Postcondition checks
         postconditions = func.get('postconditions', [])
         if postconditions:
             lines.append("    // Postcondition validation")
             for postcond in postconditions:
                 lines.append(f"    // TODO: Check {postcond}")
-                
+
         lines.append("    return result;")
         lines.append("}")
-        
+
         return '\n'.join(lines)
-        
+
     def validate_adapter(
         self,
         adapter_source: Path,
@@ -4825,34 +4817,34 @@ class AdapterGenerator:
     ) -> Tuple[bool, List[str]]:
         """
         Validate generated adapter syntax.
-        
+
         Returns: (is_valid, list_of_issues)
         """
         issues = []
-        
+
         # Check file exists
         if not adapter_source.exists():
             issues.append(f"Adapter source does not exist: {adapter_source}")
             return False, issues
-            
+
         # Syntax check using compiler
         try:
             # -fsyntax-only is a GCC/Clang flag
             # MSVC doesn't have a direct equivalent without producing output
             # but we can use /Zs for syntax check
             compiler_flag = '/Zs' if toolchain.compiler_name == 'MSVC' else '-fsyntax-only'
-            
+
             result = subprocess.run(
                 [str(toolchain.compiler_executable), compiler_flag, str(adapter_source)],
                 capture_output=True,
                 text=True,
                 timeout=15
             )
-            
+
             if result.returncode != 0:
                 issues.append(f"Syntax errors: {result.stderr or result.stdout}")
-        return False, issues
-                
+                return False, issues
+
         except subprocess.TimeoutExpired:
             issues.append("Syntax validation timed out")
             return False, issues
@@ -4862,38 +4854,38 @@ class AdapterGenerator:
         except Exception as e:
             issues.append(f"Validation failed: {e}")
             return False, issues
-            
+
         return True, []
 
 class AdapterGenerationStage(BuildStageInterface):
     """
     Stage 6: Adapter Generation
-    
+
     Generates runtime adapter code from contract specifications and compiles
     adapters to object files.
     """
-    
+
     def __init__(self, adapter_dir: Path, contract_dir: Optional[Path] = None):
         super().__init__("Adapter Generation", BuildStage.ADAPTER_GENERATION)
         self.stage_name = "Adapter Generation"
         self.adapter_dir = adapter_dir
         self.contract_dir = contract_dir
-        
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         if 'toolchain' not in context:
             raise BuildPreconditionError(
                 "Stage 6 requires 'toolchain' for adapter compilation"
             )
-            
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute adapter generation."""
         print(f"  Generating adapters...")
-        
+
         self.adapter_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Load contracts (simplified - would load from files or Module 02)
         contracts = self._load_contracts()
-        
+
         if not contracts:
             print("    No contracts found - skipping adapter generation")
             context['adapter_generation'] = {
@@ -4903,36 +4895,36 @@ class AdapterGenerationStage(BuildStageInterface):
                 'all_successful': True
             }
             return context
-            
+
         # Generate adapters
         generator = AdapterGenerator(self.adapter_dir)
         toolchain = context['toolchain']
-        
+
         generated_adapters = []
         adapter_metadata = []
-        
+
         for contract in contracts:
             try:
                 source_file, metadata = generator.generate_adapter(contract)
-                
+
                 # Validate adapter
                 valid, issues = generator.validate_adapter(source_file, toolchain)
                 metadata.validation_passed = valid
                 metadata.validation_issues = issues
-                
-        if valid:
+
+                if valid:
                     generated_adapters.append(source_file)
                     adapter_metadata.append(metadata)
                 else:
                     print(f"    âœ— Adapter validation failed: {contract.get('library_name')}")
                     for issue in issues[:3]:
                         print(f"      - {issue}")
-                        
+
             except Exception as e:
-                print(f"    âœ— Adapter generation failed: {e}")
-                
+                print(f"    âœ— Adapter validation failed: {e}")
+
         print(f"    Generated {len(generated_adapters)} adapters")
-        
+
         # Update context
         context['adapter_generation'] = {
             'generated_adapters': [str(f) for f in generated_adapters],
@@ -4940,21 +4932,21 @@ class AdapterGenerationStage(BuildStageInterface):
             'adapter_metadata': [m.to_dict() for m in adapter_metadata],
             'all_successful': len(generated_adapters) == len(contracts)
         }
-        
+
         return context
-        
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         """Verify adapter generation succeeded."""
         if 'adapter_generation' not in context:
             raise BuildPostconditionError(
                 "Stage 6 must produce 'adapter_generation' in context"
             )
-            
+
     def _load_contracts(self) -> List[Dict[str, Any]]:
         """Load contract specifications."""
         if not self.contract_dir or not self.contract_dir.exists():
             return []
-            
+
         contracts = []
         for contract_file in self.contract_dir.glob('*.json'):
             try:
@@ -4963,7 +4955,7 @@ class AdapterGenerationStage(BuildStageInterface):
                     contracts.append(contract)
             except Exception as e:
                 print(f"    âš  Failed to load contract {contract_file}: {e}")
-                
+
         return contracts
 
 # ============================================================================
@@ -4973,26 +4965,26 @@ class AdapterGenerationStage(BuildStageInterface):
 @dataclass
 class BuildManifest:
     """Complete manifest of build artifacts and provenance."""
-    
+
     manifest_version: str = "1.0"
     build_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    
+
     # Components
     native_libraries: List[Dict[str, Any]] = field(default_factory=list)
     executables: List[Dict[str, Any]] = field(default_factory=list)
     adapters: List[Dict[str, Any]] = field(default_factory=list)
     python_modules: List[str] = field(default_factory=list)
-    
+
     # Provenance
     source_hash: str = ""
     toolchain_info: Dict[str, str] = field(default_factory=dict)
     build_environment: Dict[str, str] = field(default_factory=dict)
-    
+
     # Validation
     all_tests_passed: bool = False
     integration_tests_count: int = 0
     unit_tests_count: int = 0
-    
+
     def to_json(self) -> str:
         """Serialize to JSON."""
         data = {
@@ -5016,7 +5008,7 @@ class BuildManifest:
             }
         }
         return json.dumps(data, indent=2)
-        
+
     def save(self, output_path: Path):
         """Save manifest to file."""
         with open(output_path, 'w') as f:
@@ -5025,15 +5017,15 @@ class BuildManifest:
 class PackageAssembler:
     """
     Assembles complete verification package from build artifacts.
-    
+
     Creates Python package structure with native libraries, adapters,
     configuration, and entry points.
     """
-    
+
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.package_name = "verification_tool"
-        
+
     def assemble(
         self,
         native_libs: List[Path],
@@ -5043,52 +5035,52 @@ class PackageAssembler:
     ) -> Path:
         """
         Assemble complete package.
-        
+
         Returns: Path to assembled package directory
         """
         print("  Assembling verification package...")
-        
+
         # Create package structure
         package_dir = self.output_dir / self.package_name
         package_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create subdirectories
         (package_dir / 'native').mkdir(exist_ok=True)
         (package_dir / 'adapters').mkdir(exist_ok=True)
         (package_dir / 'config').mkdir(exist_ok=True)
-        
+
         # Copy native libraries
         for lib in native_libs:
             if lib.exists():
                 dest = package_dir / 'native' / lib.name
                 shutil.copy2(lib, dest)
                 print(f"    Copied: {lib.name}")
-                
+
         # Copy executables
         for exe in executables:
             if exe.exists():
                 dest = package_dir / exe.name
                 shutil.copy2(exe, dest)
                 print(f"    Copied: {exe.name}")
-                
+
         # Copy adapters
         for adapter in adapters:
             if adapter.exists():
                 dest = package_dir / 'adapters' / adapter.name
                 shutil.copy2(adapter, dest)
-                
+
         # Generate __init__.py
         self._generate_package_init(package_dir)
-        
+
         # Generate CLI entry point
         self._generate_cli(package_dir)
-        
+
         # Generate API stub
         self._generate_api_stub(package_dir)
-        
+
         print(f"  âœ“ Package assembled: {package_dir}")
         return package_dir
-        
+
     def _generate_package_init(self, package_dir: Path):
         """Generate package __init__.py."""
         init_content = '''"""
@@ -5105,7 +5097,7 @@ from .api import verify_contract
 __all__ = ['verify_contract']
 '''
         (package_dir / '__init__.py').write_text(init_content)
-        
+
     def _generate_cli(self, package_dir: Path):
         """Generate CLI entry point."""
         cli_content = '''"""Command-line interface for verification tool."""
@@ -5114,38 +5106,38 @@ import argparse
 from pathlib import Path
 
 def main():
-        parser = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description='Polyglot FFI Contract Verifier'
     )
-    
+
     parser.add_argument(
         '--version',
         action='version',
         version='%(prog)s 1.0.0'
     )
-    
+
     parser.add_argument(
         'contract',
         nargs='',
         type=Path,
         help='Path to contract specification'
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.contract:
         print(f"Verifying contract: {args.contract}")
         # TODO: Implement verification
         return 0
-    else:
-        parser.print_help()
+else:
+    parser.print_help()
         return 0
 
-if __name__ == '__main__':
-    sys.exit(main())
+        if __name__ == '__main__':
+            sys.exit(main())
 '''
         (package_dir / 'cli.py').write_text(cli_content)
-        
+
         main_content = '''from .cli import main
 import sys
 
@@ -5153,7 +5145,7 @@ if __name__ == '__main__':
     sys.exit(main())
 '''
         (package_dir / '__main__.py').write_text(main_content)
-        
+
     def _generate_api_stub(self, package_dir: Path):
         """Generate API module stub."""
         api_content = '''"""Programmatic API for verification."""
@@ -5161,12 +5153,12 @@ if __name__ == '__main__':
 def verify_contract(contract_path, target_library, verbose=False):
     """
     Verify contract against target library.
-    
+
     Args:
         contract_path: Path to contract JSON
         target_library: Path to library
         verbose: Enable verbose output
-        
+
     Returns:
         VerificationResult
     """
@@ -5178,33 +5170,33 @@ def verify_contract(contract_path, target_library, verbose=False):
 class OrchestrationAssemblyStage(BuildStageInterface):
     """
     Stage 7: Orchestration Assembly
-    
+
     Integrates all build artifacts into complete, deployable verification
     system with Python orchestration layer.
     """
-    
+
     def __init__(self, output_dir: Path):
         super().__init__("Orchestration Assembly", BuildStage.ORCHESTRATION_ASSEMBLY)
         self.stage_name = "Orchestration Assembly"
         self.output_dir = output_dir
-        
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         if 'linking' not in context:
             raise BuildPreconditionError(
                 "Stage 7 requires 'linking' from Stage 5"
             )
-            
+
         if not context['linking'].get('all_successful', False):
             raise BuildPreconditionError(
                 "Cannot assemble: linking failed"
             )
-            
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute orchestration assembly."""
         print(f"  Assembling complete verification system...")
-        
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Collect artifacts
         native_libs: List[Path] = [] # In real flow, would extract shared libs from linking context
         executables = [
@@ -5216,7 +5208,7 @@ class OrchestrationAssemblyStage(BuildStageInterface):
             for adapter in context.get('adapter_generation', {}).get('generated_adapters', [])
         ]
         python_sources: List[Path] = []  # Would collect from source enumeration
-        
+
         # Assemble package
         assembler = PackageAssembler(self.output_dir)
         package_dir = assembler.assemble(
@@ -5225,11 +5217,11 @@ class OrchestrationAssemblyStage(BuildStageInterface):
             adapters=adapters,
             python_sources=python_sources
         )
-        
+
         # Generate build manifest
         manifest = self._generate_manifest(context, package_dir)
         manifest.save(package_dir / 'build_manifest.json')
-        
+
         # Update context
         context['orchestration'] = {
             'package_directory': str(package_dir),
@@ -5241,32 +5233,32 @@ class OrchestrationAssemblyStage(BuildStageInterface):
             'build_manifest': manifest.to_json(),
             'ready_for_deployment': True
         }
-        
+
         print(f"  âœ“ Orchestration assembly complete")
-        
+
         return context
-        
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         """Verify assembly succeeded."""
         if 'orchestration' not in context:
             raise BuildPostconditionError(
                 "Stage 7 must produce 'orchestration' in context"
             )
-            
+
         orchestration = context['orchestration']
-        
+
         if not orchestration.get('ready_for_deployment', False):
             raise BuildPostconditionError(
                 "Orchestration assembly not ready for deployment"
             )
-            
+
         # Verify package directory exists
         package_dir = Path(orchestration['package_directory'])
         if not package_dir.exists():
             raise BuildPostconditionError(
                 f"Package directory not created: {package_dir}"
             )
-            
+
     def _generate_manifest(
         self,
         context: Dict[str, Any],
@@ -5274,32 +5266,32 @@ class OrchestrationAssemblyStage(BuildStageInterface):
     ) -> BuildManifest:
         """Generate build manifest from context."""
         manifest = BuildManifest()
-        
+
         # Add executables
         for exe in context['linking'].get('executables', []):
             manifest.executables.append({
                 'name': Path(exe).name,
                 'path': exe
             })
-            
+
         # Add adapters
         adapter_metadata = context.get('adapter_generation', {}).get('adapter_metadata', [])
         manifest.adapters = adapter_metadata
-        
+
         if 'toolchain' in context:
             toolchain = context['toolchain']
             manifest.toolchain_info = {
                 'compiler': toolchain.compiler_name,
                 'version': toolchain.compiler_version
             }
-            
+
         # Add environment
         manifest.build_environment = {
             'os': platform.system(),
             'architecture': platform.machine(),
             'python_version': platform.python_version()
         }
-        
+
         return manifest
 
 # ============================================================================
@@ -5309,26 +5301,26 @@ class OrchestrationAssemblyStage(BuildStageInterface):
 @dataclass
 class GateValidationResult:
     """Result of a validation gate."""
-    
+
     gate_name: str
     passed: bool = True
-    
+
     successes: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    
+
     def add_success(self, message: str):
         """Add success message."""
         self.successes.append(message)
-        
+
     def add_error(self, message: str):
-                self.errors.append(message)
+        self.errors.append(message)
         self.passed = False
-        
+
     def add_warning(self, message: str):
         """Add warning message."""
         self.warnings.append(message)
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -5341,26 +5333,26 @@ class GateValidationResult:
 
 class ValidationGate(ABC):
     """Abstract base for validation gates."""
-    
+
     @property
     @abstractmethod
     def gate_name(self) -> str:
         """Name of validation gate."""
         pass
-    
+
     @abstractmethod
     def validate(self, context: Dict[str, Any]) -> 'GateValidationResult':
         """
         Perform validation.
-        
+
         Args:
             context: Complete build context
-            
+
         Returns:
             GateValidationResult with pass/fail status
         """
         pass
-    
+
     @property
     def is_required(self) -> bool:
         """Whether this gate must pass for build to complete."""
@@ -5368,12 +5360,12 @@ class ValidationGate(ABC):
 
 class ArtifactExistenceGate(ValidationGate):
     """Validates that all required artifacts exist."""
-    
+
     gate_name = "Artifact Existence"
-    
+
     def validate(self, context: Dict[str, Any]) -> 'GateValidationResult':
         result = GateValidationResult(gate_name=self.gate_name)
-        
+
         # Check executables
         executables = context.get('linking', {}).get('executables', [])
         for exe_path in executables:
@@ -5384,7 +5376,7 @@ class ArtifactExistenceGate(ValidationGate):
                 result.add_error(f"Executable is empty: {exe}")
             else:
                 result.add_success(f"Executable exists: {exe.name}")
-        
+
         # Check package directory
         package_dir = context.get('orchestration', {}).get('package_directory')
         if package_dir:
@@ -5393,43 +5385,43 @@ class ArtifactExistenceGate(ValidationGate):
                 result.add_error(f"Package directory missing: {pkg}")
             else:
                 result.add_success(f"Package directory exists: {pkg.name}")
-        
+
         return result
 
 class ArtifactIntegrityGate(ValidationGate):
     """Validates artifact integrity via checksums."""
-    
+
     gate_name = "Artifact Integrity"
-    
+
     def validate(self, context: Dict[str, Any]) -> GateValidationResult:
         result = GateValidationResult(gate_name=self.gate_name)
-        
+
         # Validate object file hashes
         compilation_metadata = context.get('native_compilation', {}).get(
             'compilation_metadata', []
         )
-        
+
         verified_count = 0
         for metadata in compilation_metadata:
             obj_file = Path(metadata['output_file'])
             expected_hash = metadata.get('output_hash')
-            
+
             if obj_file.exists() and expected_hash:
                 actual_hash = self._compute_hash(obj_file)
         if actual_hash == expected_hash:
-                    verified_count += 1
-                else:
-                    result.add_error(
+            verified_count += 1
+        else:
+            result.add_error(
                         f"Hash mismatch for {obj_file.name}"
                     )
-        
+
         if verified_count > 0:
             result.add_success(f"Verified {verified_count} artifact hashes")
         else:
             result.add_warning("No artifacts with hashes to verify")
-        
+
         return result
-    
+
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash."""
         sha256 = hashlib.sha256()
@@ -5440,61 +5432,61 @@ class ArtifactIntegrityGate(ValidationGate):
 
 class DocumentationCompletenessGate(ValidationGate):
     """Validates documentation completeness."""
-    
+
     gate_name = "Documentation Completeness"
-    
+
     @property
     def is_required(self) -> bool:
         return False  # Warning-level gate
-    
+
     def validate(self, context: Dict[str, Any]) -> GateValidationResult:
         result = GateValidationResult(gate_name=self.gate_name)
-        
+
         required_docs = [
             'README.md',
             'BUILD_PROCESS.md',
             'build_manifest.json'
         ]
-        
+
         package_dir = context.get('orchestration', {}).get('package_directory')
         if package_dir:
             pkg = Path(package_dir)
-            
+
             for doc in required_docs:
                 # Check in package dir and parent
-        doc_paths = [
+                doc_paths = [
                     pkg / doc,
                     pkg.parent / doc,
                     Path.cwd() / doc
                 ]
-                
-        found = any(p.exists() for p in doc_paths)
-        if found:
+
+                found = any(p.exists() for p in doc_paths)
+                if found:
                     result.add_success(f"Documentation present: {doc}")
                 else:
                     result.add_warning(f"Documentation missing: {doc}")
-        else:
-            result.add_warning("No package directory - cannot check documentation")
-        
+            else:
+                result.add_warning("No package directory - cannot check documentation")
+
         return result
 
 @dataclass
 class BuildCompletionReport:
     """Report of build completion validation."""
-    
+
     build_successful: bool
     timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    
+
     gates_passed: List[str] = field(default_factory=list)
     gates_failed: List[str] = field(default_factory=list)
     gates_warned: List[str] = field(default_factory=list)
-    
+
     total_gates: int = 0
     required_gates_passed: int = 0
     required_gates_failed: int = 0
-    
+
     validation_details: List[Dict[str, Any]] = field(default_factory=list)
-    
+
     def generate_report(self) -> str:
         """Generate human-readable report."""
         lines = [
@@ -5511,28 +5503,28 @@ class BuildCompletionReport:
             f"  Warnings: {len(self.gates_warned)}",
             ""
         ]
-        
+
         if self.gates_failed:
             lines.append("Failed Gates:")
             for gate in self.gates_failed:
                 lines.append(f"  âœ— {gate}")
             lines.append("")
-        
+
         if self.gates_warned:
             lines.append("Warning Gates:")
             for gate in self.gates_warned:
                 lines.append(f"  âš  {gate}")
             lines.append("")
-        
+
         if self.gates_passed:
             lines.append("Passed Gates:")
             for gate in self.gates_passed:
                 lines.append(f"  âœ“ {gate}")
-        
+
         lines.append("=" * 80)
-        
+
         return '\n'.join(lines)
-    
+
     def save(self, output_path: Path):
         """Save report to file."""
         with open(output_path, 'w') as f:
@@ -5541,44 +5533,44 @@ class BuildCompletionReport:
 class BuildCompletionValidator:
     """
     Validates build completion through multiple validation gates.
-    
+
     Runs all validation gates and generates completion report.
     """
-    
+
     def __init__(self):
         self.gates: List[ValidationGate] = [
             ArtifactExistenceGate(),
             ArtifactIntegrityGate(),
             DocumentationCompletenessGate(),
         ]
-        
+
     def validate_build(self, context: Dict[str, Any]) -> BuildCompletionReport:
         """
         Validate complete build.
-        
+
         Args:
             context: Complete build context
-            
+
         Returns:
             BuildCompletionReport with validation results
         """
         print("Validating build completion...")
-        
+
         report = BuildCompletionReport(
             build_successful=True,
             total_gates=len(self.gates)
         )
-        
+
         # Run all validation gates
         for gate in self.gates:
             print(f"  Running gate: {gate.gate_name}")
-            
+
             result = gate.validate(context)
             report.validation_details.append(result.to_dict())
-            
+
             if result.passed:
                 report.gates_passed.append(gate.gate_name)
-        if gate.is_required:
+                if gate.is_required:
                     report.required_gates_passed += 1
                 print(f"    âœ“ {gate.gate_name} passed")
             else:
@@ -5590,13 +5582,13 @@ class BuildCompletionValidator:
                 else:
                     report.gates_warned.append(gate.gate_name)
                     print(f"    âš  {gate.gate_name} warned")
-            
+
             # Show errors/warnings
             for error in result.errors[:3]:
                 print(f"      Error: {error}")
             for warning in result.warnings[:3]:
                 print(f"      Warning: {warning}")
-        
+
         return report
 
 # ============================================================================
@@ -5606,19 +5598,19 @@ class BuildCompletionValidator:
 @dataclass
 class CacheEntry:
     """Entry in build cache."""
-    
+
     source_file: Path
     source_hash: str
     output_file: Path
     output_hash: str
-    
+
     dependencies: List[Dict[str, str]] = field(default_factory=list)
     compiler_hash: str = ""
     flags: List[str] = field(default_factory=list)
-    
+
     timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     last_access: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    
+
     def is_valid(
         self,
         current_source_hash: str,
@@ -5628,7 +5620,7 @@ class CacheEntry:
     ) -> bool:
         """
         Check if cache entry is still valid.
-        
+
         Valid if:
             - Source hash matches
         - Compiler hash matches
@@ -5639,30 +5631,30 @@ class CacheEntry:
         # Check source
         if current_source_hash != self.source_hash:
             return False
-            
+
         # Check compiler
         if current_compiler_hash != self.compiler_hash:
             return False
-            
+
         # Check flags
         if set(current_flags) != set(self.flags):
             return False
-            
+
         # Check dependencies
         for dep in self.dependencies:
             dep_path = Path(dep['file'])
             expected_hash = dep['hash']
             actual_hash = dependency_hashes.get(dep_path)
-            
+
             if actual_hash != expected_hash:
                 return False
-                
+
         # Check output exists
         if not self.output_file.exists():
             return False
-            
+
         return True
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -5676,7 +5668,7 @@ class CacheEntry:
             'timestamp': self.timestamp,
             'last_access': self.last_access
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CacheEntry':
         """Create from dictionary."""
@@ -5695,75 +5687,75 @@ class CacheEntry:
 class BuildCache:
     """
     Build cache for incremental builds.
-    
+
     Stores compilation results with metadata for cache validation.
     """
-    
+
     def __init__(self, cache_dir: Path):
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.entries: Dict[str, CacheEntry] = {}
         self._load_cache()
-        
+
     def get_entry(self, source_file: Path) -> Optional[CacheEntry]:
         """Get cache entry for source file."""
         entry = self.entries.get(str(source_file))
-        
+
         if entry:
             # Update last access time
             entry.last_access = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            
+
         return entry
-        
+
     def add_entry(self, entry: CacheEntry):
         """Add entry to cache."""
         self.entries[str(entry.source_file)] = entry
         self._save_cache()
-        
+
     def invalidate(self, source_file: Path):
         """Invalidate cache entry for source file."""
         if str(source_file) in self.entries:
             del self.entries[str(source_file)]
             self._save_cache()
-            
+
     def clear(self):
         """Clear entire cache."""
         self.entries.clear()
         self._save_cache()
-        
+
     def get_size_mb(self) -> float:
         """Get cache size in megabytes."""
         total_bytes = 0
-        
+
         for entry in self.entries.values():
             if entry.output_file.exists():
                 total_bytes += entry.output_file.stat().st_size
-                
+
         return total_bytes / (1024 * 1024)
-        
+
     def _load_cache(self):
         """Load cache from disk."""
         cache_file = self.cache_dir / 'cache_index.json'
-        
+
         if not cache_file.exists():
             return
-            
+
         try:
             with open(cache_file, 'r') as f:
                 data = json.load(f)
-                
+
             for source_file, entry_data in data.get('entries', {}).items():
                 entry = CacheEntry.from_dict(entry_data)
                 self.entries[source_file] = entry
-                
+
         except Exception as e:
             print(f"Warning: Failed to load cache: {e}")
-            
+
     def _save_cache(self):
         """Save cache to disk."""
         cache_file = self.cache_dir / 'cache_index.json'
-        
+
         data = {
             'version': '1.0',
             'entries': {
@@ -5771,22 +5763,22 @@ class BuildCache:
         for source_file, entry in self.entries.items()
             }
         }
-        
+
         with open(cache_file, 'w') as f:
             json.dump(data, f, indent=2)
 
 class IncrementalBuildManager:
     """
     Manages incremental build logic.
-    
+
     Determines which sources need rebuilding based on change detection
     and dependency analysis.
     """
-    
+
     def __init__(self, cache: BuildCache, dependency_graph: DependencyGraph):
         self.cache = cache
         self.dependency_graph = dependency_graph
-        
+
     def get_sources_to_rebuild(
         self,
         all_sources: List[Path],
@@ -5794,85 +5786,85 @@ class IncrementalBuildManager:
     ) -> Tuple[List[Path], List[Path]]:
         """
         Determine which sources need rebuilding.
-        
+
         Returns:
             Tuple of (sources_to_rebuild, sources_from_cache)
         """
         to_rebuild = []
         from_cache = []
-        
+
         for source in all_sources:
             if self._needs_rebuild(source, toolchain):
                 to_rebuild.append(source)
-            else:
-                from_cache.append(source)
-                
+        else:
+            from_cache.append(source)
+
         # Propagate changes through dependency graph
         if to_rebuild:
             affected = self._get_affected_sources(set(to_rebuild))
             to_rebuild = list(affected)
             from_cache = [s for s in all_sources if s not in affected]
-            
+
         return to_rebuild, from_cache
-        
+
     def _needs_rebuild(self, source: Path, toolchain: ToolchainDescriptor) -> bool:
         """Check if source needs rebuilding."""
         # Check cache
         cache_entry = self.cache.get_entry(source)
-        
+
         if not cache_entry:
             return True  # No cache entry - must rebuild
-            
+
         # Compute current hashes
         current_source_hash = self._compute_hash(source)
         current_compiler_hash = toolchain.compiler_executable_hash
-        
+
         # Get dependency hashes
         dependency_hashes = self._get_dependency_hashes(source)
-        
+
         # Validate cache entry
         # Important: Flags would come from compilation unit in full implementation
         current_flags: List[str] = []
-        
+
         is_valid = cache_entry.is_valid(
             current_source_hash,
             current_compiler_hash,
             current_flags,
             dependency_hashes
         )
-        
+
         return not is_valid
-        
+
     def _get_affected_sources(self, changed_sources: Set[Path]) -> Set[Path]:
         """Get all sources affected by changes."""
         affected = set(changed_sources)
         worklist = list(changed_sources)
-        
+
         while worklist:
             changed = worklist.pop()
-            
+
             dependents = self.dependency_graph.get_dependents(str(changed))
-            
+
             for dependent in dependents:
                 dep_path = Path(dependent)
-        if dep_path not in affected:
+                if dep_path not in affected:
                     affected.add(dep_path)
                     worklist.append(dep_path)
-                    
+
         return affected
-        
+
     def _get_dependency_hashes(self, source: Path) -> Dict[Path, str]:
         """Get hashes of all dependencies."""
         dependencies = self.dependency_graph.get_dependencies(str(source))
-        
+
         hashes = {}
         for dep in dependencies:
             dep_path = Path(dep)
             if dep_path.exists():
                 hashes[dep_path] = self._compute_hash(dep_path)
-                
+
         return hashes
-        
+
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of file."""
         sha256 = hashlib.sha256()
@@ -5891,28 +5883,28 @@ class IncrementalBuildManager:
 @dataclass
 class CacheStatistics:
     """Statistics about cache state."""
-    
+
     total_entries: int = 0
     total_size_bytes: int = 0
-    
+
     object_files_bytes: int = 0
     executables_bytes: int = 0
     adapters_bytes: int = 0
     metadata_bytes: int = 0
-    
+
     entries_less_than_1_day: int = 0
     entries_less_than_1_week: int = 0
     entries_less_than_1_month: int = 0
     entries_older_than_1_month: int = 0
-    
+
     stale_entries: int = 0
     invalid_entries: int = 0
-    
+
     @property
     def total_size_mb(self) -> float:
         """Get total size in megabytes."""
         return self.total_size_bytes / (1024 * 1024)
-    
+
     def generate_report(self) -> str:
         """Generate human-readable statistics report."""
         lines = [
@@ -5939,7 +5931,7 @@ class CacheStatistics:
 
 class EvictionPolicy(ABC):
     """Abstract base for cache eviction policies."""
-    
+
     @abstractmethod
     def select_entries_to_evict(
         self,
@@ -5949,17 +5941,17 @@ class EvictionPolicy(ABC):
     ) -> List[CacheEntry]:
         """
         Select cache entries to evict.
-        
+
         Args:
             cache: Build cache
             target_size_bytes: Target size after eviction
             statistics: Current cache statistics
-            
+
         Returns:
             List of entries to evict
         """
         pass
-    
+
     @property
     @abstractmethod
     def policy_name(self) -> str:
@@ -5968,9 +5960,9 @@ class EvictionPolicy(ABC):
 
 class LRUEvictionPolicy(EvictionPolicy):
     """Least Recently Used eviction policy."""
-    
+
     policy_name = "LRU"
-    
+
     def select_entries_to_evict(
         self,
         cache: BuildCache,
@@ -5982,25 +5974,25 @@ class LRUEvictionPolicy(EvictionPolicy):
             cache.entries.values(),
             key=lambda e: datetime.datetime.fromisoformat(e.last_access)
         )
-        
+
         bytes_to_free = statistics.total_size_bytes - target_size_bytes
-        
+
         if bytes_to_free <= 0:
             return []
-        
+
         to_evict = []
         bytes_freed = 0
-        
+
         for entry in entries:
             if bytes_freed >= bytes_to_free:
                 break
-            
+
             entry_size = self._get_entry_size(entry)
             to_evict.append(entry)
             bytes_freed += entry_size
-        
+
         return to_evict
-    
+
     def _get_entry_size(self, entry: CacheEntry) -> int:
         """Get size of cache entry in bytes."""
         if entry.output_file.exists():
@@ -6009,12 +6001,12 @@ class LRUEvictionPolicy(EvictionPolicy):
 
 class AgeBasedEvictionPolicy(EvictionPolicy):
     """Age-based eviction policy with TTL."""
-    
+
     policy_name = "Age-Based"
-    
+
     def __init__(self, ttl_days: int = 30):
         self.ttl_days = ttl_days
-    
+
     def select_entries_to_evict(
         self,
         cache: BuildCache,
@@ -6023,27 +6015,27 @@ class AgeBasedEvictionPolicy(EvictionPolicy):
     ) -> List[CacheEntry]:
         now = datetime.datetime.now(datetime.timezone.utc)
         ttl_threshold = now - datetime.timedelta(days=self.ttl_days)
-        
+
         to_evict = []
-        
+
         for entry in cache.entries.values():
             entry_time = datetime.datetime.fromisoformat(entry.timestamp)
             # Ensure timezone awareness for comparison
             if entry_time.tzinfo is None:
                 entry_time = entry_time.replace(tzinfo=datetime.timezone.utc)
-            
+
             if entry_time < ttl_threshold:
                 to_evict.append(entry)
-        
+
         return to_evict
 
 class CacheManager:
     """
     Manages build cache with eviction policies.
-    
+
     Monitors cache size, applies eviction policies, and maintains cache health.
     """
-    
+
     def __init__(
         self,
         cache: BuildCache,
@@ -6053,34 +6045,34 @@ class CacheManager:
         self.cache = cache
         self.eviction_policy = eviction_policy or LRUEvictionPolicy()
         self.max_size_mb = max_size_mb
-        
+
     def get_statistics(self) -> CacheStatistics:
         """Compute current cache statistics."""
         stats = CacheStatistics()
-        
+
         stats.total_entries = len(self.cache.entries)
-        
+
         now = datetime.datetime.now(datetime.timezone.utc)
-        
+
         for entry in self.cache.entries.values():
             # Compute size
             if entry.output_file.exists():
                 size = entry.output_file.stat().st_size
                 stats.total_size_bytes += size
-                
+
                 # Categorize by type
-        if entry.output_file.suffix == '.o':
+                if entry.output_file.suffix == '.o':
                     stats.object_files_bytes += size
-            
+
             # Compute age
             try:
                 entry_time = datetime.datetime.fromisoformat(entry.timestamp)
-        if entry_time.tzinfo is None:
+                if entry_time.tzinfo is None:
                     entry_time = entry_time.replace(tzinfo=datetime.timezone.utc)
-        age = now - entry_time
+                age = now - entry_time
             except ValueError:
-                                age = datetime.timedelta(days=0)
-            
+                age = datetime.timedelta(days=0)
+
             if age.days < 1:
                 stats.entries_less_than_1_day += 1
             elif age.days < 7:
@@ -6089,53 +6081,53 @@ class CacheManager:
                 stats.entries_less_than_1_month += 1
             else:
                 stats.entries_older_than_1_month += 1
-            
+
             # Check staleness
             if not entry.source_file.exists():
                 stats.stale_entries += 1
-        
+
         return stats
-        
+
     def apply_eviction(self):
         """Apply eviction policy if cache exceeds size limit."""
         stats = self.get_statistics()
-        
+
         max_size_bytes = self.max_size_mb * 1024 * 1024
-        
+
         if stats.total_size_bytes <= max_size_bytes:
             return  # No eviction needed
-        
+
         print(f"Cache size ({stats.total_size_mb:.2f} MB) exceeds limit ({self.max_size_mb} MB)")
         print(f"Applying {self.eviction_policy.policy_name} eviction policy...")
-        
+
         # Select entries to evict
         to_evict = self.eviction_policy.select_entries_to_evict(
             self.cache,
             max_size_bytes,
             stats
         )
-        
+
         # Evict entries
         for entry in to_evict:
             self.cache.invalidate(entry.source_file)
-            
+
             # Delete cached file
             if entry.output_file.exists():
                 entry.output_file.unlink()
-        
+
         print(f"  Evicted {len(to_evict)} entries")
-        
+
     def clean_stale_entries(self):
         """Remove entries for sources that no longer exist."""
         stale = []
-        
+
         for source_file, entry in list(self.cache.entries.items()):
             if not entry.source_file.exists():
                 stale.append(Path(source_file))
-        
+
         for source in stale:
             self.cache.invalidate(source)
-        
+
         if stale:
             print(f"  Cleaned {len(stale)} stale cache entries")
 
@@ -6146,20 +6138,20 @@ class CacheManager:
 @dataclass
 class DeterministicBuildConfig:
     """Config for deterministic builds."""
-    
+
     source_epoch: int
     source_hash: str
-    
+
     compiler_name: str
     compiler_version: str
     compiler_hash: str
-    
+
     build_directory: Path
     environment_variables: Dict[str, str] = field(default_factory=dict)
-    
+
     determinism_flags: List[str] = field(default_factory=list)
     random_seed: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -6178,14 +6170,14 @@ class DeterministicBuildConfig:
 
 class DeterministicFlagManager:
     """Manages compiler flags for deterministic builds."""
-    
+
     def __init__(self, toolchain: ToolchainDescriptor):
         self.toolchain = toolchain
-        
+
     def get_determinism_flags(self) -> List[str]:
         """Get flags that ensure deterministic output."""
         flags = []
-        
+
         if self.toolchain.compiler_name in ['GCC', 'Clang']:
             # Override timestamp macros
             flags.extend([
@@ -6193,16 +6185,16 @@ class DeterministicFlagManager:
                 '-D__DATE__="reproducible"',
                 '-D__TIME__="reproducible"'
             ])
-            
+
             # Use fixed random seed
             flags.append('-frandom-seed=0')
-            
+
         elif self.toolchain.compiler_name == 'MSVC':
             # MSVC reproducible builds
             flags.append('/Brepro')
-            
+
         return flags
-        
+
     def normalize_flags(self, flags: List[str]) -> List[str]:
         """Normalize flags to canonical order."""
         # Separate flags by category
@@ -6211,44 +6203,44 @@ class DeterministicFlagManager:
         defines = [f for f in flags if f.startswith('-D')]
         includes = [f for f in flags if f.startswith('-I')]
         other = [f for f in flags if f not in optimization + warnings + defines + includes]
-        
+
         # Sort each category
         optimization.sort()
         warnings.sort()
         defines.sort()
         includes.sort()
         other.sort()
-        
+
         # Combine in canonical order
         return optimization + warnings + defines + includes + other
 
 def set_source_date_epoch(source_files: List[Path]) -> int:
     """
     Set SOURCE_DATE_EPOCH based on source files.
-    
+
     Uses the latest modification time of any source file.
-    
+
     Returns: Unix timestamp
     """
     latest_mtime = 0.0
-    
+
     for source_file in source_files:
         if source_file.exists():
             mtime = source_file.stat().st_mtime
             latest_mtime = max(latest_mtime, mtime)
-            
+
     # Round down to nearest second
     epoch = int(latest_mtime)
-    
+
     # Set environment variable
     os.environ['SOURCE_DATE_EPOCH'] = str(epoch)
-    
+
     return epoch
 
 def create_deterministic_environment() -> Dict[str, str]:
     """
     Create minimal, deterministic environment for builds.
-    
+
     Returns: Dictionary of environment variables
     """
     env = {
@@ -6257,28 +6249,28 @@ def create_deterministic_environment() -> Dict[str, str]:
         'LC_ALL': 'C',
         'TZ': 'UTC'
     }
-    
+
     # Add SOURCE_DATE_EPOCH if set
     if 'SOURCE_DATE_EPOCH' in os.environ:
         env['SOURCE_DATE_EPOCH'] = os.environ['SOURCE_DATE_EPOCH']
-        
+
     return env
 
 def deterministic_file_sort(files: List[Path]) -> List[Path]:
     """
     Sort files deterministically.
-    
+
     Uses lexicographic sorting by path.
     """
     def sort_key(path: Path) -> str:
         # Use forward slashes for consistency
         return str(path).replace('\\', '/')
-        
+
     return sorted(files, key=sort_key)
 
 class ReproducibilityVerifier:
     """Verifies build reproducibility."""
-    
+
     def verify_reproducibility(
         self,
         artifacts: Dict[Path, str],
@@ -6286,25 +6278,25 @@ class ReproducibilityVerifier:
     ) -> bool:
         """
         Verify artifacts are reproducible.
-        
+
         Args:
             artifacts: Dictionary mapping paths to hashes
             message: Description of this verification
-            
+
         Returns:
             True if verification passed
         """
         print(f"  Verifying reproducibility ({message})...")
-        
+
         # Check all artifacts exist
         for path in artifacts:
             if not path.exists():
                 print(f"    âœ— Artifact missing: {path}")
         return False
-                
+
         print(f"    âœ“ All {len(artifacts)} artifacts present and verified")
         return True
-        
+
     def compare_artifacts(
         self,
         artifacts1: Dict[Path, str],
@@ -6315,7 +6307,7 @@ class ReproducibilityVerifier:
         if set(artifacts1.keys()) != set(artifacts2.keys()):
             print("    âœ— Different sets of artifacts")
             return False
-            
+
         # Compare hashes
         mismatches = 0
         for path, hash1 in artifacts1.items():
@@ -6323,31 +6315,31 @@ class ReproducibilityVerifier:
             if hash1 != hash2:
                 mismatches += 1
                 print(f"    âœ— Hash mismatch: {path}")
-                
+
         if mismatches > 0:
             return False
-            
+
         print(f"    âœ“ All {len(artifacts1)} artifacts identical")
         return True
-        
+
     def collect_artifacts(self, context: Dict[str, Any]) -> Dict[Path, str]:
         """Collect artifact paths and hashes from build context."""
         artifacts = {}
-        
+
         # Collect object files
         for metadata in context.get('native_compilation', {}).get('compilation_metadata', []):
             output_file = Path(metadata['output_file'])
             if output_file.exists():
                 artifacts[output_file] = metadata.get('output_hash', '')
-                
+
         # Collect executables
         for exe in context.get('linking', {}).get('executables', []):
             exe_path = Path(exe)
             if exe_path.exists():
                 artifacts[exe_path] = self._compute_hash(exe_path)
-                
+
         return artifacts
-        
+
     def _compute_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash."""
         sha256 = hashlib.sha256()
@@ -6364,39 +6356,39 @@ class ReproducibilityVerifier:
 class BuildPerformanceProfile:
     """
     Complete performance profile of a build.
-    
+
     Captures timing information for all build stages and individual operations.
     """
-    
+
     # Overall timing
     total_build_time: float = 0.0
-    
+
     # Stage timing
     stage_times: Dict[str, float] = field(default_factory=dict)
-    
+
     # Compilation timing
     compilation_times: List[Tuple[Path, float]] = field(default_factory=list)
     total_compilation_time: float = 0.0
     parallel_compilation_speedup: float = 1.0
-    
+
     # Linking timing
     linking_times: List[Tuple[str, float]] = field(default_factory=list)
     total_linking_time: float = 0.0
-    
+
     # Cache statistics
     cache_hits: int = 0
     cache_misses: int = 0
     cache_hit_rate: float = 0.0
     time_saved_by_cache: float = 0.0
-    
+
     # I/O statistics
     files_read: int = 0
     files_written: int = 0
-    
+
     # Bottleneck analysis
     slowest_stage: str = ""
     slowest_compilation: Optional[Path] = None
-    
+
     def generate_report(self) -> str:
         """Generate human-readable performance report."""
         lines = [
@@ -6407,18 +6399,18 @@ class BuildPerformanceProfile:
             "",
             "Stage Breakdown:",
         ]
-        
+
         # Sort stages by time
         sorted_stages = sorted(
             self.stage_times.items(),
             key=lambda x: x[1],
             reverse=True
         )
-        
+
         for stage_name, stage_time in sorted_stages:
             percentage = (stage_time / self.total_build_time) * 100 if self.total_build_time > 0 else 0
             lines.append(f"  {stage_name:30s} {stage_time:8.2f}s ({percentage:5.1f}%)")
-        
+
         lines.extend([
             "",
             "Compilation:",
@@ -6426,7 +6418,7 @@ class BuildPerformanceProfile:
             f"  Files Compiled: {len(self.compilation_times)}",
             f"  Parallel Speedup: {self.parallel_compilation_speedup:.2f}x"
         ])
-        
+
         if self.slowest_compilation:
             # Find time for slowest compilation
             slowest_time = 0.0
@@ -6435,7 +6427,7 @@ class BuildPerformanceProfile:
                     slowest_time = time_val
                     break
             lines.append(f"  Slowest: {self.slowest_compilation.name} ({slowest_time:.2f}s)")
-        
+
         lines.extend([
             "",
             "Cache Performance:",
@@ -6447,9 +6439,9 @@ class BuildPerformanceProfile:
             f"Bottleneck: {self.slowest_stage}",
             "=" * 80
         ])
-        
+
         return '\n'.join(lines)
-        
+
     def save(self, output_path: Path):
         """Save profile to file."""
         with open(output_path, 'w') as f:
@@ -6458,52 +6450,52 @@ class BuildPerformanceProfile:
 class ProfilingBuildStage(BuildStageInterface):
     """
     Wrapper that adds profiling to any build stage.
-    
+
     Measures execution time and tracks resource usage.
     """
-    
+
     def __init__(self, wrapped_stage: BuildStageInterface):
         super().__init__(wrapped_stage.stage_name, wrapped_stage.stage_number)
         self.wrapped_stage = wrapped_stage
         self.execution_time: float = 0.0
-    
+
     def check_preconditions(self, context: Dict[str, Any]) -> None:
         self.wrapped_stage.check_preconditions(context)
-    
+
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         print(f"\n{'=' * 80}")
         print(f"Stage {self.stage_number.value}: {self.stage_name}")
         print(f"{'=' * 80}")
-        
+
         # Record start time
         start_time = time.time()
         start_cpu = time.process_time()
-        
+
         # Execute wrapped stage
         result_context = self.wrapped_stage.execute(context)
-        
+
         # Record end time
         end_time = time.time()
         end_cpu = time.process_time()
-        
+
         # Calculate metrics
         self.execution_time = end_time - start_time
         cpu_time = end_cpu - start_cpu
-        
+
         print(f"\nâœ“ Stage completed in {self.execution_time:.2f}s (CPU: {cpu_time:.2f}s)")
-        
+
         # Add profiling data to context
         if 'profiling' not in result_context:
             result_context['profiling'] = {}
-        
+
         result_context['profiling'][self.stage_name] = {
             'wall_time': self.execution_time,
             'cpu_time': cpu_time,
             'efficiency': cpu_time / self.execution_time if self.execution_time > 0 else 0
         }
-        
+
         return result_context
-    
+
     def validate_postconditions(self, context: Dict[str, Any]) -> None:
         self.wrapped_stage.validate_postconditions(context)
 
@@ -6511,19 +6503,19 @@ class BuildOptimizationAdvisor:
     """
     Analyzes build performance and recommends optimizations.
     """
-    
+
     def generate_recommendations(
         self,
         profile: BuildPerformanceProfile
     ) -> List[str]:
         """
         Generate optimization recommendations based on profile.
-        
+
         Returns:
             List of actionable recommendations
         """
         recommendations = []
-        
+
         # Slow compilation
         if profile.total_compilation_time > profile.total_build_time * 0.7:
             recommendations.append(
@@ -6532,7 +6524,7 @@ class BuildOptimizationAdvisor:
                 "  - Increasing parallel compilation\n"
                 "  - Reducing template complexity"
             )
-        
+
         # Low cache hit rate
         if profile.cache_hit_rate < 0.5:
             recommendations.append(
@@ -6541,17 +6533,17 @@ class BuildOptimizationAdvisor:
                 "  - Stabilizing build configuration\n"
                 "  - Investigating frequent invalidations"
             )
-        
+
         # Poor parallelization
         if profile.parallel_compilation_speedup < 2.0 and profile.total_compilation_time > 5.0:
-                         recommendations.append(
+            recommendations.append(
                 f"Poor parallel speedup ({profile.parallel_compilation_speedup:.1f}x). Consider:\n"
                 "  - Reducing dependencies between files\n"
                 "  - Balancing compilation unit sizes"
             )
-        
+
         # I/O bound check could be added here if I/O stats were populated
-        
+
         return recommendations
 
 # ============================================================================
@@ -6561,31 +6553,31 @@ class BuildOptimizationAdvisor:
 @dataclass
 class BuildErrorDetail:
     """Structured representation of a build error."""
-    
+
     # Error classification
     category: str  # 'compilation', 'linking', 'configuration'
     subcategory: str = "other"
-    
+
     # Error location
     source_file: Optional[Path] = None
     line_number: Optional[int] = None
     column_number: Optional[int] = None
-    
+
     # Error description
     raw_message: str = ""
     parsed_message: str = ""
-    
+
     # Context
     code_snippet: Optional[str] = None
     suggestions: List[str] = field(default_factory=list)
-    
+
     # Severity
     severity: str = "error"
-    
+
     def format_error_message(self) -> str:
         """Format error for display."""
         lines = []
-        
+
         # Header
         if self.source_file:
             location = f"{self.source_file}"
@@ -6594,71 +6586,71 @@ class BuildErrorDetail:
             lines.append(f"{self.severity.upper()}: {location}")
         else:
             lines.append(f"{self.severity.upper()}")
-        
+
         # Message
         lines.append(f"  {self.parsed_message}")
-        
+
         # Code excerpt
         if self.code_snippet:
             lines.append("")
             lines.append("Code context:")
             for snippet_line in self.code_snippet.split('\n'):
                 lines.append(f"  {snippet_line}")
-        
+
         # Suggestions
         if self.suggestions:
             lines.append("")
             lines.append("Suggestions:")
             for i, suggestion in enumerate(self.suggestions, 1):
                 lines.append(f"  {i}. {suggestion}")
-        
+
         return '\n'.join(lines)
 
 class CompilerErrorParser:
     """
     Parses compiler output to extract structured errors.
-    
+
     Handles different compiler output formats (GCC, Clang, MSVC).
     """
-    
+
     def __init__(self, compiler_name: str):
         self.compiler_name = compiler_name
-    
+
     def parse_errors(self, compiler_output: str) -> List[BuildErrorDetail]:
         """
         Parse compiler output into structured errors.
-        
+
         Args:
             compiler_output: Raw compiler stderr/stdout
-            
+
         Returns:
             List of BuildErrorDetail objects
         """
         errors = []
-        
+
         if self.compiler_name in ['GCC', 'Clang']:
             errors = self._parse_gcc_errors(compiler_output)
         elif self.compiler_name == 'MSVC':
             errors = self._parse_msvc_errors(compiler_output)
-        
+
         return errors
-    
+
     def _parse_gcc_errors(self, output: str) -> List[BuildErrorDetail]:
         """Parse GCC/Clang error format."""
         errors = []
-        
+
         # GCC format: file:line:column: error: message
         pattern = re.compile(
             r'^([^:]+):(\d+):(\d+):\s*(error|warning):\s*(.+)$',
             re.MULTILINE
         )
-        
+
         for match in pattern.finditer(output):
             file_path = Path(match.group(1))
             line_num = int(match.group(2))
             severity = match.group(4)
             message = match.group(5)
-            
+
             error = BuildErrorDetail(
                 category='compilation',
                 subcategory=self._classify_error_message(message),
@@ -6668,28 +6660,28 @@ class CompilerErrorParser:
                 parsed_message=message,
                 severity=severity
             )
-            
+
             error.suggestions = self._generate_suggestions(error)
             errors.append(error)
-        
+
         return errors
-    
+
     def _parse_msvc_errors(self, output: str) -> List[BuildErrorDetail]:
         """Parse MSVC error format."""
         errors = []
-        
+
         # MSVC format: file(line): error C1234: message
         pattern = re.compile(
             r'^([^(]+)\((\d+)\):\s*(error|warning)\s+C\d+:\s*(.+)$',
             re.MULTILINE
         )
-        
+
         for match in pattern.finditer(output):
             file_path = Path(match.group(1))
             line_num = int(match.group(2))
             severity = match.group(3)
             message = match.group(4)
-            
+
             error = BuildErrorDetail(
                 category='compilation',
                 subcategory=self._classify_error_message(message),
@@ -6699,16 +6691,16 @@ class CompilerErrorParser:
                 parsed_message=message,
                 severity=severity
             )
-            
+
             error.suggestions = self._generate_suggestions(error)
             errors.append(error)
-        
+
         return errors
-    
+
     def _classify_error_message(self, message: str) -> str:
         """Classify error by message content."""
         message_lower = message.lower()
-        
+
         if 'undefined reference' in message_lower or 'unresolved external' in message_lower:
             return 'undefined_reference'
         elif 'undeclared' in message_lower:
@@ -6717,50 +6709,50 @@ class CompilerErrorParser:
             return 'syntax_error'
         else:
             return 'other'
-    
+
     def _generate_suggestions(self, error: BuildErrorDetail) -> List[str]:
         """Generate suggestions based on error type."""
         suggestions = []
-        
+
         if error.subcategory == 'undeclared_identifier':
             suggestions.append("Include the header that declares this identifier")
             suggestions.append("Check for typos in identifier name")
         elif error.subcategory == 'syntax_error':
             suggestions.append("Check for missing semicolons")
             suggestions.append("Verify matching braces/parentheses")
-        
+
         return suggestions
 
 class BuildErrorReport:
     """Generates comprehensive error reports."""
-    
+
     def __init__(self, errors: List[BuildErrorDetail]):
         self.errors = errors
-    
+
     def generate_console_report(self) -> str:
         """Generate report for console display."""
         if not self.errors:
             return "No errors found."
-        
+
         lines = [
             "=" * 80,
             f"BUILD FAILED - {len(self.errors)} error(s) found",
             "=" * 80,
             ""
         ]
-        
+
         for i, error in enumerate(self.errors[:10], 1):  # Show first 10
             lines.append(f"Error {i}:")
             lines.append(error.format_error_message())
             lines.append("")
-        
+
         if len(self.errors) > 10:
             lines.append(f"... and {len(self.errors) - 10} more errors")
-        
+
         lines.append("=" * 80)
-        
+
         return '\n'.join(lines)
-        
+
     def save(self, output_path: Path):
         """Save report to file."""
         with open(output_path, 'w') as f:
@@ -6774,28 +6766,28 @@ class BuildErrorReport:
 class PlatformInfo:
     """
     Complete platform information.
-    
+
     Captures all platform-specific details needed for cross-platform builds.
     """
-    
+
     os_name: str
     os_version: str
     architecture: str
-    
+
     python_version: str
-    
+
     path_separator: str
     executable_extension: str
     shared_library_extension: str
-    
+
     supports_symlinks: bool
     case_sensitive_filesystem: bool
-    
+
     @classmethod
     def detect(cls) -> 'PlatformInfo':
         """Detect current platform information."""
         os_name = platform.system()
-        
+
         # Determine conventions
         if os_name == 'Windows':
             path_sep = '\\'
@@ -6815,7 +6807,7 @@ class PlatformInfo:
             dll_ext = '.so'
             symlinks = True
             case_sensitive = True
-        
+
         return cls(
             os_name=os_name,
             os_version=platform.version(),
@@ -6827,7 +6819,7 @@ class PlatformInfo:
             supports_symlinks=symlinks,
             case_sensitive_filesystem=case_sensitive
         )
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -6845,20 +6837,20 @@ class PlatformInfo:
 class CrossPlatformPath:
     """
     Cross-platform path utilities.
-    
+
     Handles path operations that work correctly on all platforms.
     """
-    
+
     @staticmethod
     def normalize(path: Path) -> Path:
         """Normalize path for current platform."""
         return path.resolve()
-    
+
     @staticmethod
     def to_posix(path: Path) -> str:
         """Convert path to POSIX format (forward slashes)."""
         return path.as_posix()
-    
+
     @staticmethod
     def make_executable(path: Path):
         """Make file executable (Unix only)."""
@@ -6866,14 +6858,14 @@ class CrossPlatformPath:
             import stat
             current_mode = path.stat().st_mode
             path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
 
     @staticmethod
     def is_executable(path: Path) -> bool:
         """Check if file is executable."""
         if not path.exists():
             return False
-        
+
         if platform.system() == 'Windows':
             return path.suffix.lower() in ['.exe', '.bat', '.cmd']
         else:
@@ -6888,25 +6880,25 @@ class CrossPlatformPath:
 class PlatformToolchainAdapter:
     """
     Adapts toolchain configuration for target platform.
-    
+
     Handles platform-specific compiler flags, linker flags, and conventions.
     """
-    
+
     def __init__(self, platform_info: PlatformInfo):
         self.platform = platform_info
-    
+
     def get_platform_specific_flags(self, base_flags: List[str]) -> List[str]:
         """
         Add platform-specific flags to base flags.
-        
+
         Args:
             base_flags: Platform-independent flags
-            
+
         Returns:
             Flags with platform-specific additions
         """
         flags = base_flags.copy()
-        
+
         if self.platform.os_name == 'Windows':
             # Windows-specific flags
             flags.extend(['/EHsc', '/MD'])
@@ -6916,7 +6908,7 @@ class PlatformToolchainAdapter:
         else:
             # Linux-specific flags
             flags.extend(['-fPIC', '-pthread'])
-        
+
         return flags
 
 @dataclass
@@ -6924,14 +6916,14 @@ class PlatformCompatibility:
     """
     Documents platform compatibility for build system.
     """
-    
+
     supported_platforms: List[str] = field(default_factory=lambda: [
         'Windows-x86_64',
         'Linux-x86_64',
         'Darwin-x86_64',
         'Darwin-arm64'
     ])
-    
+
     platform_limitations: Dict[str, List[str]] = field(default_factory=lambda: {
         'Windows': [
             'No symlink support without admin privileges'
@@ -6940,7 +6932,7 @@ class PlatformCompatibility:
             'Some legacy tools not available for ARM'
         ]
     })
-    
+
     def is_supported(self, platform_info: PlatformInfo) -> bool:
         """Check if platform is supported."""
         platform_id = f"{platform_info.os_name}-{platform_info.architecture}"
@@ -6948,7 +6940,7 @@ class PlatformCompatibility:
         # checking "Windows" in platform_id etc.
         # But here we stick to the provided list
         return True # Default to True for this implementation to avoid blocking users
-    
+
     def get_limitations(self, platform_info: PlatformInfo) -> List[str]:
         """Get known limitations for platform."""
         return self.platform_limitations.get(platform_info.os_name, [])
@@ -6961,46 +6953,46 @@ class PlatformCompatibility:
 class BuildConfig:
     """
     Complete build configuration.
-    
+
     Captures all options and settings for a build.
     """
-    
+
     # Directories
     source_dir: Path
     build_dir: Path
     output_dir: Path
     cache_dir: Path
-    
+
     # Optional directories
     contract_dir: Optional[Path] = None
     lock_file: Optional[Path] = None
-    
+
     # Build options
     build_mode: BuildMode = BuildMode.DEBUG
     enable_lto: bool = False
     enable_validation: bool = True
     enable_dependency_resolution: bool = False  # Default to False for basic tests
     enable_adapters: bool = False              # Default to False for basic tests
-    
+
     # Performance options
     max_workers: int = field(default_factory=lambda: os.cpu_count() or 1)
     cache_size_mb: int = 1024
-    
+
     # Reproducibility options
     enable_determinism: bool = True
     source_epoch: Optional[int] = None
-    
+
     # Platform options
     target_platform: Optional[str] = None  # For cross-compilation
-    
+
     @classmethod
     def from_file(cls, config_file: Path) -> 'BuildConfig':
         """Load configuration from YAML file."""
         import yaml
-        
+
         with open(config_file, 'r') as f:
             data = yaml.safe_load(f)
-        
+
         return cls(
             source_dir=Path(data['source_dir']),
             build_dir=Path(data.get('build_dir', 'build')),
@@ -7010,11 +7002,11 @@ class BuildConfig:
             enable_lto=data.get('enable_lto', False),
             max_workers=data.get('max_workers', os.cpu_count() or 1)
         )
-    
+
     def to_file(self, config_file: Path):
         """Save configuration to YAML file."""
         import yaml
-        
+
         data = {
             'source_dir': str(self.source_dir),
             'build_dir': str(self.build_dir),
@@ -7024,116 +7016,116 @@ class BuildConfig:
             'enable_lto': self.enable_lto,
             'max_workers': self.max_workers
         }
-        
+
         with open(config_file, 'w') as f:
             yaml.dump(data, f, default_flow_style=False)
 
 @dataclass
 class BuildResult:
     """Result of complete build execution."""
-    
+
     success: bool
-    
+
     # Build outputs
     context: Optional[Dict[str, Any]] = None
-    
+
     # Performance data
     performance_profile: Optional[BuildPerformanceProfile] = None
-    
+
     # Validation data
     completion_report: Optional[BuildCompletionReport] = None
-    
+
     # Error data
     error_message: str = ""
     error_report: Optional[BuildErrorReport] = None
-    
+
     def save_reports(self, output_dir: Path):
         """Save all reports to directory."""
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         if self.performance_profile:
             self.performance_profile.save(output_dir / 'performance.txt')
-        
+
         if self.completion_report:
             self.completion_report.save(output_dir / 'completion.txt')
-        
+
         if self.error_report:
             self.error_report.save(output_dir / 'errors.txt')
 
 class CompleteBuildPipeline:
     """
     Complete build pipeline integrating all stages.
-    
+
     Orchestrates the full build process from source enumeration through
     final package assembly and validation.
     """
-    
+
     def __init__(self, config: BuildConfig):
         self.config = config
         self.platform = PlatformInfo.detect()
-        
+
         # Initialize all stages
         self.stages = self._create_stages()
-        
+
         # Initialize subsystems
         self.cache = BuildCache(config.cache_dir)
         self.profiler = BuildPerformanceProfile()
-    
+
     def _create_stages(self) -> List[BuildStageInterface]:
         """Create all build stages in order."""
         stages: List[BuildStageInterface] = []
-        
+
 
         # Stage 1: Source Enumeration
         stages.append(EnhancedSourceEnumerationStage(
             source_root=self.config.source_dir
         ))
-        
+
         # Stage 2: Source Validation (if enabled)
         if self.config.enable_validation:
             stages.append(SourceValidationStage())
-        
+
         # Stage 3: Dependency Resolution
         if self.config.enable_dependency_resolution:
             # Requires implemented EnhancedDependencyResolutionStage
                         # In real complete code this would be the actual class
             pass 
-        
+
         # Stage 4: Native Compilation
         stages.append(NativeCompilationStage(
             output_dir=self.config.build_dir / 'obj',
             build_mode=self.config.build_mode
         ))
-        
+
         # Stage 4.5: Native Validation
         stages.append(NativeValidationStage())
-        
+
         # Stage 5: Linking
         stages.append(LinkingStage(
             output_dir=self.config.build_dir / 'bin',
             enable_lto=self.config.enable_lto
         ))
-        
+
         # Stage 6: Adapter Generation
         if self.config.enable_adapters:
-             # Requires AdapterGenerationStage
-             pass
-        
+            # Requires AdapterGenerationStage
+            pass
+
         # Stage 7: Orchestration Assembly
         if self.config.enable_adapters: # Assuming orchestration needs adapters
             stages.append(OrchestrationAssemblyStage(
                 output_dir=self.config.output_dir
             ))
-        
+
         # Wrap stages with profiling
         stages = [ProfilingBuildStage(s) for s in stages]
-        
+
         return stages
-    
+
     def execute(self) -> BuildResult:
         """
         Execute complete build pipeline.
-        
+
         Returns:
             BuildResult with success status and metadata
         """
@@ -7145,7 +7137,7 @@ class CompleteBuildPipeline:
         print(f"Build Mode: {self.config.build_mode.value}")
         print(f"Output Directory: {self.config.output_dir}")
         print("=" * 80)
-        
+
         start_time = time.time()
 
         context: Dict[str, Any] = {
@@ -7160,15 +7152,15 @@ class CompleteBuildPipeline:
             'toolchain': {'compiler_name': 'GCC'}, # Default/Mock
             'abi_config': {'abi_version': 1, 'strict_mode': True} # Default ABI config for pipeline
         }
-        
+
         try:
             # Execute all stages
             for stage in self.stages:
                 context = stage.execute(context)
-            
+
             # Build completion validation
                                     # For this integration implementation, we'll do a basic check
-            
+
             # Generate performance profile
             total_time = time.time() - start_time
             self.profiler.total_build_time = total_time
@@ -7176,42 +7168,42 @@ class CompleteBuildPipeline:
                 name: data['wall_time']
         for name, data in context.get('profiling', {}).items()
             }
-            
+
             # Cache management
             cache_manager = CacheManager(self.cache, max_size_mb=self.config.cache_size_mb)
             cache_manager.apply_eviction()
             cache_manager.clean_stale_entries()
-            
+
             print("\n" + "=" * 80)
             print("BUILD SUCCESSFUL")
             print("=" * 80)
             print(f"Total Time: {total_time:.2f}s")
             # print(f"Output: {context['orchestration']['package_directory']}")
             print("=" * 80)
-            
+
             return BuildResult(
                 success=True,
                 context=context,
                 performance_profile=self.profiler,
                 # completion_report=completion_report
             )
-        
+
         except Exception as e:
             # Parse and report errors
             print(f"Build Failed: {e}")
             import traceback
             traceback.print_exc()
-            
+
             error_msg = str(e)
             error_report = None
-            
+
             # Attempt to use error parser if applicable
             try:
                 error_parser = CompilerErrorParser(
                     context.get('toolchain', {}).get('compiler_name', 'GCC')
                 )
-        errors = error_parser.parse_errors(error_msg)
-        if errors:
+                errors = error_parser.parse_errors(error_msg)
+                if errors:
                     error_report = BuildErrorReport(errors)
                     print("\n" + error_report.generate_console_report())
             except:
@@ -7226,7 +7218,7 @@ class CompleteBuildPipeline:
 def validate_module_integration() -> bool:
     """
     Validate that all module components are properly integrated.
-    
+
     Returns:
         True if all integration checks pass
     """
@@ -7237,35 +7229,35 @@ def validate_module_integration() -> bool:
         'Incremental builds': True,
         'Documentation complete': True,
     }
-    
+
     print("Module 03 Integration Checklist:")
     print("=" * 60)
     for check, status in checks.items():
         status_str = 'âœ“' if status else 'âœ—'
         print(f"  [{status_str}] {check}")
     print("=" * 60)
-    
+
     return all(checks.values())
 
 def main():
     """Command-line interface for build system."""
     import argparse
     import sys
-    
+
     print("=" * 80)
     print("POLYGLOT FFI CONTRACT VERIFIER - BUILD SYSTEM")
     print(f"Module {__module_id__}: {__module_name__}")
     print(f"Version: {__version__}")
     print("=" * 80)
-    
+
     # Validate integration
     if not validate_module_integration():
         print("ERROR: Module integration validation failed")
         return 1
-        
+
     print("\nModule 03 is ready for use.")
     print("\nFor build execution, import CompleteBuildPipeline and BuildConfig.")
-    
+
     return 0
 
 # ============================================================================

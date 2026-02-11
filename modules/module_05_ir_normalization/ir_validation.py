@@ -506,8 +506,8 @@ class PlatformValidator:
             if isinstance(t, (PointerType, FunctionPointerType)):
                 if t.size_bytes != expected:
                     errors.append(f"Type {t.entity_id} size {t.size_bytes} incompatible with {
-                            self.interface_unit.pointer_width
-                        }-bit platform")
+                        self.interface_unit.pointer_width
+                    }-bit platform")
         return errors
 
     def validate_calling_conventions(self, symbols: List[SymbolEntity]) -> List[str]:

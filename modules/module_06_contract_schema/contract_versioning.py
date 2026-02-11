@@ -2,7 +2,7 @@
 Module 06: Contract Schema - Versioning & Evolution
 
 Contract versioning system supporting:
-- Semantic versioning for contracts and schema
+    - Semantic versioning for contracts and schema
 - Version history and changelog
 - Compatibility assessment
 - Contract diffing

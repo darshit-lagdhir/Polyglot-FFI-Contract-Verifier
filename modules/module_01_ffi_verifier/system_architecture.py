@@ -21,18 +21,18 @@ explicit, machine-readable contracts and verifies them through automated
 testing and crash detection.
 
 ARCHITECTURE: 12-Phase Pipeline
-  :  Execution Context & Orchestration
-  :  Native Interface Ingestion (libclang-based ABI extraction)
-  :  IR Normalization (canonical representation)
-  :  Contract Synthesis (constraint derivation)
-  :  Contract Versioning (compatibility checking)
-  :  Adapter Generation (ctypes wrapper generation)
-  :  Test Plan Generation (100% constraint coverage)
-  :  Verification Execution (deterministic test execution)
-  :  Runtime Monitoring (crash detection via subprocess isolation)
-  0: Diagnostics Mapping (failure classification)
-  1: Report Generation (HTML/Markdown/CI reports)
-  2: CI Integration (GitHub Actions/GitLab/Jenkins templates)
+:  Execution Context & Orchestration
+:  Native Interface Ingestion (libclang-based ABI extraction)
+:  IR Normalization (canonical representation)
+:  Contract Synthesis (constraint derivation)
+:  Contract Versioning (compatibility checking)
+:  Adapter Generation (ctypes wrapper generation)
+:  Test Plan Generation (100% constraint coverage)
+:  Verification Execution (deterministic test execution)
+:  Runtime Monitoring (crash detection via subprocess isolation)
+0: Diagnostics Mapping (failure classification)
+1: Report Generation (HTML/Markdown/CI reports)
+2: CI Integration (GitHub Actions/GitLab/Jenkins templates)
 
 ═══════════════════════════════════════════════════════════════════════════
 USAGE
@@ -49,10 +49,10 @@ Python API:
 
     if result['status'] == 'passed':
         print("✓ Verification PASSED")
-    else:
-        print("✗ Verification FAILED")
+else:
+    print("✗ Verification FAILED")
 
-═══════════════════════════════════════════════════════════════════════════
+        ═══════════════════════════════════════════════════════════════════════════
 NAVIGATION
 ═══════════════════════════════════════════════════════════════════════════
 
@@ -495,8 +495,8 @@ class ExecutionContextBuilder:
                             if part == 'Version' and i + 1 < len(parts):
                                 return "MSVC", parts[i + 1]
                 return "MSVC", "unknown"
-            else:
-                # Generic compiler version query
+        else:
+            # Generic compiler version query
                 result = subprocess.run(
                     [compiler_path, "--version"],
                     capture_output=True,
@@ -512,7 +512,7 @@ class ExecutionContextBuilder:
     def _validate_native_library(
     self,
     library_file: str,
-     header_file: str) -> None:
+    header_file: str) -> None:
         """Phase 3. Validate native library and compute hash."""
         library_path = os.path.abspath(library_file)
         header_path = os.path.abspath(header_file)
@@ -534,7 +534,7 @@ class ExecutionContextBuilder:
     os.environ.get(
         'SystemRoot',
         r'C:\Windows'),
-         'System32'),
+        'System32'),
         ]
 
         # Add PATH directories
@@ -856,23 +856,23 @@ class Pipeline:
         self.register_stage(PipelineStage.INGEST, self._handle_ingest_stage)
         self.register_stage(
     PipelineStage.SYNTHESIZE,
-     self._handle_synthesize_stage)
+    self._handle_synthesize_stage)
         self.register_stage(
     PipelineStage.VALIDATE_SCHEMA,
-     self._handle_validate_schema_stage)
+    self._handle_validate_schema_stage)
         self.register_stage(
     PipelineStage.COMPARE_CONTRACTS,
-     self._handle_compare_contracts_stage)
+    self._handle_compare_contracts_stage)
         self.register_stage(
     PipelineStage.GENERATE_ADAPTERS,
-     self._handle_generate_adapters_stage)
+    self._handle_generate_adapters_stage)
         self.register_stage(
     PipelineStage.GENERATE_TESTS,
-     self._handle_generate_tests_stage)
+    self._handle_generate_tests_stage)
         self.register_stage(PipelineStage.EXECUTE, self._handle_execute_stage)
         self.register_stage(
     PipelineStage.DIAGNOSE,
-     self._handle_diagnose_stage)
+    self._handle_diagnose_stage)
         self.register_stage(PipelineStage.REPORT, self._handle_report_stage)
 
     def _handle_ingest_stage(
@@ -919,27 +919,27 @@ class Pipeline:
             result['errors'])}")
         return {
     "status": "valid",
-     "schema_version": result["contract"]["provenance"]["schema_version"]}
+    "schema_version": result["contract"]["provenance"]["schema_version"]}
 
     def _handle_compare_contracts_stage(
         self, context: ExecutionContext) -> Dict[str, Any]:
             """Compare current contract with a baseline."""
         baseline_path = getattr(context, "baseline_contract_path", None)
         if not baseline_path:
-             raise PreconditionError(
-                 "Baseline contract path not provided for comparison.")
+            raise PreconditionError(
+                "Baseline contract path not provided for comparison.")
 
         comparator = ContractComparator()
         diff = comparator.compare_contracts(
     baseline_path,
     context.artifacts.contract_path,
-     context.provenance.execution_id)
+    context.provenance.execution_id)
 
         # Save diff artifact
         diff_path = os.path.join(
     os.path.dirname(
         context.artifacts.contract_path),
-         "contract_diff.json")
+        "contract_diff.json")
         with open(diff_path, "w") as f:
             json.dump(diff, f, indent=2)
 
@@ -949,7 +949,7 @@ class Pipeline:
         report_path = os.path.join(
     os.path.dirname(
         context.artifacts.contract_path),
-         "compatibility_report.txt")
+        "compatibility_report.txt")
         with open(report_path, "w") as f:
             f.write(report)
 
@@ -1050,9 +1050,9 @@ class Pipeline:
                 if self.context.verification_config.verbosity_level == "verbose":
                     print(f"  ✓ Stage '{stage.value}' completed successfully")
 
-            except VerificationError as e:
-                if self.context.verification_config.verbosity_level != "quiet":
-                    print(f"  ✗ Stage '{stage.value}' failed: {e}")
+        except VerificationError as e:
+            if self.context.verification_config.verbosity_level != "quiet":
+                print(f"  ✗ Stage '{stage.value}' failed: {e}")
 
                 results[stage.value] = {"error": str(
                     e), "error_type": e.error_type.value}
@@ -1101,8 +1101,8 @@ class Pipeline:
         return artifact_map.get(artifact_path, "unknown")
 
     def _validate_outputs(self, stage: PipelineStage,
-                          result: Dict[str, Any]) -> None:
-                              """Validate that expected output artifacts were produced."""
+                        result: Dict[str, Any]) -> None:
+                            """Validate that expected output artifacts were produced."""
         expected_artifacts = {
             PipelineStage.INGEST: [self.context.artifacts.native_interface_path],
             PipelineStage.SYNTHESIZE: [self.context.artifacts.intermediate_representation_path],
@@ -1149,55 +1149,55 @@ class CLIOrchestrator:
     "--verbose",
     "-v",
     action="store_true",
-     help="Enable verbose output")
+    help="Enable verbose output")
         common_args.add_argument(
     "--quiet",
     "-q",
     action="store_true",
-     help="Suppress non-error output")
+    help="Suppress non-error output")
         common_args.add_argument(
     "--working-dir",
     "-w",
     type=str,
-     help="Working directory for artifacts (default: current directory)")
+    help="Working directory for artifacts (default: current directory)")
 
         # Arguments for stages that need native interface
         native_args = argparse.ArgumentParser(add_help=False)
         native_args.add_argument(
     "header_file",
     type=str,
-     help="Path to C header file defining native interface")
+    help="Path to C header file defining native interface")
         native_args.add_argument(
     "library_file",
     type=str,
-     help="Path to native library (DLL/SO/DYLIB)")
+    help="Path to native library (DLL/SO/DYLIB)")
         native_args.add_argument(
     "--compiler",
     type=str,
-     help="Path to compiler (auto-detected if not specified)")
+    help="Path to compiler (auto-detected if not specified)")
         native_args.add_argument(
     "--include",
     type=str,
     action="append",
     dest="include_paths",
-     help="Additional include path")
+    help="Additional include path")
         native_args.add_argument(
     "--define",
     "-D",
     type=str,
     action="append",
     dest="defines",
-     help="Preprocessor macro definition (NAME=VALUE)")
+    help="Preprocessor macro definition (NAME=VALUE)")
         native_args.add_argument(
     "--flag",
     type=str,
     action="append",
     dest="compiler_flags",
-     help="Additional compiler flag")
+    help="Additional compiler flag")
         native_args.add_argument(
     "--python",
     type=str,
-     help="Path to Python interpreter")
+    help="Path to Python interpreter")
         native_args.add_argument(
     "--ffi",
     type=str,
@@ -1205,28 +1205,28 @@ class CLIOrchestrator:
         "ctypes",
         "cffi"],
         default="ctypes",
-         help="FFI mechanism")
+        help="FFI mechanism")
         native_args.add_argument("--seed", type=int, help="Random seed")
         native_args.add_argument(
     "--per-test-timeout",
     type=int,
     default=5,
-     help="Timeout per test in seconds")
+    help="Timeout per test in seconds")
         native_args.add_argument(
     "--total-timeout",
     type=int,
     default=300,
-     help="Total timeout in seconds")
+    help="Total timeout in seconds")
         native_args.add_argument(
     "--subprocess-timeout",
     type=int,
     default=60,
-     help="Timeout for individual test subprocesses in seconds")
+    help="Timeout for individual test subprocesses in seconds")
         native_args.add_argument(
     "--enable-crash-detection",
     type=str,
     default="true",
-     help="Enable crash detection (true/false)")
+    help="Enable crash detection (true/false)")
 
         # Commands
         subparsers.add_parser(
@@ -1234,60 +1234,60 @@ class CLIOrchestrator:
     parents=[
         common_args,
         native_args],
-         help="Execute full verification pipeline")
+        help="Execute full verification pipeline")
         subparsers.add_parser(
     "ingest",
     parents=[
         common_args,
         native_args],
-         help="Ingest native interface (extract ABI information)")
+        help="Ingest native interface (extract ABI information)")
         subparsers.add_parser(
     "synthesize",
     parents=[common_args],
-     help="Synthesize FFI contract")
+    help="Synthesize FFI contract")
         subparsers.add_parser(
     "generate-adapters",
     parents=[common_args],
-     help="Generate language adapters")
+    help="Generate language adapters")
         subparsers.add_parser(
     "generate-tests",
     parents=[common_args],
-     help="Generate test plan")
+    help="Generate test plan")
         subparsers.add_parser(
     "execute",
     parents=[common_args],
-     help="Execute verification tests")
+    help="Execute verification tests")
         subparsers.add_parser(
     "diagnose",
     parents=[common_args],
-     help="Diagnose failures")
+    help="Diagnose failures")
         subparsers.add_parser(
     "report",
     parents=[common_args],
-     help="Generate human-readable report")
+    help="Generate human-readable report")
         subparsers.add_parser(
     "validate-schema",
     parents=[common_args],
-     help="Validate contract schema")
+    help="Validate contract schema")
 
         compare_parser = subparsers.add_parser(
     "compare-contracts",
     parents=[common_args],
-     help="Compare contracts")
+    help="Compare contracts")
         compare_parser.add_argument(
     "--baseline",
     type=str,
     required=True,
-     help="Path to baseline contract.json")
+    help="Path to baseline contract.json")
 
         context_parser = subparsers.add_parser(
     "context",
     parents=[common_args],
-     help="Display/validate execution context")
+    help="Display/validate execution context")
         context_parser.add_argument(
     "--validate",
     action="store_true",
-     help="Validate existing context")
+    help="Validate existing context")
 
         return parser
 
@@ -1303,10 +1303,10 @@ class CLIOrchestrator:
 
             if parsed_args.command == "context":
                 return self._handle_context_command(parsed_args, verbosity)
-            elif parsed_args.command in ["verify", "ingest"]:
-                return self._handle_native_command(parsed_args, verbosity)
-            else:
-                return self._handle_stage_command(parsed_args, verbosity)
+        elif parsed_args.command in ["verify", "ingest"]:
+            return self._handle_native_command(parsed_args, verbosity)
+        else:
+            return self._handle_stage_command(parsed_args, verbosity)
 
         except Exception as e:
             print(f"Error: {e}")
@@ -1328,16 +1328,16 @@ class CLIOrchestrator:
                 ExecutionContext.load(context_path)
                 print("✓ Execution context is valid")
                 return 0
-            except Exception as e:
-                print(f"✗ Execution context is invalid: {e}")
+        except Exception as e:
+            print(f"✗ Execution context is invalid: {e}")
                 return 1
         else:
             if os.path.exists(context_path):
                 context = ExecutionContext.load(context_path)
                 print(context.to_json())
                 return 0
-            else:
-                print(f"No execution context found at {context_path}")
+        else:
+            print(f"No execution context found at {context_path}")
                 return 1
 
     def _handle_native_command(self, args, verbosity: str) -> int:
@@ -1347,8 +1347,8 @@ class CLIOrchestrator:
                 if '=' in define:
                     name, value = define.split('=', 1)
                     macros[name] = value
-                else:
-                    macros[define] = "1"
+            else:
+                macros[define] = "1"
 
         builder = ExecutionContextBuilder()
         try:
@@ -1368,7 +1368,7 @@ class CLIOrchestrator:
     getattr(
         args,
         'enable_crash_detection',
-         'true')).lower() == 'true',
+        'true')).lower() == 'true',
                 verbosity=verbosity,
                 working_directory=args.working_dir
             )
@@ -1384,15 +1384,15 @@ class CLIOrchestrator:
     f"\n✓ Full verification pipeline completed successfully")
                     print(f"  Report: {context.artifacts.report_path}")
                 return 0
-            else:
-                # Correcting for case consistency
+        else:
+            # Correcting for case consistency
                 orchestrator.execute_stage(PipelineStage.INGEST)
                 orchestrator.execute_stage(PipelineStage.INGEST)
                 if verbosity != "quiet":
                     print(f"✓ Native interface ingestion completed")
                 return 0
         except Exception as e:
-                        raise e
+            raise e
 
     def _handle_stage_command(self, args, verbosity: str) -> int:
         working_dir = args.working_dir or os.getcwd()
@@ -1470,7 +1470,7 @@ _configure_libclang()
 try:
     import clang.cindex as clang
 except ImportError:
-        clang = None
+    clang = None
 
 # ============================================================================
 # INTERNAL HELPERS
@@ -1496,9 +1496,9 @@ class SourceLocationTracker:
                 return SourceLocation(
     file=file_path,
     line=location.line,
-     column=location.column)
-            else:
-                return self._unknown_location()
+    column=location.column)
+        else:
+            return self._unknown_location()
         except Exception:
             return self._unknown_location()
 
@@ -1506,7 +1506,7 @@ class SourceLocationTracker:
         return {
     "file": location.file,
     "line": location.line,
-     "column": location.column}
+    "column": location.column}
 
     def _unknown_location(self) -> SourceLocation:
         return SourceLocation(file="<unknown>", line=0, column=0)
@@ -1556,7 +1556,7 @@ class ABIExtractor:
     "name": field_name,
     "offset_bytes": offset_bytes,
     "type": type_info,
-     "is_implicit": False}
+    "is_implicit": False}
 
     def calculate_padding(self,
     fields: List[Dict[str,
@@ -1564,7 +1564,7 @@ class ABIExtractor:
     total_size: int,
     alignment: int,
     is_union: bool) -> List[Dict[str,
-     Any]]:
+    Any]]:
         if is_union or not fields: return fields
         result = []
         padding_counter = 1
@@ -1619,38 +1619,38 @@ class ABIExtractor:
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.POINTER:
-             return {
+            return {
                 "kind": "pointer", "pointee": self.extract_type_info(clang_type.get_pointee()),
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.CONSTANTARRAY:
-             return {
+            return {
                 "kind": "array", "element_type": self.extract_type_info(clang_type.get_array_element_type()),
                 "size": clang_type.get_array_size(), "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.TYPEDEF:
-             return {
+            return {
                 "kind": "typedef", "name": clang_type.spelling,
                 "underlying_type": self.extract_type_info(clang_type.get_canonical()),
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.RECORD:
-             return {
+            return {
                 "kind": "record", "name": clang_type.spelling,
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.ENUM:
-             return {
+            return {
                 "kind": "enum", "name": clang_type.spelling,
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.FUNCTIONPROTO:
-             return {
+            return {
     "kind": "function_pointer",
     "size_bytes": clang_type.get_size(),
-     "alignment_bytes": clang_type.get_align()}
+    "alignment_bytes": clang_type.get_align()}
         else:
-             return {
+            return {
                 "kind": "unknown", "name": clang_type.spelling,
                 "size_bytes": max(0, clang_type.get_size()), "alignment_bytes": max(0, clang_type.get_align())
             }
@@ -1659,11 +1659,11 @@ class ABIExtractor:
         try:
             conv = cursor.type.get_calling_conv()
             if conv == clang.CallingConv.C: return "cdecl"
-            elif conv == clang.CallingConv.X86_STDCALL: return "stdcall"
-            elif conv == clang.CallingConv.X86_FASTCALL: return "fastcall"
-            elif conv == clang.CallingConv.X86_THISCALL: return "thiscall"
-            elif conv == clang.CallingConv.WIN64: return "win64"
-            else: return "cdecl"
+        elif conv == clang.CallingConv.X86_STDCALL: return "stdcall"
+        elif conv == clang.CallingConv.X86_FASTCALL: return "fastcall"
+        elif conv == clang.CallingConv.X86_THISCALL: return "thiscall"
+        elif conv == clang.CallingConv.WIN64: return "win64"
+        else: return "cdecl"
         except:
             return "cdecl"
 
@@ -1693,7 +1693,7 @@ class CompilerFrontend:
                 header_path,
                 args=args,
                 options=(clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD |
-                         clang.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
+                        clang.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
             )
         except Exception as e:
             raise Exception(f"Failed to parse header: {e}")
@@ -1709,8 +1709,8 @@ class CompilerFrontend:
         for p in context.compiler.include_paths: args.append(f"-I{p}")
         for m in context.compiler.preprocessor_macros: args.append(f"-D{m}")
         if context.platform.os_name == "Windows":
-             args.extend(["-fms-compatibility", "-fms-extensions",
-                         f"-fms-compatibility-version={context.compiler.compiler_version}"])
+            args.extend(["-fms-compatibility", "-fms-extensions",
+                        f"-fms-compatibility-version={context.compiler.compiler_version}"])
         if context.platform.architecture == "AMD64": args.append("-m64")
         return args
 
@@ -1770,9 +1770,9 @@ class NativeInterfaceAnalyzer:
         seen = set()
         for node in cursor.walk_preorder():
             if node.kind in [clang.IDEKind.STRUCT_DECL,
-     clang.IDEKind.UNION_DECL] and node.is_definition():
-                if node.spelling and node.spelling not in seen:
-                    seen.add(node.spelling)
+    clang.IDEKind.UNION_DECL] and node.is_definition():
+        if node.spelling and node.spelling not in seen:
+            seen.add(node.spelling)
                     structs.append(self._extract_struct_info(node))
         return structs
 
@@ -1868,7 +1868,7 @@ class NativeInterfaceAnalyzer:
     header_path,
     library_path,
     context) -> Dict[str,
-     Any]:
+    Any]:
         ci = self.frontend.get_compiler_invocation_string(header_path, context)
         return {
             "provenance": {
@@ -2097,12 +2097,12 @@ class TypeResolver:
             # Try to get count from type info if not in top level,
             # In ABIExtractor array size is "size".
             if count == 0 and "size" in type_info:
-                 count = type_info["size"]
+                count = type_info["size"]
 
             if element is not None:
                 element_id = self.resolve_type(element, type_registry)
-            else:
-                element_id = "unknown"
+        else:
+            element_id = "unknown"
             type_id = f"array:{element_id}:{count}"
 
             if type_id not in type_registry:
@@ -2132,7 +2132,7 @@ class LayoutNormalizer:
     Any],
     type_registry: Dict[str,
     Any]) -> Dict[str,
-     Any]:
+    Any]:
         """
         Normalize a struct definition.
         """
@@ -2259,7 +2259,7 @@ class IRNormalizer:
     self,
     enum: Dict,
     resolver: TypeResolver,
-     registry: Dict) -> Dict:
+    registry: Dict) -> Dict:
         type_id = resolver.resolve_type(enum, registry)
         underlying_type = enum.get(
     "underlying_type", {
@@ -2278,7 +2278,7 @@ class IRNormalizer:
     self,
     func: Dict,
     resolver: TypeResolver,
-     registry: Dict) -> Dict:
+    registry: Dict) -> Dict:
         return_type_id = resolver.resolve_type(
             func.get("return_type", {}), registry)
 
@@ -2339,7 +2339,7 @@ class SynthesisWarningLogger:
     category: str,
     message: str,
     severity: str = "warning",
-     context: str = ""):
+    context: str = ""):
         """Add a warning to the list."""
         self.warnings.append({
             "category": category,
@@ -2385,7 +2385,7 @@ class ConstraintIDGenerator:
     self,
     func_name: str,
     target: str,
-     constraint_type: str) -> str:
+    constraint_type: str) -> str:
         """
         Generate ID for function-related constraints.
         Format: func_<name>_<target>_<type>
@@ -2401,7 +2401,7 @@ class ConstraintIDGenerator:
     self,
     struct_name: str,
     field_name: str,
-     constraint_type: str) -> str:
+    constraint_type: str) -> str:
         """
         Generate ID for struct-related constraints.
         Format: struct_<name>_<field>_<type>
@@ -2477,7 +2477,7 @@ class NamingConventionAnalyzer:
         suffixes = ["_opt", "_nullable", "_maybe"]
 
         return any(lower_name.startswith(p) for p in prefixes) or \
-               any(lower_name.endswith(s) for s in suffixes)
+            any(lower_name.endswith(s) for s in suffixes)
 
     def is_ownership_transfer_function(self, func_name: str) -> Optional[str]:
         """Rule 2: Detect ownership transfer intent."""
@@ -2490,7 +2490,7 @@ class NamingConventionAnalyzer:
     "new_",
     "init_",
     "clone_",
-     "dup_"]
+    "dup_"]
         if any(lower_name.startswith(p) for p in transfers_to_caller):
             return "caller"
 
@@ -2501,7 +2501,7 @@ class NamingConventionAnalyzer:
     "delete_",
     "release_",
     "sink_",
-     "take_"]
+    "take_"]
         if any(lower_name.startswith(p) for p in transfers_to_callee):
             return "callee"
 
@@ -2518,13 +2518,13 @@ class NamingConventionAnalyzer:
     "view_",
     "process_",
     "write_",
-     "read_"]
+    "read_"]
         return any(lower_name.startswith(p) for p in prefixes)
 
     def detect_buffer_size_relationship(
     self,
     pointer_name: str,
-     scalar_name: str) -> bool:
+    scalar_name: str) -> bool:
         """Rule 4: Detect relationship between a buffer and its size parameter."""
         p_name = pointer_name.lower()
         s_name = scalar_name.lower()
@@ -2537,7 +2537,7 @@ class NamingConventionAnalyzer:
     "_length",
     "size",
     "len",
-     "count"]
+    "count"]
         for indicator in size_indicators:
             if s_name == f"{p_name}{indicator}" or s_name == indicator:
                 return True
@@ -2557,13 +2557,13 @@ class NamingConventionAnalyzer:
     def is_error_code_return(
     self,
     func_name: str,
-     return_type_id: str) -> bool:
+    return_type_id: str) -> bool:
         """Rule 6: Detect if return value represents an error code."""
         if return_type_id not in [
     "primitive:int32",
     "primitive:int64",
-     "primitive:int16"]:
-            return False
+    "primitive:int16"]:
+        return False
 
         lower_name = func_name.lower()
         indicators = [
@@ -2575,7 +2575,7 @@ class NamingConventionAnalyzer:
     "process",
     "save",
     "init",
-     "open"]
+    "open"]
         return any(ind in lower_name for ind in indicators)
 
 
@@ -2622,8 +2622,8 @@ class ConstraintDeriver:
                 # transferred
                 ownership = "transferred"
                 own_just = "Function naming suggests callee takes ownership"
-            elif transfer_intent == "caller":
-                # This usually applies to return values, but parameters in
+        elif transfer_intent == "caller":
+            # This usually applies to return values, but parameters in
                 # 'init' might be borrowed
                 pass
 
@@ -2672,22 +2672,22 @@ class ConstraintDeriver:
 
     def derive_buffer_constraints(
         self, func_name: str, parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-                constraints = []
+            constraints = []
 
         for i, p1 in enumerate(parameters):
             p1_name = p1.get("name")
             p1_type = p1.get("type_id", "")
-            
+
             if not p1_type.startswith("pointer:"):
                 continue
-                
+
             found_size = False
             for j, p2 in enumerate(parameters):
                 if i == j: continue
-                
+
                 p2_name = p2.get("name")
                 p2_type = p2.get("type_id", "")
-                
+
                 if p2_type.startswith("primitive:int") or p2_type.startswith("primitive:uint"):
                     if p1_name is not None and p2_name is not None:
                         if self.naming_analyzer.detect_buffer_size_relationship(p1_name, p2_name):
@@ -2701,10 +2701,10 @@ class ConstraintDeriver:
                                 "severity": "error"
                             })
                             found_size = True
-            
+
             # Special Rule for char*
             if p1_type == "pointer:primitive:char" and not found_size:
-                 constraints.append({
+                constraints.append({
                     "constraint_id": self.id_gen.generate_function_id(func_name, f"p_{p1_name}", "string_null_terminated"),
                     "constraint_type": "null_terminated_string",
                     "description": f"Parameter '{p1_name}' must be a null-terminated string",
@@ -2712,9 +2712,9 @@ class ConstraintDeriver:
                     "justification": "C convention for char* parameters",
                     "severity": "error"
                 })
-            elif p1_type == "pointer:primitive:void" and not found_size:
-                if p1_name is not None:
-                    self.logger.warn_missing_buffer_size(func_name, p1_name)
+        elif p1_type == "pointer:primitive:void" and not found_size:
+            if p1_name is not None:
+                self.logger.warn_missing_buffer_size(func_name, p1_name)
 
         return constraints
 
@@ -2722,18 +2722,18 @@ class ConstraintDeriver:
         """Rule 6: Return value intent."""
         ownership = "value"
         own_just = "Returned by value"
-        
+
         constraints = []
-        
+
         if return_type_id.startswith("pointer:"):
             transfer_intent = self.naming_analyzer.is_ownership_transfer_function(func_name)
             if transfer_intent == "caller":
                 ownership = "transferred"
                 own_just = "Function naming suggests caller takes ownership of returned pointer"
-            else:
-                ownership = "borrowed"
+        else:
+            ownership = "borrowed"
                 own_just = "Assume returned pointer is borrowed from internal state"
-        
+
         # Error code detection
         if self.naming_analyzer.is_error_code_return(func_name, return_type_id):
             constraints.append({
@@ -2741,7 +2741,7 @@ class ConstraintDeriver:
                 "description": "Returns 0 on success, non-zero on failure",
                 "justification": "Naming and return type suggest error code pattern"
             })
-            
+
         return {
             "type_id": return_type_id,
             "ownership": ownership,
@@ -2750,24 +2750,24 @@ class ConstraintDeriver:
         }
 
     def derive_struct_field_contract(self, struct_name: str, field: Dict[str, Any]) -> Dict[str, Any]:
-                name = field.get("name")
+        name = field.get("name")
         type_id = field.get("type_id", "")
-        
+
         constraints = []
         if "padding" not in type_id:
             constraints.append({
                 "constraint_type": "initialized",
                 "description": "Must be initialized before use"
             })
-            
+
         nullability = "not_applicable"
         if type_id.startswith("pointer:"):
             # Struct fields are often NULL unless specifically used for sub-objects
-             nullability = "nullable"
-             constraints.append({
-                 "constraint_type": "nullable_pointer",
-                 "description": "May be NULL"
-             })
+            nullability = "nullable"
+            constraints.append({
+                "constraint_type": "nullable_pointer",
+                "description": "May be NULL"
+            })
 
         return {
             "field_name": name,
@@ -2786,7 +2786,7 @@ class ContractSynthesizer:
     """
     Main engine for . Synthesizes semantic constraints from normalized IR.
     """
-    
+
     def __init__(self):
         self.logger = SynthesisWarningLogger()
         self.deriver = ConstraintDeriver(self.logger)
@@ -2799,20 +2799,20 @@ class ContractSynthesizer:
         ir_path = context.artifacts.intermediate_representation_path
         if not os.path.exists(ir_path):
             raise FileNotFoundError(f"IR artifact not found: {ir_path}. Run  first.")
-            
+
         with open(ir_path, "r") as f:
             ir = json.load(f)
-            
+
         type_registry = ir.get("type_registry", {})
-        
+
         # 1. Synthesize Function Contracts
         function_contracts = self._synthesize_functions(ir.get("functions", []), type_registry)
-        
+
         # 2. Synthesize Struct Contracts
         struct_contracts = self._synthesize_structs(ir.get("structs", []), type_registry)
-        
+
                 global_constraints = self._generate_global_constraints(context)
-        
+
         # 4. Compile Metadata
         metadata = {
             "total_functions_analyzed": len(ir.get("functions", [])),
@@ -2821,7 +2821,7 @@ class ContractSynthesizer:
             "warnings_issued": len(self.logger.get_all()),
             "synthesis_warnings": self.logger.get_all()
         }
-        
+
         # 5. Build Final Artifact
         contract = {
             "provenance": {
@@ -2839,28 +2839,28 @@ class ContractSynthesizer:
             "global_constraints": global_constraints,
             "synthesis_metadata": metadata
         }
-        
+
         # 6. Save Artifact
         output_path = context.artifacts.contract_path
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as f:
             json.dump(contract, f, indent=2)
-            
+
         return contract
 
     def _synthesize_functions(self, functions: List[Dict[str, Any]], type_registry: Dict) -> List[Dict[str, Any]]:
         contracts = []
         for func in functions:
             name = func["name"]
-            
+
             # Parameter Contracts
             param_contracts = []
             pre_conditions = []
-            
+
             for param in func.get("parameters", []):
                 p_contract = self.deriver.derive_parameter_contract(name, param)
                 param_contracts.append(p_contract)
-                
+
                 # Turn specific semantic properties into explicit pre-conditions
                 p_name = param["name"]
                 if p_contract["nullability"] == "non_null":
@@ -2872,7 +2872,7 @@ class ContractSynthesizer:
                         "justification": p_contract["nullability_justification"],
                         "severity": "error"
                     })
-                
+
                 # Rule 8 check (indirectly via type_id layout)
                 if "struct:" in p_contract["type_id"]:
                     struct_id = p_contract["type_id"].split("pointer:")[-1] if "pointer:" in p_contract["type_id"] else p_contract["type_id"]
@@ -2892,12 +2892,12 @@ class ContractSynthesizer:
 
             # Rule 4: Buffer Relationships
             pre_conditions.extend(self.deriver.derive_buffer_constraints(name, func.get("parameters", [])))
-            
+
             # Return Contract
             ret_contract = self.deriver.derive_return_contract(name, func.get("return_type_id", ""))
             post_conditions = []
             for c in ret_contract["constraints"]:
-                 post_conditions.append({
+                post_conditions.append({
                     "constraint_id": self.id_gen.generate_function_id(name, "ret", c["constraint_type"]),
                     "constraint_type": c["constraint_type"],
                     "description": c["description"],
@@ -2919,7 +2919,7 @@ class ContractSynthesizer:
                 "parameter_contracts": param_contracts,
                 "return_contract": ret_contract
             })
-            
+
         return contracts
 
     def _synthesize_structs(self, structs: List[Dict[str, Any]], type_registry: Dict) -> List[Dict[str, Any]]:
@@ -2927,12 +2927,12 @@ class ContractSynthesizer:
         for s in structs:
             name = s["name"]
             type_id = s.get("type_id")
-            
+
             field_contracts = []
             for field in s.get("fields", []):
                 if field.get("is_implicit"): continue
                 field_contracts.append(self.deriver.derive_struct_field_contract(name, field))
-                
+
             invariants = [
                 {
                     "constraint_type": "layout_match",
@@ -2948,7 +2948,7 @@ class ContractSynthesizer:
                     "severity": "error"
                 }
             ]
-            
+
             contracts.append({
                 "struct_name": name,
                 "type_id": type_id,
@@ -2995,7 +2995,7 @@ class ContractSynthesizer:
         for s in structs:
             count += len(s["invariants"])
             for fc in s["field_contracts"]:
-                 count += len(fc.get("constraints", []))
+                count += len(fc.get("constraints", []))
         return count
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3014,14 +3014,14 @@ class SchemaVersionManager:
     """
     Implements Semantic Versioning (MAJOR.MINOR.PATCH) for FFI contracts.
     """
-    
+
     CURRENT_VERSION = "1.0.0"
-    
+
     @staticmethod
     def get_current_schema_version() -> str:
         """Returns the current schema version of the verifier."""
         return SchemaVersionManager.CURRENT_VERSION
-        
+
     @staticmethod
     def parse_version(version_str: str) -> tuple:
         """Parses a version string into a tuple of integers (major, minor, patch)."""
@@ -3032,7 +3032,7 @@ class SchemaVersionManager:
             return tuple(parts[:3])
         except (ValueError, AttributeError):
             return (0, 0, 0)
-            
+
     @staticmethod
     def is_schema_compatible(baseline_version: str, current_version: str) -> bool:
         """
@@ -3042,15 +3042,15 @@ class SchemaVersionManager:
         """
         v1 = SchemaVersionManager.parse_version(baseline_version)
         v2 = SchemaVersionManager.parse_version(current_version)
-        
+
         # Major versions must match for guaranteed compatibility
         return v1[0] == v2[0]
-        
+
     @staticmethod
     def is_breaking_schema_change(old_version: str, new_version: str) -> bool:
         """Different major versions indicate breaking schema changes."""
         return not SchemaVersionManager.is_schema_compatible(old_version, new_version)
-        
+
     @staticmethod
     def get_schema_changelog(version: str) -> str:
         """Returns a brief description of schema changes for a given version."""
@@ -3070,7 +3070,7 @@ class ChangeClassifier:
     """
     Analyzes raw contract changes and assigns risk categories and actions.
     """
-    
+
     CHANGE_MAPPING = {
         # Function changes
         "function_added": ChangeCategory.COMPATIBLE,
@@ -3083,7 +3083,7 @@ class ChangeClassifier:
         "constraint_added": ChangeCategory.SEMANTIC,
         "constraint_removed": ChangeCategory.SEMANTIC,
         "constraint_changed": ChangeCategory.SEMANTIC,
-        
+
         # Struct changes
         "struct_added": ChangeCategory.COMPATIBLE,
         "struct_removed": ChangeCategory.BREAKING,
@@ -3093,13 +3093,13 @@ class ChangeClassifier:
         "field_removed": ChangeCategory.BREAKING,
         "field_type_changed": ChangeCategory.BREAKING,
         "field_offset_changed": ChangeCategory.BREAKING,
-        
+
         # Type registry changes
         "type_added": ChangeCategory.COMPATIBLE,
         "type_removed": ChangeCategory.BREAKING,
         "type_size_changed": ChangeCategory.BREAKING,
         "type_alignment_changed": ChangeCategory.BREAKING,
-        
+
         # Global changes
         "global_constraint_added": ChangeCategory.COMPATIBLE,
         "global_constraint_removed": ChangeCategory.SEMANTIC
@@ -3138,12 +3138,12 @@ class ContractSchemaValidator:
     """
     Validates that a contract artifact is well-formed and schema-compatible.
     """
-    
+
     REQUIRED_ROOT_KEYS = [
         "provenance", "platform", "function_contracts", 
         "struct_contracts", "type_contracts", "global_constraints"
     ]
-    
+
     def validate_contract(self, contract_path: str) -> Dict[str, Any]:
         """
         Loads and validates a contract file.
@@ -3155,24 +3155,24 @@ class ContractSchemaValidator:
                 contract = json.load(f)
         except Exception as e:
             return {"valid": False, "contract": None, "errors": [f"Failed to parse JSON: {str(e)}"]}
-            
+
         # Check required keys
         for key in self.REQUIRED_ROOT_KEYS:
             if key not in contract:
                 errors.append(f"Missing required root key: '{key}'")
-                
+
         # Check provenance/schema_version
         if "provenance" in contract:
             version = contract["provenance"].get("schema_version")
             if not version:
                 errors.append("Missing schema_version in provenance")
-            else:
-                current_ver = SchemaVersionManager.get_current_schema_version()
+        else:
+            current_ver = SchemaVersionManager.get_current_schema_version()
                 if not SchemaVersionManager.is_schema_compatible(version, current_ver):
                     errors.append(f"Incompatible schema version: {version}. Expected compatibility with {current_ver}")
         else:
             errors.append("Missing provenance section")
-            
+
         return {
             "valid": len(errors) == 0,
             "contract": contract if len(errors) == 0 else None,
@@ -3180,7 +3180,7 @@ class ContractSchemaValidator:
         }
 
     def validate_against_schema(self, contract: Dict[str, Any], schema_version: str) -> List[str]:
-                # For now, we reuse the same logic
+        # For now, we reuse the same logic
         errors = []
         for key in self.REQUIRED_ROOT_KEYS:
             if key not in contract:
@@ -3191,12 +3191,12 @@ class CompatibilityReportGenerator:
     """
     Transforms a change diff into a professional compatibility assessment report.
     """
-    
+
     def generate_report(self, diff: Dict[str, Any]) -> str:
-                summary = diff.get("summary", {})
+        summary = diff.get("summary", {})
         changes = diff.get("changes", [])
         schema = diff.get("schema_compatibility", {})
-        
+
         lines = []
         lines.append("=" * 64)
         lines.append("FFI Contract Compatibility Assessment")
@@ -3210,7 +3210,7 @@ class CompatibilityReportGenerator:
         lines.append(f"  Current:  {schema.get('current_schema_version')}")
         lines.append(f"  Compatible: {'YES' if schema.get('compatible') else 'NO'}")
         lines.append("")
-        
+
         comp_level = self._compute_compatibility_level(summary)
         lines.append("-" * 64)
         lines.append(f"COMPATIBILITY LEVEL: {comp_level}")
@@ -3223,19 +3223,19 @@ class CompatibilityReportGenerator:
         lines.append(f"  Semantic Changes: {summary.get('semantic_changes', 0)}")
         lines.append(f"  Compatible Changes: {summary.get('compatible_changes', 0)}")
         lines.append("")
-        
+
         # Group changes by category
         categories = ["breaking", "potentially_breaking", "semantic", "compatible"]
         for cat in categories:
             cat_changes = [c for c in changes if c["change_category"] == cat]
             if not cat_changes:
                 continue
-                
+
             lines.append("=" * 64)
             lines.append(f"{cat.upper().replace('_', ' ')} CHANGES ({len(cat_changes)})")
             lines.append("=" * 64)
             lines.append("")
-            
+
             for c in cat_changes:
                 lines.append(f"[{cat.upper().replace('_', ' ')}] {c['change_type'].replace('_', ' ').capitalize()}")
                 lines.append(f"  Element: {c['element_type']} '{c['element_name']}'")
@@ -3254,7 +3254,7 @@ class CompatibilityReportGenerator:
             lines.append(f"{i}. {action}")
         lines.append("")
         lines.append("=" * 64)
-        
+
         return "\n".join(lines)
 
     def _compute_compatibility_level(self, summary: Dict) -> str:
@@ -3274,7 +3274,7 @@ class CompatibilityReportGenerator:
             actions.append("CRITICAL: Update language bindings immediately to reflect removals or signature changes.")
             actions.append("CRITICAL: Recompile and redeploy all dependent applications.")
         if summary.get("potentially_breaking_changes", 0) > 0:
-             actions.append("IMPORTANT: Review struct layout changes; offsets or sizes may have changed.")
+            actions.append("IMPORTANT: Review struct layout changes; offsets or sizes may have changed.")
         if summary.get("semantic_changes", 0) > 0:
             actions.append("REVIEW: Check application logic against new semantic constraints (nullability, ownership).")
         if summary.get("total_changes", 0) > 0:
@@ -3282,7 +3282,7 @@ class CompatibilityReportGenerator:
             actions.append("TEST: Execute full FFI verification suite to confirm compatibility.")
         else:
             actions.append("No changes detected. Existing bindings remain fully compatible.")
-            
+
         return actions
 
 # ============================================================================
@@ -3293,7 +3293,7 @@ class ContractComparator:
     """
     Compares a baseline contract against a current contract to detect evolutions.
     """
-    
+
     def __init__(self):
         self.validator = ContractSchemaValidator()
         self.classifier = ChangeClassifier()
@@ -3306,17 +3306,17 @@ class ContractComparator:
         # Phase 1. Load and Validate
         baseline_res = self.validator.validate_contract(baseline_path)
         current_res = self.validator.validate_contract(current_path)
-        
+
         if not current_res["valid"]:
-             raise ValueError(f"Current contract is invalid: {current_res['errors']}")
-        
+            raise ValueError(f"Current contract is invalid: {current_res['errors']}")
+
         baseline = baseline_res["contract"] or {}
         current = current_res["contract"]
-        
+
         # Phase 2: Check Schema Compatibility
         b_version = baseline.get("provenance", {}).get("schema_version", "0.0.0")
         c_version = current.get("provenance", {}).get("schema_version", self.version_manager.get_current_schema_version())
-        
+
         schema_info = {
             "baseline_schema_version": b_version,
             "current_schema_version": c_version,
@@ -3325,17 +3325,17 @@ class ContractComparator:
         }
 
         changes = []
-        
+
         if baseline:
             # Phase 4. Detect Function Changes
             changes.extend(self._detect_function_changes(baseline.get("function_contracts", []), current.get("function_contracts", [])))
-            
+
             # Phase 5: Detect Struct Changes
             changes.extend(self._detect_struct_changes(baseline.get("struct_contracts", []), current.get("struct_contracts", [])))
-            
+
             # Phase 6. Detect Type Changes
             changes.extend(self._detect_type_changes(baseline.get("type_registry", {}), current.get("type_registry", {})))
-            
+
             # Phase 7. Detect Global Changes
             changes.extend(self._detect_global_changes(baseline.get("global_constraints", []), current.get("global_constraints", [])))
         else:
@@ -3344,7 +3344,7 @@ class ContractComparator:
 
         # Phase 8. Generate Diff Artifact
         summary = self._generate_summary(changes)
-        
+
         diff = {
             "provenance": {
                 "producing_phase": ": Contract Schema Versioning",
@@ -3359,49 +3359,49 @@ class ContractComparator:
             "summary": summary,
             "changes": changes
         }
-        
+
         return diff
 
     def _detect_function_changes(self, baseline: List[Dict], current: List[Dict]) -> List[Dict]:
         changes = []
         b_map = {f["function_name"]: f for f in baseline}
         c_map = {f["function_name"]: f for f in current}
-        
+
         # Functions added
         for name in c_map:
             if name not in b_map:
                 changes.append(self._create_change("function_added", "function", name))
-                
+
         # Functions removed/modified
         for name, b_func in b_map.items():
             if name not in c_map:
                 changes.append(self._create_change("function_removed", "function", name))
                 continue
-                
+
             c_func = c_map[name]
-            
+
             # Calling convention
             if b_func.get("calling_convention") != c_func.get("calling_convention"):
                 changes.append(self._create_change("calling_convention_changed", "function", name, 
-                                               b_func.get("calling_convention"), c_func.get("calling_convention")))
-            
+                                            b_func.get("calling_convention"), c_func.get("calling_convention")))
+
             # Return type
             b_ret = b_func.get("return_contract", {}).get("type_id")
             c_ret = c_func.get("return_contract", {}).get("type_id")
             if b_ret != c_ret:
-                 changes.append(self._create_change("return_type_changed", "function", name, b_ret, c_ret))
+                changes.append(self._create_change("return_type_changed", "function", name, b_ret, c_ret))
 
             # Parameters
             b_params_list = b_func.get("parameter_contracts", [])
             c_params_list = c_func.get("parameter_contracts", [])
             b_params = {p["parameter_name"]: p for p in b_params_list}
             c_params = {p["parameter_name"]: p for p in c_params_list}
-            
+
             if len(c_params_list) > len(b_params_list):
-                 changes.append(self._create_change("parameter_added", "function", name, len(b_params_list), len(c_params_list)))
-            elif len(c_params_list) < len(b_params_list):
-                 changes.append(self._create_change("parameter_removed", "function", name, len(b_params_list), len(c_params_list)))
-            
+                changes.append(self._create_change("parameter_added", "function", name, len(b_params_list), len(c_params_list)))
+        elif len(c_params_list) < len(b_params_list):
+            changes.append(self._create_change("parameter_removed", "function", name, len(b_params_list), len(c_params_list)))
+
             for p_name, b_p in b_params.items():
                 if p_name not in c_params:
                     # Individual parameter removed (naming mismatch or actual removal)
@@ -3409,7 +3409,7 @@ class ContractComparator:
                 c_p = c_params[p_name]
                 if b_p.get("type_id") != c_p.get("type_id"):
                     changes.append(self._create_change("parameter_type_changed", "parameter", f"{name}.{p_name}", b_p.get("type_id"), c_p.get("type_id")))
-                
+
                 # Semantic changes (nullability, ownership)
                 for prop in ["nullability", "ownership", "lifetime"]:
                     if b_p.get(prop) != c_p.get(prop):
@@ -3423,16 +3423,16 @@ class ContractComparator:
         changes = []
         b_map = {s["struct_name"]: s for s in baseline}
         c_map = {s["struct_name"]: s for s in current}
-        
+
         for name in c_map:
             if name not in b_map:
                 changes.append(self._create_change("struct_added", "struct", name))
-                
+
         for name, b_s in b_map.items():
             if name not in c_map:
                 changes.append(self._create_change("struct_removed", "struct", name))
                 continue
-                
+
             c_s = c_map[name]
             if b_s.get("size_bytes") != c_s.get("size_bytes"):
                 changes.append(self._create_change("struct_size_changed", "struct", name, b_s.get("size_bytes"), c_s.get("size_bytes")))
@@ -3442,11 +3442,11 @@ class ContractComparator:
             # Field changes
             b_fields = {f["field_name"]: f for f in b_s.get("field_contracts", [])}
             c_fields = {f["field_name"]: f for f in c_s.get("field_contracts", [])}
-            
+
             for f_name in c_fields:
                 if f_name not in b_fields:
                     changes.append(self._create_change("field_added", "field", f"{name}.{f_name}"))
-                    
+
             for f_name, b_f in b_fields.items():
                 if f_name not in c_fields:
                     changes.append(self._create_change("field_removed", "field", f"{name}.{f_name}"))
@@ -3473,7 +3473,7 @@ class ContractComparator:
         changes = []
         b_ids = [str(g.get("constraint_id")) for g in baseline if g.get("constraint_id")]
         c_ids = [str(g.get("constraint_id")) for g in current if g.get("constraint_id")]
-        
+
         for cid in c_ids:
             if cid not in b_ids:
                 changes.append(self._create_change("global_constraint_added", "global", cid))
@@ -3507,7 +3507,7 @@ class ContractComparator:
         for c in changes:
             cat = c["change_category"]
             summary[f"{cat}_changes"] = summary.get(f"{cat}_changes", 0) + 1
-            
+
         return summary
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3526,7 +3526,7 @@ class ExceptionClassGenerator:
     """
     Produces the Python code for the exceptions module in the generated adapter.
     """
-    
+
     def generate_exception_module(self, library_name: str) -> str:
         """Generates the full source code for the exceptions module."""
         return f'''"""
@@ -3539,7 +3539,7 @@ DO NOT EDIT MANUALLY.
 class FFIContractViolation(Exception):
     """
     Base class for all FFI contract violations.
-    
+
     Attributes:
         constraint_id: Unique identifier for the violated constraint
         message: Human-readable description of the violation
@@ -3552,7 +3552,7 @@ class FFIContractViolation(Exception):
 class NullPointerViolation(FFIContractViolation):
     """
     Raised when a pointer that must not be NULL is actually NULL.
-    
+
     Contract constraint type: non_null
     """
     pass
@@ -3560,7 +3560,7 @@ class NullPointerViolation(FFIContractViolation):
 class BufferSizeViolation(FFIContractViolation):
     """
     Raised when a buffer size constraint is violated.
-    
+
     Contract constraint type: buffer_size
     """
     pass
@@ -3568,7 +3568,7 @@ class BufferSizeViolation(FFIContractViolation):
 class LayoutMismatchError(FFIContractViolation):
     """
     Raised when a struct layout doesn't match the contract specification.
-    
+
     Contract constraint type: struct_layout
     """
     pass
@@ -3576,7 +3576,7 @@ class LayoutMismatchError(FFIContractViolation):
 class OwnershipViolation(FFIContractViolation):
     """
     Raised when memory ownership rules are violated.
-    
+
     Contract constraint types: borrowed, transferred
     """
     pass
@@ -3584,7 +3584,7 @@ class OwnershipViolation(FFIContractViolation):
 class ReturnValueViolation(FFIContractViolation):
     """
     Raised when a return value doesn't satisfy post-conditions.
-    
+
     Contract constraint type: error_code, return_value_range
     """
     pass
@@ -3594,7 +3594,7 @@ class OwnershipTrackerGenerator:
     """
     Produces the Python code for the ownership tracker in the generated adapter.
     """
-    
+
     def generate_ownership_module(self, library_name: str) -> str:
         """Generates the full source code for the ownership tracking module."""
         return f'''"""
@@ -3610,16 +3610,16 @@ from . import {library_name}_exceptions as exceptions
 class OwnershipTracker:
     """
     Tracks memory ownership across the FFI boundary.
-    
+
     Detects:
-      - Use-after-transfer (using pointer after ownership was transferred)
-      - Double-transfer (transferring ownership of same pointer twice)
+        - Use-after-transfer (using pointer after ownership was transferred)
+    - Double-transfer (transferring ownership of same pointer twice)
     """
-    
+
     def __init__(self):
         self._borrowed_pointers = weakref.WeakSet()
         self._transferred_pointers = set()
-    
+
     def mark_borrowed(self, ptr):
         """
         Mark a pointer as borrowed (caller retains ownership).
@@ -3632,34 +3632,34 @@ class OwnershipTracker:
                 if isinstance(ptr, (ctypes._Pointer, ctypes.c_void_p)):
                     addr = ctypes.addressof(ptr.contents) if hasattr(ptr, 'contents') else ptr.value
                     self._borrowed_pointers.add(addr)
-                else:
-                    self._borrowed_pointers.add(id(ptr))
-            except:
+            else:
                 self._borrowed_pointers.add(id(ptr))
-    
+        except:
+            self._borrowed_pointers.add(id(ptr))
+
     def mark_transferred(self, ptr):
         """
         Mark a pointer as transferred (callee takes ownership).
         """
         if ptr is None or not bool(ptr):
             return
-            
+
         ptr_id = id(ptr)
         if ptr_id in self._transferred_pointers:
             raise exceptions.OwnershipViolation(
                 "ownership_double_transfer",
                 f"Pointer {{hex(ptr_id)}} has already been transferred"
             )
-        
+
         self._transferred_pointers.add(ptr_id)
-        
+
     def check_valid(self, ptr):
         """
         Check if a pointer is still valid to use.
         """
         if ptr is None or not bool(ptr):
             return
-            
+
         ptr_id = id(ptr)
         if ptr_id in self._transferred_pointers:
             raise exceptions.OwnershipViolation(
@@ -3675,7 +3675,7 @@ class StructDefinitionGenerator:
     """
     Produces Python ctypes Structure definitions from contract/IR data.
     """
-    
+
     TYPE_MAP = {
         "primitive:int8": "ctypes.c_int8",
         "primitive:int16": "ctypes.c_int16",
@@ -3692,7 +3692,7 @@ class StructDefinitionGenerator:
         "pointer:primitive:void": "ctypes.c_void_p",
         "pointer:primitive:char": "ctypes.c_char_p"
     }
-    
+
     def generate_struct_module(self, library_name: str, structs: List[Dict[str, Any]], ir: Dict[str, Any]) -> str:
         """Generates the full structs module."""
         lines = [
@@ -3707,22 +3707,22 @@ class StructDefinitionGenerator:
             f'from . import {library_name}_exceptions as exceptions',
             f''
         ]
-        
+
         # We need to sort structs by dependency if they nest, 
         # but for v1.0 we assume flat or pre-ordered
         for s in structs:
             lines.append(self.generate_struct_class(s))
             lines.append("")
-            
+
         return "\n".join(lines)
 
     def generate_struct_class(self, s: Dict[str, Any]) -> str:
         name = s["struct_name"]
         size = s["size_bytes"]
         align = s["alignment_bytes"]
-        
+
         fields = s.get("field_contracts", [])
-        
+
         class_lines = [
             f"class {name}(ctypes.Structure):",
             f'    """',
@@ -3732,13 +3732,13 @@ class StructDefinitionGenerator:
             f'    """',
             f'    _fields_ = ['
         ]
-        
+
         for f in fields:
             f_name = f["field_name"]
             f_type = f["type_id"]
             ctypes_type = self._map_type(f_type)
             class_lines.append(f'        ("{f_name}", {ctypes_type}),')
-            
+
         class_lines.extend([
             f'    ]',
             f'',
@@ -3757,39 +3757,39 @@ class StructDefinitionGenerator:
             f'            setattr(self, key, value)',
             f''
         ])
-        
+
         return "\n".join(class_lines)
 
     def _map_type(self, type_id: str) -> str:
         if type_id in self.TYPE_MAP:
             return self.TYPE_MAP[type_id]
-            
+
         if type_id.startswith("padding:"):
             size = type_id.split(":")[-1]
             return f"ctypes.c_byte * {size}"
-            
+
         if type_id.startswith("pointer:struct:"):
             s_name = type_id.split(":")[-1]
             return f"ctypes.POINTER({s_name})"
-            
+
         if type_id.startswith("struct:"):
             return type_id.split(":")[-1]
-            
+
         if type_id.startswith("pointer:primitive:"):
-             base = type_id.replace("pointer:", "")
-             if base in self.TYPE_MAP:
-                 return f"ctypes.POINTER({self.TYPE_MAP[base]})"
-                 
+            base = type_id.replace("pointer:", "")
+            if base in self.TYPE_MAP:
+                return f"ctypes.POINTER({self.TYPE_MAP[base]})"
+
         return "ctypes.c_void_p" # Fallback
 
 class ConstraintEnforcementCodegen:
     """
     Generates Python logic for enforcing individual contract constraints.
     """
-    
+
     def generate_constraint_check(self, constraint: Dict[str, Any]) -> str:
-                c_type = constraint.get("constraint_type")
-        
+        c_type = constraint.get("constraint_type")
+
         if c_type == "non_null":
             return self._generate_null_check(constraint)
         elif c_type == "buffer_size":
@@ -3800,13 +3800,13 @@ class ConstraintEnforcementCodegen:
             return self._generate_string_null_terminated_check(constraint)
         elif c_type == "error_code":
             return self._generate_error_code_check(constraint)
-            
+
         return f"    
     def _generate_null_check(self, c: Dict[str, Any]) -> str:
         target = c["target"].split(":")[-1]
         cid = c["constraint_id"]
         desc = c["description"]
-        
+
         return f"""    # Enforce: {cid}
     if {target} is None or not bool({target}):
         raise exceptions.NullPointerViolation(
@@ -3818,14 +3818,14 @@ class ConstraintEnforcementCodegen:
         target = c["target"].split(":")[-1]
         size_param = c.get("size_parameter")
         cid = c["constraint_id"]
-        
+
         if not size_param:
             return f"    # Advise: {cid} - Missing size parameter for buffer check"
-            
+
         return f"""    # Enforce: {cid}
     if {target} is not None:
         if {size_param} < 0:
-             raise exceptions.BufferSizeViolation(
+            raise exceptions.BufferSizeViolation(
                 "{cid}",
                 f"Buffer size '{size_param}' must be non-negative, got {{{size_param}}}"
             )"""
@@ -3836,38 +3836,38 @@ class ConstraintEnforcementCodegen:
         struct_name = c["struct_type_id"].split(":")[-1]
         req_size = c.get("required_size_bytes")
         req_align = c.get("required_alignment_bytes")
-        
+
         # We need to handle both the struct object and a pointer to it
         lines = [
             f"    # Enforce: {cid}",
             f"    if not isinstance({target}, structs.{struct_name}) and not hasattr({target}, '_type_'):",
             f"        raise exceptions.LayoutMismatchError(\"{cid}\", f\"Parameter '{target}' must be of type {struct_name}, got {{type({target})}}\")"
         ]
-        
+
         if req_size:
             lines.append(f"    actual_size_{target} = ctypes.sizeof({target}.contents) if hasattr({target}, 'contents') else ctypes.sizeof({target})")
             lines.append(f"    if actual_size_{target} != {req_size}:")
             lines.append(f"        raise exceptions.LayoutMismatchError(\"{cid}\", f\"Struct {struct_name} has size {{actual_size_{target}}} bytes, expected {req_size}\")")
-            
+
         if req_align:
             lines.append(f"    ptr_val_{target} = ctypes.addressof({target}.contents) if hasattr({target}, 'contents') else ctypes.addressof({target})")
             lines.append(f"    if ptr_val_{target} % {req_align} != 0:")
             lines.append(f"        raise exceptions.LayoutMismatchError(\"{cid}\", f\"Struct {struct_name} at {{hex(ptr_val_{target})}} is not {req_align}-byte aligned\")")
-            
+
         return "\n".join(lines)
 
     def _generate_string_null_terminated_check(self, c: Dict[str, Any]) -> str:
         target = c["target"].split(":")[-1]
         cid = c["constraint_id"]
-        
+
         return f"""    # Enforce: {cid}
     if {target} is None:
         raise exceptions.NullPointerViolation("{cid}", "Parameter '{target}' must not be NULL")
-    
+
     _val_{target} = {target}
     if isinstance(_val_{target}, str):
         _val_{target} = _val_{target}.encode('utf-8')
-        
+
     if not _val_{target}.endswith(b'\\x00'):
         raise exceptions.FFIContractViolation("{cid}", "Parameter '{target}' must be null-terminated")"""
 
@@ -3876,29 +3876,29 @@ class ConstraintEnforcementCodegen:
         cid = c["constraint_id"]
         return f"""    # Enforce: {cid}
     # (Important: Result is checked by the caller or specialized checked function)"""
-    
+
     def generate_ownership_check(self, param: Dict[str, Any]) -> str:
         """Generates ownership tracking code."""
         name = param.get("parameter_name")
         ownership = param.get("ownership")
-        
+
         if ownership == "borrowed":
             return f"    ownership._tracker.mark_borrowed({name})"
         elif ownership == "transferred":
             return f"    ownership._tracker.mark_transferred({name})"
-            
+
         return ""
 
 class FunctionWrapperGenerator:
     """
     Produces Python wrapper functions with pre/post-condition checks.
     """
-    
+
     def __init__(self):
         self.codegen = ConstraintEnforcementCodegen()
-        
+
     def generate_wrapper_module(self, library_name: str, library_path: str, functions: List[Dict[str, Any]]) -> str:
-                lines = [
+        lines = [
             f'"""',
             f'Generated FFI adapter for {library_name}.',
             f'Auto-created by Polyglot FFI Contract Verifier.',
@@ -3917,71 +3917,71 @@ class FunctionWrapperGenerator:
             f'_lib = ctypes.CDLL(_LIBRARY_PATH)',
             f''
         ]
-        
+
         # Configure signatures first
         for f in functions:
             lines.append(self._generate_signature_config(f))
-            
+
         lines.append("")
-        
+
         # Then generate wrappers
         for f in functions:
             lines.append(self.generate_wrapper(f))
             lines.append("")
-            
+
         return "\n".join(lines)
 
     def _generate_signature_config(self, f: Dict[str, Any]) -> str:
         name = f["function_name"]
         argtypes = [self._map_type(p["type_id"]) for p in f.get("parameter_contracts", [])]
         restype = self._map_type(f.get("return_contract", {}).get("type_id", "primitive:void"))
-        
+
         lines = []
         if any(at == "NOT_FOUND" for at in argtypes + [restype]):
-             lines.append(f"# Warning: Could not fully resolve types for {name}")
-             
+            lines.append(f"# Warning: Could not fully resolve types for {name}")
+
         lines.append(f"_lib.{name}.argtypes = [{', '.join([at for at in argtypes if at != 'NOT_FOUND'])}]")
         lines.append(f"_lib.{name}.restype = {restype if restype != 'NOT_FOUND' else 'None'}")
-        
+
         if f.get("calling_convention") == "stdcall":
-             lines.append(f"# Important: stdcall is handled by WinDLL if needed, currently using default CDLL")
-             
+            lines.append(f"# Important: stdcall is handled by WinDLL if needed, currently using default CDLL")
+
         return "\n".join(lines)
 
     def generate_wrapper(self, f: Dict[str, Any]) -> str:
         name = f["function_name"]
         params = f.get("parameter_contracts", [])
         param_names = [p["parameter_name"] for p in params]
-        
+
         lines = [
             f"def {name}({', '.join(param_names)}):",
             f'    """Wrapper for native function \'{name}\'."""'
         ]
-        
+
         # Ownership tracking (Pre-call)
         for p in params:
             check = self.codegen.generate_ownership_check(p)
             if check: lines.append(check)
-            
+
         # Pre-condition checks
         pre_conds = f.get("pre_conditions", [])
         if pre_conds:
             lines.append(f"    # Pre-conditions")
             for c in pre_conds:
                 lines.append(self.codegen.generate_constraint_check(c))
-                
+
         # Call
         lines.append(f"    result = _lib.{name}({', '.join(param_names)})")
-        
+
         # Post-condition checks
         post_conds = f.get("post_conditions", [])
         if post_conds:
             lines.append(f"    # Post-conditions")
             for c in post_conds:
                 lines.append(self.codegen.generate_constraint_check(c))
-                
+
         lines.append("    return result")
-        
+
         return "\n".join(lines)
 
     def _map_type(self, type_id: str) -> str:
@@ -3989,13 +3989,13 @@ class FunctionWrapperGenerator:
         gen = StructDefinitionGenerator()
         res = gen._map_type(type_id)
         if res == type_id.split(":")[-1]: # it's a struct name
-             return f"structs.{res}"
+            return f"structs.{res}"
         if "POINTER(" in res:
-             # handle POINTER(Config) -> POINTER(structs.Config)
-             if "POINTER(structs." not in res and "POINTER(ctypes." not in res:
-                  res = res.replace("POINTER(", "ctypes.POINTER(structs.")
-             else:
-                  res = res.replace("POINTER(", "ctypes.POINTER(")
+            # handle POINTER(Config) -> POINTER(structs.Config)
+            if "POINTER(structs." not in res and "POINTER(ctypes." not in res:
+                res = res.replace("POINTER(", "ctypes.POINTER(structs.")
+            else:
+                res = res.replace("POINTER(", "ctypes.POINTER(")
         return res
 
 # ============================================================================
@@ -4007,7 +4007,7 @@ class AdapterGenerator:
     Main orchestrator for .
     Generates the full suite of Python adapters.
     """
-    
+
     def __init__(self):
         self.struct_gen = StructDefinitionGenerator()
         self.func_gen = FunctionWrapperGenerator()
@@ -4020,12 +4020,12 @@ class AdapterGenerator:
         """
         contract_path = context.artifacts.contract_path
         ir_path = context.artifacts.intermediate_representation_path
-        
+
         if not os.path.exists(contract_path):
             raise FileNotFoundError(f"Contract artifact not found: {contract_path}")
         if not os.path.exists(ir_path):
             raise FileNotFoundError(f"IR artifact not found: {ir_path}")
-            
+
         with open(contract_path, 'r') as f:
             contract = json.load(f)
         with open(ir_path, 'r') as f:
@@ -4033,29 +4033,29 @@ class AdapterGenerator:
 
         lib_name = os.path.basename(context.native_library.library_path).split('.')[0]
         lib_path = context.native_library.library_path
-        
+
         output_dir = os.path.join(context.artifacts.working_directory, "adapters")
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # 1. Generate Exceptions
         exc_code = self.exc_gen.generate_exception_module(lib_name)
         with open(os.path.join(output_dir, f"{lib_name}_exceptions.py"), "w") as f:
             f.write(exc_code)
-            
+
         # 2. Generate Ownership Tracker
         own_code = self.own_gen.generate_ownership_module(lib_name)
         with open(os.path.join(output_dir, f"{lib_name}_ownership.py"), "w") as f:
             f.write(own_code)
-            
+
         # 3. Generate Structs
         struct_code = self.struct_gen.generate_struct_module(lib_name, contract.get("struct_contracts", []), ir)
         with open(os.path.join(output_dir, f"{lib_name}_structs.py"), "w") as f:
             f.write(struct_code)
-            
+
                 adapter_code = self.func_gen.generate_wrapper_module(lib_name, lib_path, contract.get("function_contracts", []))
         with open(os.path.join(output_dir, f"{lib_name}_adapter.py"), "w") as f:
             f.write(adapter_code)
-            
+
         # 5. Generate __init__.py
         with open(os.path.join(output_dir, "__init__.py"), "w") as f:
             f.write(f"from . import {lib_name}_adapter as adapter\n")
@@ -4089,11 +4089,11 @@ class AdapterGenerator:
                 "constraints_skipped": 0
             }
         }
-        
+
         metadata_path = os.path.join(output_dir, "adapter_metadata.json")
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
-            
+
         return metadata
 
     def _count_constraints(self, contract: Dict[str, Any]) -> int:
@@ -4118,7 +4118,7 @@ class InputValueGenerator:
     """
     Deterministic generation of input values for FFI tests.
     """
-    
+
     PRIMITIVE_VALUES: Dict[str, List[Any]] = {
         "primitive:int8": [1, 127, -128],
         "primitive:int16": [1, 32767, -32768],
@@ -4138,14 +4138,14 @@ class InputValueGenerator:
     def generate_value(self, type_id: str, ir: Dict[str, Any], strategy: str = "typical") -> Any:
         """
         Generates a concrete value for a given type.
-        
+
         Strategies:
             - minimal: Smallest valid value
             - typical: Average/common value
             - maximal: Largest valid value
         """
         idx = {"minimal": 0, "typical": 0, "maximal": 1 if "int" in type_id else 0}.get(strategy, 0)
-        
+
         # Handle primitives
         if type_id in self.PRIMITIVE_VALUES:
             vals = self.PRIMITIVE_VALUES[type_id]
@@ -4157,13 +4157,13 @@ class InputValueGenerator:
         if type_id.startswith("pointer:"):
             if strategy == "minimal": return None
             base_type = type_id.replace("pointer:", "")
-            
+
             if base_type == "primitive:char":
                 return "test_string\0"
             if base_type.startswith("struct:"):
                 struct_name = base_type.split(":")[-1]
                 return self.generate_struct_value(struct_name, ir, strategy)
-            
+
             # Default for pointers is a small buffer or null
             return {"type": "buffer", "size": 8, "data": [0] * 8}
 
@@ -4181,7 +4181,7 @@ class InputValueGenerator:
             if s["name"] == struct_name:
                 struct_def = s
                 break
-        
+
         if not struct_def:
             return {}
 
@@ -4192,14 +4192,14 @@ class InputValueGenerator:
             f_name = field["name"]
             f_type = field["type_id"]
             value[f_name] = self.generate_value(f_type, ir, strategy)
-            
+
         return value
 
 class PositiveTestGenerator:
     """
     Produces successful execution test cases.
     """
-    
+
     def __init__(self, input_gen: InputValueGenerator):
         self.input_gen = input_gen
 
@@ -4207,13 +4207,13 @@ class PositiveTestGenerator:
         """Generates a set of positive test cases for a function."""
         name = f_contract["function_name"]
         test_cases = []
-        
+
         # 1. Minimal Valid
         test_cases.append(self._create_test_case(f_contract, ir, "minimal"))
-        
+
         # 2. Typical Valid
         test_cases.append(self._create_test_case(f_contract, ir, "typical"))
-        
+
         return test_cases
 
     def _create_test_case(self, f: Dict[str, Any], ir: Dict[str, Any], strategy: str) -> Dict[str, Any]:
@@ -4223,9 +4223,9 @@ class PositiveTestGenerator:
                 "type": p["type_id"],
                 "value": self.input_gen.generate_value(p["type_id"], ir, strategy)
             }
-            
+
         cids = [pc["constraint_id"] for pc in f.get("pre_conditions", [])]
-        
+
         return {
             "test_id": f"test_{f['function_name']}_positive_{strategy}",
             "test_category": "positive",
@@ -4245,8 +4245,8 @@ class NegativeTestGenerator:
     """
     Produces failure execution test cases for constraint verification.
     """
-    
-    EXCEPTION_MAP = {
+
+        EXCEPTION_MAP = {
         "non_null": "NullPointerViolation",
         "buffer_size": "BufferSizeViolation",
         "struct_layout": "LayoutMismatchError",
@@ -4256,7 +4256,7 @@ class NegativeTestGenerator:
         "error_code": "ReturnValueViolation",
         "null_terminated_string": "FFIContractViolation"
     }
-    
+
     def __init__(self, input_gen: InputValueGenerator):
         self.input_gen = input_gen
 
@@ -4264,19 +4264,19 @@ class NegativeTestGenerator:
         """Generates one negative test case per pre-condition."""
         test_cases = []
         name = f_contract["function_name"]
-        
+
         for constraint in f_contract.get("pre_conditions", []):
             tc = self._generate_violation(f_contract, constraint, ir)
             if tc:
-                 test_cases.append(tc)
-                 
+                test_cases.append(tc)
+
         return test_cases
 
     def _generate_violation(self, f: Dict[str, Any], c: Dict[str, Any], ir: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         c_type = c["constraint_type"]
         target = c["target"].split(":")[-1]
         cid = c["constraint_id"]
-        
+
         # Start with typical valid inputs
         inputs = {}
         for p in f.get("parameter_contracts", []):
@@ -4285,34 +4285,34 @@ class NegativeTestGenerator:
                 "type": p["type_id"],
                 "value": self.input_gen.generate_value(p["type_id"], ir, "typical")
             }
-            
+
                 exc_type = self.EXCEPTION_MAP.get(c_type, "FFIContractViolation")
-        
+
         if c_type == "non_null":
             if target in inputs:
                 inputs[target]["value"] = None
-            else:
-                return None # Target not found
-        
+        else:
+            return None # Target not found
+
         elif c_type == "buffer_size":
             size_param = c.get("size_parameter")
             if size_param in inputs:
                 inputs[size_param]["value"] = -1 # Invalid size
-            else:
-                 pass
+        else:
+            pass
 
         elif c_type == "struct_layout":
             if target in inputs:
-                 # Injected layout error
-                 inputs[target]["size_override"] = c.get("required_size_bytes", 100) + 1
-            else:
-                return None
+                # Injected layout error
+                inputs[target]["size_override"] = c.get("required_size_bytes", 100) + 1
+        else:
+            return None
 
         elif c_type == "null_terminated_string":
             if target in inputs:
-                 inputs[target]["value"] = "not_terminated" # Missing \0
-            else:
-                return None
+                inputs[target]["value"] = "not_terminated" # Missing \0
+        else:
+            return None
 
         else:
             return None # Unsupported for now
@@ -4338,14 +4338,14 @@ class BoundaryValueTestGenerator:
     """
     Produces edge case test cases.
     """
-    
+
     def __init__(self, input_gen: InputValueGenerator):
         self.input_gen = input_gen
 
     def generate_boundary_tests(self, f_contract: Dict[str, Any], ir: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generates boundary tests for relevant parameters."""
         test_cases = []
-        
+
         for p in f_contract.get("parameter_contracts", []):
             t_id = p["type_id"]
             if "int" in t_id or "uint" in t_id:
@@ -4354,7 +4354,7 @@ class BoundaryValueTestGenerator:
                 # Add Max Test
                 max_val = self.input_gen.generate_value(t_id, ir, "maximal")
                 test_cases.append(self._create_boundary_test(f_contract, ir, p["parameter_name"], "max", max_val))
-                
+
         return test_cases
 
     def _create_boundary_test(self, f: Dict[str, Any], ir: Dict[str, Any], p_name: str, b_type: str, val: Any) -> Dict[str, Any]:
@@ -4364,7 +4364,7 @@ class BoundaryValueTestGenerator:
                 "type": p["type_id"],
                 "value": val if p["parameter_name"] == p_name else self.input_gen.generate_value(p["type_id"], ir, "typical")
             }
-            
+
         return {
             "test_id": f"test_{f['function_name']}_boundary_{p_name}_{b_type}",
             "test_category": "boundary",
@@ -4383,14 +4383,14 @@ class CoverageAnalyzer:
     """
     Computes coverage statistics for a generated test plan.
     """
-    
+
     def analyze_coverage(self, test_cases: List[Dict[str, Any]], contract: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyzes which constraints are covered by the test cases.
         """
         all_constraints = self._extract_all_constraints(contract)
         coverage_map: Dict[str, Any] = {cid: [] for cid in all_constraints}
-        
+
         for tc in test_cases:
             for cid in tc.get("constraints_exercised", []):
                 if cid in coverage_map:
@@ -4398,9 +4398,9 @@ class CoverageAnalyzer:
 
         covered_count = sum(1 for cid in coverage_map if len(coverage_map[cid]) > 0)
         total_count = len(all_constraints)
-        
+
         uncovered = [cid for cid in coverage_map if len(coverage_map[cid]) == 0]
-        
+
         return {
             "summary": {
                 "total_constraints": total_count,
@@ -4413,12 +4413,12 @@ class CoverageAnalyzer:
         }
 
     def _extract_all_constraints(self, contract: Dict[str, Any]) -> List[str]:
-                ids = set()
+        ids = set()
         for f in contract.get("function_contracts", []):
             for pc in f.get("pre_conditions", []):
-                 ids.add(pc["constraint_id"])
+                ids.add(pc["constraint_id"])
             for pc in f.get("post_conditions", []):
-                 ids.add(pc["constraint_id"])
+                ids.add(pc["constraint_id"])
         return sorted(list(ids))
 
 # ============================================================================
@@ -4430,7 +4430,7 @@ class TestPlanGenerator:
     Main orchestrator for .
     Generates a complete test plan based on the contract and IR.
     """
-    
+
     def __init__(self):
         self.input_gen = InputValueGenerator()
         self.pos_gen = PositiveTestGenerator(self.input_gen)
@@ -4444,32 +4444,32 @@ class TestPlanGenerator:
         """
         contract_path = context.artifacts.contract_path
         ir_path = context.artifacts.intermediate_representation_path
-        
+
         if not os.path.exists(contract_path):
             raise FileNotFoundError(f"Contract artifact not found: {contract_path}")
         if not os.path.exists(ir_path):
             raise FileNotFoundError(f"IR artifact not found: {ir_path}")
-            
+
         with open(contract_path, 'r') as f:
             contract = json.load(f)
         with open(ir_path, 'r') as f:
             ir = json.load(f)
 
         test_cases = []
-        
+
         for f_contract in contract.get("function_contracts", []):
             # 1. Positive Tests
             test_cases.extend(self.pos_gen.generate_positive_tests(f_contract, ir))
-            
+
             # 2. Negative Tests
             test_cases.extend(self.neg_gen.generate_negative_tests(f_contract, ir))
-            
+
             # 3. Boundary Tests
             test_cases.extend(self.bound_gen.generate_boundary_tests(f_contract, ir))
-            
+
         # Analyze Coverage
         coverage = self.coverage_analyzer.analyze_coverage(test_cases, contract)
-        
+
         # Build Metadata
         metadata = {
             "total_test_cases": len(test_cases),
@@ -4478,7 +4478,7 @@ class TestPlanGenerator:
             "boundary_test_cases": sum(1 for tc in test_cases if tc["test_category"] == "boundary"),
             "constraint_coverage": coverage["summary"]
         }
-        
+
         # Final Test Plan
         test_plan = {
             "provenance": {
@@ -4493,16 +4493,16 @@ class TestPlanGenerator:
             "test_cases": test_cases,
             "constraint_coverage_map": coverage["coverage_map"]
         }
-        
+
         # Save artifacts
         plan_path = os.path.join(os.path.dirname(contract_path), "test_plan.json")
         with open(plan_path, 'w') as f:
             json.dump(test_plan, f, indent=2)
-            
+
         coverage_path = os.path.join(os.path.dirname(contract_path), "test_coverage.json")
         with open(coverage_path, 'w') as f:
             json.dump(coverage, f, indent=2)
-            
+
         return test_plan
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4521,7 +4521,7 @@ class InputInstantiator:
     """
     Transforms JSON-based values into ctypes instances for FFI calls.
     """
-    
+
     PRIMITIVE_MAP: Dict[str, Any] = {
         "primitive:int8": ctypes.c_int8,
         "primitive:int16": ctypes.c_int16,
@@ -4541,21 +4541,21 @@ class InputInstantiator:
     def __init__(self, lib_name: str):
         self.lib_name = lib_name
         self.structs_module = None
-        
+
         # Add adapters dir to path for imports
         adapters_path = os.path.abspath("adapters")
         if adapters_path not in sys.path:
             sys.path.append(adapters_path)
-            
+
         try:
             self.structs_module = __import__(f"{lib_name}_structs")
         except ImportError:
             pass
 
     def instantiate(self, spec: Dict[str, Any]) -> Any:
-                t_id = spec["type"]
+        t_id = spec["type"]
         val = spec.get("value")
-        
+
         if val is None:
             return None
 
@@ -4571,18 +4571,18 @@ class InputInstantiator:
         # Handle Pointers
         if t_id.startswith("pointer:"):
             base_type = t_id.replace("pointer:", "")
-            
+
             # String special case
             if base_type == "primitive:char" and isinstance(val, str):
                 return ctypes.c_char_p(val.encode('ascii'))
-            
+
             # Buffer special case
             if isinstance(val, list):
                 # Currently only supporting uint8 buffers in test plans
                 arr_type = ctypes.c_uint8 * len(val)
                 arr = arr_type(*val)
                 return ctypes.cast(arr, ctypes.POINTER(ctypes.c_uint8))
-                
+
             # Struct Pointer
             if base_type.startswith("struct:"):
                 struct_name = base_type.split(":")[-1]
@@ -4599,8 +4599,8 @@ class InputInstantiator:
     def instantiate_struct(self, name: str, value_dict: Dict[str, Any]) -> Any:
         """Instantiates a ctypes Structure from a dictionary."""
         if not self.structs_module:
-             raise ImportError(f"Could not load structs module for {self.lib_name}")
-             
+            raise ImportError(f"Could not load structs module for {self.lib_name}")
+
         struct_class = getattr(self.structs_module, name)
         return struct_class(**value_dict)
 
@@ -4621,11 +4621,11 @@ class OutcomeValidator:
             if act_type == "success":
                 # For v1.0, we don't strictly validate return values unless specified
                 return True, ""
-            elif act_type == "exception":
-                return False, f"Expected success, but got exception: {actual.get('exception_type')}"
-            elif act_type == "crash":
-                 return False, f"Expected success, but native library crashed"
-            
+        elif act_type == "exception":
+            return False, f"Expected success, but got exception: {actual.get('exception_type')}"
+        elif act_type == "crash":
+            return False, f"Expected success, but native library crashed"
+
         elif exp_type == "exception":
             if act_type == "exception":
                 # Validate exception type
@@ -4633,17 +4633,17 @@ class OutcomeValidator:
                 act_exc = actual.get("exception_type")
                 if exp_exc and exp_exc != act_exc:
                     return False, f"Expected exception {exp_exc}, but got {act_exc}"
-                
+
                                 exp_cid = expected.get("constraint_id")
                 act_cid = actual.get("constraint_id")
                 if exp_cid and exp_cid != act_cid:
                     return False, f"Expected violation of {exp_cid}, but got {act_cid}"
-                
+
                 return True, ""
-            elif act_type == "success":
-                return False, "Expected contract violation exception, but function succeeded"
-            elif act_type == "crash":
-                 return False, "Expected contract violation exception, but native library crashed"
+        elif act_type == "success":
+            return False, "Expected contract violation exception, but function succeeded"
+        elif act_type == "crash":
+            return False, "Expected contract violation exception, but native library crashed"
 
         return False, f"Unknown outcome state: expected {exp_type}, got {act_type}"
 
@@ -4651,7 +4651,7 @@ class CrashDetector:
     """
     Spawns and monitors test execution subprocesses.
     """
-    
+
     # Windows Exception Codes
     WINDOWS_EXCEPTIONS = {
         0xC0000005: "access_violation",
@@ -4662,7 +4662,7 @@ class CrashDetector:
         0xC0000409: "stack_buffer_overrun",
         0x80000003: "breakpoint",
     }
-    
+
     # Linux Signals
     LINUX_SIGNALS = {
         4: "illegal_instruction",   # SIGILL
@@ -4678,7 +4678,7 @@ class CrashDetector:
         """
         lib_name = os.path.splitext(os.path.basename(context.native_library.library_path))[0]
         adapter_module_name = f"{lib_name}_adapter"
-        
+
         # Prepare command
         cmd = [
             sys.executable,
@@ -4687,7 +4687,7 @@ class CrashDetector:
             lib_name,
             adapter_module_name
         ]
-        
+
         start_time = time.time()
         try:
             # We use subprocess.run with a timeout
@@ -4699,9 +4699,9 @@ class CrashDetector:
                 timeout=timeout,
                 check=False
             )
-            
+
             duration_ms = (time.time() - start_time) * 1000
-            
+
             # 1. Check for Crash (Non-zero exit code usually, or specific codes)
             if proc.returncode != 0:
                 crash_info = self._analyze_termination(proc.returncode, proc.stderr)
@@ -4722,7 +4722,7 @@ class CrashDetector:
                 try:
                     res_json = stdout.split("---RESULT_START---")[1].split("---RESULT_END---")[0].strip()
                     actual_outcome = json.loads(res_json)
-                    
+
                     # Promote Access Violation OSErrors (Windows feature) to Crash
                     if actual_outcome.get("type") == "exception" and "access violation" in actual_outcome.get("exception_message", "").lower():
                         crash_info = {
@@ -4738,7 +4738,7 @@ class CrashDetector:
                             "actual_outcome": {"type": "crash", "crash_type": "access_violation"},
                             "duration_ms": duration_ms
                         }
-                        
+
                     return {
                         "status": "completed",
                         "actual_outcome": actual_outcome,
@@ -4746,8 +4746,8 @@ class CrashDetector:
                         "stdout": stdout,
                         "stderr": proc.stderr
                     }
-                except Exception as e:
-                    return {
+            except Exception as e:
+                return {
                         "status": "error",
                         "failure_reason": f"Failed to parse subprocess output: {str(e)}",
                         "stdout": stdout
@@ -4779,7 +4779,7 @@ class CrashDetector:
         """
         # Handle unsigned Windows exit codes (which Python might see as signed)
         unsigned_code = exit_code & 0xFFFFFFFF
-        
+
         crash_type = "unknown"
         if os.name == 'nt':
             crash_type = self.WINDOWS_EXCEPTIONS.get(unsigned_code, "unknown")
@@ -4787,7 +4787,7 @@ class CrashDetector:
             # On Linux, exit code is usually signal + 128 or just signal
             if exit_code < 0:
                 crash_type = self.LINUX_SIGNALS.get(abs(exit_code), "unknown")
-        
+
         if crash_type != "unknown" or unsigned_code in self.WINDOWS_EXCEPTIONS:
             return {
                 "crash_type": crash_type,
@@ -4795,10 +4795,10 @@ class CrashDetector:
                 "exception_code": hex(unsigned_code) if os.name == 'nt' else None,
                 "signal": abs(exit_code) if os.name != 'nt' and exit_code < 0 else None
             }
-        
+
         if "Segmentation fault" in stderr or "SIGSEGV" in stderr:
             return {"crash_type": "segmentation_fault", "exit_code": exit_code}
-        
+
         return None
 
 class ExecutionLogger:
@@ -4812,7 +4812,7 @@ class ExecutionLogger:
         """
         passed = sum(1 for r in results if r["status"] == "passed")
         failed = len(results) - passed
-        
+
         constraints_verified = set()
         for r in results:
             if r["status"] == "passed" and r["test_category"] == "negative":
@@ -4862,7 +4862,7 @@ class ExecutionSummaryGenerator:
         Generates the text summary report.
         """
         summary = log["execution_summary"]
-        
+
         lines = [
             "================================================================",
             "FFI Contract Verification Execution Summary",
@@ -4889,7 +4889,7 @@ class ExecutionSummaryGenerator:
             lines.append(line)
             if result["status"] == "failed":
                 lines.append(f"  Reason: {result.get('failure_reason', 'Unknown error')}")
-                
+
         lines.append("================================================================")
         return "\n".join(lines)
 
@@ -4911,28 +4911,28 @@ class VerificationExecutor:
         plan_path = os.path.join(os.path.dirname(context.artifacts.contract_path), "test_plan.json")
         if not os.path.exists(plan_path):
             raise FileNotFoundError(f"Test plan missing: {plan_path}. Run 'generate-tests' first.")
-            
+
         with open(plan_path, 'r') as f:
             test_plan = json.load(f)
-            
+
         # 2. Setup Components
         detector = CrashDetector()
         validator = OutcomeValidator()
         logger = ExecutionLogger()
         summary_gen = ExecutionSummaryGenerator()
-        
+
         test_results = []
         artifacts_dir = os.path.dirname(context.artifacts.contract_path)
-        
+
         # 3. Execute Tests (Serial)
         for test_case in test_plan.get("test_cases", []):
             start_ts = time.time()
-            
+
             # Use CrashDetector to run safely in subprocess
             result = detector.execute_test(test_case, context, timeout=context.verification_config.per_test_timeout_seconds)
-            
+
             end_ts = time.time()
-            
+
             # Map result to execution log format
             log_entry = {
                 "test_id": test_case["test_id"],
@@ -4944,7 +4944,7 @@ class VerificationExecutor:
                 "constraints_exercised": test_case.get("constraints_exercised", []),
                 "expected_outcome": test_case["expected_outcome"]
             }
-            
+
             if result["status"] == "crashed":
                 log_entry["status"] = "failed"
                 log_entry["crash_detected"] = True
@@ -4952,41 +4952,41 @@ class VerificationExecutor:
                 log_entry["actual_outcome"] = result["actual_outcome"]
                 log_entry["failure_reason"] = f"Native crash detected: {result['crash_info']['crash_type']}"
                 log_entry["violation_detected"] = False
-            
-            elif result["status"] == "completed":
-                actual_outcome = result["actual_outcome"]
+
+        elif result["status"] == "completed":
+            actual_outcome = result["actual_outcome"]
                 success, reason = validator.validate(test_case["expected_outcome"], actual_outcome)
-                
+
                 log_entry["status"] = "passed" if success else "failed"
                 log_entry["actual_outcome"] = actual_outcome
                 if not success:
                     log_entry["failure_reason"] = reason
-            
-            elif result["status"] == "timeout":
-                log_entry["status"] = "failed"
+
+        elif result["status"] == "timeout":
+            log_entry["status"] = "failed"
                 log_entry["failure_reason"] = result["failure_reason"]
                 log_entry["actual_outcome"] = {"type": "timeout"}
-            
-            else:
-                log_entry["status"] = "failed"
+
+        else:
+            log_entry["status"] = "failed"
                 log_entry["failure_reason"] = result.get("failure_reason", "Unknown execution error")
                 log_entry["actual_outcome"] = {"type": "error"}
 
             test_results.append(log_entry)
-            
+
         # 4. Finalize
         log = logger.build_log(context, test_results, test_plan)
-        
+
         # 5. Save Artifacts
         log_path = os.path.join(artifacts_dir, "execution_log.json")
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(log, f, indent=2)
-            
+
         summary = summary_gen.generate(log)
         summary_path = os.path.join(artifacts_dir, "execution_summary.txt")
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(summary)
-            
+
         return log
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -5011,15 +5011,15 @@ def run_test(test_case_json: str, lib_name: str, adapter_module_name: str):
     """
     try:
         from polyglot_ffi_verifier.execution import InputInstantiator
-        
+
         test_case = json.loads(test_case_json)
-        
+
         # Add adapters to path (assumed to be in working directory / adapters)
         # In a real package, adapters might be installed, but here we assume local generation.
         adapters_dir = os.path.abspath("adapters")
         if adapters_dir not in sys.path:
             sys.path.append(adapters_dir)
-            
+
         # Load adapter
         try:
             adapter_module = importlib.import_module(adapter_module_name)
@@ -5027,19 +5027,19 @@ def run_test(test_case_json: str, lib_name: str, adapter_module_name: str):
             # Fallback for when current directory is not in sys.path correctly
             sys.path.append(os.getcwd())
             adapter_module = importlib.import_module(adapter_module_name)
-        
+
         # Initialize instantiator
         instantiator = InputInstantiator(lib_name)
-        
+
         # Instantiate inputs
         kwargs = {}
         for p_name, p_spec in test_case["inputs"].items():
             kwargs[p_name] = instantiator.instantiate(p_spec)
-            
+
         # Get function
         func_name = test_case["function_name"]
         func = getattr(adapter_module, func_name)
-        
+
         # Execute
         actual_outcome: Dict[str, Any] = {"type": "success"}
         try:
@@ -5052,14 +5052,14 @@ def run_test(test_case_json: str, lib_name: str, adapter_module_name: str):
                 "exception_message": str(e),
                 "constraint_id": getattr(e, "constraint_id", None)
             }
-            
+
         # Print result
         print("---RESULT_START---")
         print(json.dumps(actual_outcome))
         print("---RESULT_END---")
-        
-    except Exception as e:
-        error_info = {
+
+except Exception as e:
+    error_info = {
             "type": "error",
             "message": str(e),
             "traceback": traceback.format_exc()
@@ -5073,10 +5073,10 @@ if __name__ == "__main__":
     if len(sys.argv) < 4:
         # Check if we are testing imports
         if len(sys.argv) == 1:
-             print("Subprocess runner ready.")
-             sys.exit(0)
+            print("Subprocess runner ready.")
+            sys.exit(0)
         sys.exit(2)
-    
+
     run_test(sys.argv[1], sys.argv[2], sys.argv[3])
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -5100,7 +5100,7 @@ class CrashAnalyzer:
         Creates a detailed analysis of the crash.
         """
         c_type = crash_info.get("crash_type", "unknown")
-        
+
         analysis = {
             "is_exploitable": False,
             "severity": "medium",
@@ -5115,8 +5115,8 @@ class CrashAnalyzer:
                 exp = test_case["expected_outcome"]
                 if exp.get("exception_type") == "BufferSizeViolation":
                     analysis["likely_cause"] = "Confirmed Buffer Overflow. Native code crashed instead of being stopped by adapter."
-                elif exp.get("exception_type") == "NullPointerViolation":
-                    analysis["likely_cause"] = "Confirmed Null Dereference. Native code crashed instead of being stopped by adapter."
+            elif exp.get("exception_type") == "NullPointerViolation":
+                analysis["likely_cause"] = "Confirmed Null Dereference. Native code crashed instead of being stopped by adapter."
 
         elif c_type == "stack_overflow":
             analysis["severity"] = "high"
@@ -5163,13 +5163,13 @@ class CrashReportGenerator:
         """Saves the report to the crashes directory."""
         crashes_dir = os.path.join(artifacts_dir, "crashes")
         os.makedirs(crashes_dir, exist_ok=True)
-        
+
         filename = f"crash_{report['provenance']['test_id']}_{int(datetime.now().timestamp())}.json"
         filepath = os.path.join(crashes_dir, filename)
-        
+
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
-            
+
         return filepath
 
 class FailureClassifier:
@@ -5193,10 +5193,10 @@ class FailureClassifier:
         status = test_result.get("status", "unknown")
         actual_outcome = test_result.get("actual_outcome", {})
         expected_outcome = test_result.get("expected_outcome", {})
-        
+
         failure_mode = "unknown"
         category = "unknown"
-        
+
         if test_result.get("crash_detected"):
             failure_mode = "crash"
             crash_type = test_result.get("crash_info", {}).get("crash_type", "unknown")
@@ -5209,8 +5209,8 @@ class FailureClassifier:
             # Analyze if it's the RIGHT exception
             if actual_outcome.get("exception_type") == expected_outcome.get("exception_type"):
                 category = "expectation_mismatch"
-            else:
-                category = "unhandled_exception"
+        else:
+            category = "unhandled_exception"
         elif actual_outcome.get("type") == "success":
             failure_mode = "missing_enforcement"
             category = "missing_validation"
@@ -5221,15 +5221,15 @@ class FailureClassifier:
             constraint_id = constraints_exercised[0] 
                 constraint_type = "unknown"
         if contract and "function_contracts" in contract:
-             # Assuming standard contract structure here
-             for fc in contract["function_contracts"]:
-                 if fc["function_name"] == test_result.get("function_name"):
-                     # Check pre/post
-                     for c in fc.get("pre_conditions", []) + fc.get("post_conditions", []):
-                         if c.get("constraint_id") == constraint_id:
-                             constraint_type = c.get("constraint_type", "unknown")
-                             break
-                     if constraint_type != "unknown": break
+            # Assuming standard contract structure here
+            for fc in contract["function_contracts"]:
+                if fc["function_name"] == test_result.get("function_name"):
+                    # Check pre/post
+                    for c in fc.get("pre_conditions", []) + fc.get("post_conditions", []):
+                        if c.get("constraint_id") == constraint_id:
+                            constraint_type = c.get("constraint_type", "unknown")
+                            break
+                    if constraint_type != "unknown": break
 
         severity = self.SEVERITY_MAP.get(constraint_type, "medium")
         if failure_mode == "crash":
@@ -5275,14 +5275,14 @@ class RootCauseAnalyzer:
         """
         f_mode = failure_info.get("failure_mode")
         c_type = failure_info.get("constraint_type")
-        
+
         root_cause = "Unknown"
         explanation = "Insufficient data to determine root cause."
 
         if f_mode == "crash":
             root_cause = "Adapter Missing Enforcement"
             explanation = f"Native library crashed on a {c_type} violation because the adapter failed to interpose and reject the invalid input."
-        
+
         elif f_mode == "missing_enforcement":
             root_cause = "Adapter Missing Pre-call Check"
             explanation = f"The test expected a {c_type} violation to be caught by the adapter, but the call was allowed to proceed to native code."
@@ -5312,7 +5312,7 @@ class RemediationGenerator:
         c_type = failure_info.get("constraint_type")
         f_name = test_result.get("function_name")
         c_id = failure_info.get("constraint_id")
-        
+
         short_desc = f"Fix {c_type} validation in {f_name} adapter"
         steps = []
 
@@ -5354,7 +5354,7 @@ class ViolationAggregator:
         Groups violations by constraint_id.
         """
         groups: Dict[str, Any] = {}
-        
+
         for v in violations:
             cid = v.get("constraint_id", "unknown")
             if cid not in groups:
@@ -5372,21 +5372,21 @@ class ViolationAggregator:
                     "test_count": 0,
                     "failure_mode": v.get("failure_mode")
                 }
-            
+
             groups[cid]["affected_tests"].append(v.get("test_id"))
             groups[cid]["test_count"] += 1
-            
+
             # Upgrade severity if any member is higher
             if v.get("severity") == "critical":
                 groups[cid]["severity"] = "critical"
-            elif v.get("severity") == "high" and groups[cid]["severity"] != "critical":
-                groups[cid]["severity"] = "high"
+        elif v.get("severity") == "high" and groups[cid]["severity"] != "critical":
+            groups[cid]["severity"] = "high"
 
         # Convert back to sorted list
         sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         result = list(groups.values())
         result.sort(key=lambda x: (sev_rank.get(x["severity"], 9), -x["test_count"]))
-        
+
         return result
 
 class DiagnosticReportGenerator:
@@ -5415,7 +5415,7 @@ class DiagnosticReportGenerator:
         """
         stats = report_json["summary"]
         violations = report_json["violations"]
-        
+
         lines = []
         lines.append("="*64)
         lines.append("FFI Contract Verification - Violation Summary")
@@ -5423,13 +5423,13 @@ class DiagnosticReportGenerator:
         lines.append(f"Execution ID: {report_json['provenance']['execution_id']}")
         lines.append(f"Pass Rate: {stats.get('pass_rate', 0):.1f}%")
         lines.append("")
-        
+
         lines.append("VIOLATIONS BY SEVERITY")
         lines.append(f"  Critical: {stats.get('severity_counts', {}).get('critical', 0)}")
         lines.append(f"  High:     {stats.get('severity_counts', {}).get('high', 0)}")
         lines.append(f"  Total:    {len(violations)} Aggregated Issues")
         lines.append("")
-        
+
         if not violations:
             lines.append("✓ NO CONTRACT VIOLATIONS DETECTED")
         else:
@@ -5463,13 +5463,13 @@ class DiagnosticMapper:
         artifacts_dir = os.path.dirname(context.artifacts.contract_path)
         log_path = os.path.join(artifacts_dir, "execution_log.json")
         contract_path = context.artifacts.contract_path
-        
+
         if not os.path.exists(log_path):
             raise FileNotFoundError(f"Execution log missing: {log_path}. Run 'execute' first.")
-            
+
         with open(log_path, 'r', encoding='utf-8') as f:
             execution_log = json.load(f)
-            
+
         with open(contract_path, 'r', encoding='utf-8') as f:
             contract = json.load(f)
 
@@ -5481,21 +5481,21 @@ class DiagnosticMapper:
         report_gen = DiagnosticReportGenerator()
 
         raw_violations = []
-        
+
         # 3. Process Execution Results
         for result in execution_log.get("test_results", []):
             if result.get("status") == "passed":
                 continue
-            
+
             # Classify
             failure_info = classifier.classify_failure(result, contract)
-            
+
             # Analyze
             cause_info = analyzer.analyze(failure_info, result, contract)
-            
+
             # Remediate
             remediation = remediation_gen.generate(failure_info, result)
-            
+
             # Build raw violation record
             violation = {
                 "test_id": result["test_id"],
@@ -5509,11 +5509,11 @@ class DiagnosticMapper:
 
         # 4. Aggregate
         aggregated = aggregator.aggregate(raw_violations)
-        
+
         # 5. Compute Stats
         total_tests = len(execution_log.get("test_results", []))
         passed_tests = sum(1 for r in execution_log.get("test_results", []) if r.get("status") == "passed")
-        
+
         stats = {
             "total_violations": len(raw_violations),
             "aggregated_violations": len(aggregated),
@@ -5529,7 +5529,7 @@ class DiagnosticMapper:
         diag_path = os.path.join(artifacts_dir, "diagnostics.json")
         with open(diag_path, 'w', encoding='utf-8') as f:
             json.dump(report_json, f, indent=2)
-            
+
         summary_path = os.path.join(artifacts_dir, "violation_summary.txt")
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(summary_text)
@@ -5759,12 +5759,12 @@ class HtmlReportGenerator:
         """
         summary = diagnostics.get("summary", {})
         violations = diagnostics.get("violations", [])
-        
+
         # Split violations by severity
         critical = [v for v in violations if v.get("severity") == "critical"]
         high = [v for v in violations if v.get("severity") == "high"]
         other = [v for v in violations if v.get("severity") not in ["critical", "high"]]
-        
+
         html_parts = [
             '<!DOCTYPE html>',
             '<html lang="en">',
@@ -5785,7 +5785,7 @@ class HtmlReportGenerator:
             '</body>',
             '</html>'
         ]
-        
+
         return "\n".join(html_parts)
 
     def _generate_head(self) -> str:
@@ -5801,15 +5801,15 @@ class HtmlReportGenerator:
     def _generate_header(self, context: Any, summary: Dict[str, Any]) -> str:
         status = "PASSED" if summary.get("severity_counts", {}).get("critical", 0) == 0 else "FAILED"
         status_class = "status-passed" if status == "PASSED" else "status-failed"
-        
+
         lib_name = context.native_library.library_path
         # Defensive timestamp parsing
         ts = context.provenance.creation_timestamp
         try:
-             timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = datetime.fromisoformat(ts.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
         except:
-             timestamp = ts
-        
+            timestamp = ts
+
         return f"""
 <header>
     <h1>FFI Contract Verification Report</h1>
@@ -5825,7 +5825,7 @@ class HtmlReportGenerator:
     def _generate_executive_summary(self, summary: Dict[str, Any], violations: List[Dict[str, Any]]) -> str:
         sev = summary.get("severity_counts", {})
         pass_rate = summary.get("pass_rate", 0)
-        
+
         status_text = "Verification FAILED" if sev.get("critical", 0) > 0 else "Verification PASSED"
         recommendation = "Do not deploy until critical violations are resolved." if sev.get("critical", 0) > 0 else "Library meets contract safety constraints."
 
@@ -5865,7 +5865,7 @@ class HtmlReportGenerator:
         failed = total - passed
         rate = (passed / total * 100) if total > 0 else 0
         rate_class = "pass-rate-excellent" if rate > 95 else ("pass-rate-fair" if rate > 80 else "pass-rate-poor")
-        
+
         return f"""
 <section class="test-results">
     <h2>Test Results</h2>
@@ -5914,7 +5914,7 @@ class HtmlReportGenerator:
         affected_tests = ", ".join(v.get("affected_tests", []))
         rem = v.get("remediation", {})
         steps = "".join([f"<li>{s}</li>" for s in rem.get("detailed_steps", [])])
-        
+
         return f"""
 <div class="violation-card">
     <div class="violation-header">
@@ -5922,24 +5922,24 @@ class HtmlReportGenerator:
         <h3>{v.get('category', 'Violation')} in {v.get('function_name', 'native code')}</h3>
         <span class="violation-id">{v.get('violation_id', 'v')}</span>
     </div>
-    
+
     <div class="violation-details">
         <p><strong>Constraint:</strong> {v.get('constraint_id', 'N/A')}</p>
         <p><strong>Affected Tests:</strong> {len(v.get('affected_tests', []))} failures ({affected_tests})</p>
     </div>
-    
+
     <div class="violation-description">
         <h4>Description</h4>
         <p>{v.get('description', 'No description available.')}</p>
         <p><strong>Root Cause:</strong> {v.get('explanation', v.get('root_cause', 'Undetermined'))}</p>
     </div>
-    
+
     <div class="violation-impact">
         <h4>Impact</h4>
         <p class="{impact_class}">{v.get('impact', 'Potential instability.')}</p>
         <p><strong>Exploitability:</strong> {v.get('exploitability', 'Unknown')}</p>
     </div>
-    
+
     <div class="violation-remediation">
         <h4>Remediation</h4>
         <p><strong>{rem.get('short_description', 'No remediation provided.')}</strong></p>
@@ -5952,15 +5952,15 @@ class HtmlReportGenerator:
         violated_cids = {v.get("constraint_id") for v in violations}
         all_constraints = []
         if "function_contracts" in contract:
-             for f in contract["function_contracts"]:
-                 # check both pre and post
-                 for c in f.get("pre_conditions", []) + f.get("post_conditions", []):
-                     all_constraints.append(c.get("constraint_id"))
+            for f in contract["function_contracts"]:
+                # check both pre and post
+                for c in f.get("pre_conditions", []) + f.get("post_conditions", []):
+                    all_constraints.append(c.get("constraint_id"))
 
         verified = [cid for cid in all_constraints if cid not in violated_cids]
         if not verified: return ""
         list_items = "".join([f"<li>✓ {cid}</li>" for cid in verified])
-        
+
         return f"""
 <section class="verified-constraints">
     <h2>Verified Constraints</h2>
@@ -5974,7 +5974,7 @@ class HtmlReportGenerator:
     def _generate_recommendations(self, violations: List[Dict[str, Any]]) -> str:
         critical_v = [v for v in violations if v.get("severity") == "critical"]
         high_v = [v for v in violations if v.get("severity") == "high"]
-        
+
         if not critical_v and not high_v:
             return f"""
 <section class="recommendations">
@@ -6006,7 +6006,7 @@ class HtmlReportGenerator:
             "runtime": context.target_runtime.language_name
         }
         ctx_json = json.dumps(ctx_data, indent=2)
-        
+
         contract_stats = json.dumps({
             "total_functions": len(contract.get("function_contracts", [])),
             "contract_hash": contract.get("provenance", {}).get("contract_hash", "N/A")
@@ -6042,12 +6042,12 @@ class MarkdownReportGenerator:
     def generate(self, diagnostics: Dict[str, Any], execution_log: Dict[str, Any], contract: Dict[str, Any], context: Any) -> str:
         summary = diagnostics.get("summary", {})
         violations = diagnostics.get("violations", [])
-        
+
         try:
-             timestamp = datetime.fromisoformat(context.provenance.creation_timestamp.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = datetime.fromisoformat(context.provenance.creation_timestamp.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
         except:
-             timestamp = context.provenance.creation_timestamp
-             
+            timestamp = context.provenance.creation_timestamp
+
         status_icon = "❌" if summary.get("severity_counts", {}).get("critical", 0) > 0 else "✅"
         status_text = "FAILED" if summary.get("severity_counts", {}).get("critical", 0) > 0 else "PASSED"
 
@@ -6089,7 +6089,7 @@ class MarkdownReportGenerator:
             md.append("            md.append("")
             # Sort critical first
             sorted_violations = sorted(violations, key=lambda x: {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(x.get("severity"), 9))
-            
+
             for v in sorted_violations:
                 md.append(f"### [{v.get('violation_id', 'v')}] {v.get('category')} in `{v.get('function_name')}()`")
                 md.append("")
@@ -6131,18 +6131,18 @@ class CISummaryGenerator:
         """
         summary = diagnostics.get("summary", {})
         violations = diagnostics.get("violations", [])
-        
+
         test_results = execution_log.get("test_results", [])
         passed_count = sum(1 for r in test_results if r.get("status") == "passed")
         failed_count = len(test_results) - passed_count
-        
+
         has_critical = summary.get("severity_counts", {}).get("critical", 0) > 0
         status = "failed" if has_critical else "passed"
         exit_code = 1 if has_critical else 0
-        
+
         badge = self._generate_status_badge(status, summary)
         blocking_issues = self._extract_blocking_issues(violations)
-        
+
         return {
             "provenance": {
                 "producing_phase": "1: Report Generation",
@@ -6174,14 +6174,14 @@ class CISummaryGenerator:
 
     def _generate_status_badge(self, status: str, summary: Dict[str, Any]) -> Dict[str, str]:
         critical = summary.get("severity_counts", {}).get("critical", 0)
-        
+
         if status == "failed":
             message = f"FAILED ({critical} critical)"
             color = "red"
         else:
             message = "PASSED"
             color = "green"
-            
+
         return {
             "label": "FFI Verification",
             "message": message,
@@ -6235,7 +6235,7 @@ class ReportGenerator:
     """
     Orchestrates the generation of FFI verification reports in multiple formats.
     """
-    
+
     def __init__(self):
         self.html_gen = HtmlReportGenerator()
         self.md_gen = MarkdownReportGenerator()
@@ -6248,11 +6248,11 @@ class ReportGenerator:
         """
         # 1. Load Artifacts
         artifacts = self._load_artifacts(context)
-        
+
         # 2. Setup output directory
         reports_dir = os.path.join(context.artifacts.working_directory, "reports")
         os.makedirs(reports_dir, exist_ok=True)
-        
+
         # 3. Generate content
         html_content = self.html_gen.generate(
             artifacts["diagnostics"], 
@@ -6260,33 +6260,33 @@ class ReportGenerator:
             artifacts["contract"], 
             context
         )
-        
+
         md_content = self.md_gen.generate(
             artifacts["diagnostics"], 
             artifacts["execution_log"], 
             artifacts["contract"], 
             context
         )
-        
+
         ci_summary = self.ci_gen.generate(
             artifacts["diagnostics"], 
             artifacts["execution_log"], 
             context
         )
-        
+
         # 4. Save files
         html_path = os.path.join(reports_dir, "verification_report.html")
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
-            
+
         md_path = os.path.join(reports_dir, "verification_report.md")
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write(md_content)
-            
+
         ci_path = os.path.join(reports_dir, "ci_summary.json")
         with open(ci_path, 'w', encoding='utf-8') as f:
             json.dump(ci_summary, f, indent=2)
-            
+
         # 5. Metadata
         report_map = {
             "html": html_path,
@@ -6294,11 +6294,11 @@ class ReportGenerator:
             "ci_summary": ci_path
         }
         metadata = self.meta_gen.generate(report_map, context)
-        
+
         meta_path = os.path.join(reports_dir, "report_metadata.json")
         with open(meta_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2)
-            
+
         return metadata
 
     def _load_artifacts(self, context: Any) -> Dict[str, Any]:
@@ -6306,40 +6306,40 @@ class ReportGenerator:
         Loads the required artifacts from the artifacts directory.
         """
         artifacts_dir = context.artifacts.working_directory
-        
+
         # 0 Output
         diag_path = context.artifacts.diagnostics_path
         if not os.path.exists(diag_path):
             diag_path = os.path.join(artifacts_dir, "diagnostics.json")
-            
+
         if not os.path.exists(diag_path):
             raise FileNotFoundError(f"Diagnostics artifact missing: {diag_path}. Run 'diagnose' first.")
-            
+
         with open(diag_path, 'r', encoding='utf-8') as f:
             diagnostics = json.load(f)
-            
+
         # Phases 8-9 Output
         log_path = context.artifacts.execution_log_path
         if not os.path.exists(log_path):
             log_path = os.path.join(artifacts_dir, "execution_log.json")
-            
+
         if not os.path.exists(log_path):
             raise FileNotFoundError(f"Execution log missing: {log_path}. Run 'execute' first.")
-            
+
         with open(log_path, 'r', encoding='utf-8') as f:
             execution_log = json.load(f)
-            
+
         #  Output
         contract_path = context.artifacts.contract_path
         if not os.path.exists(contract_path):
             contract_path = os.path.join(artifacts_dir, "contract.json")
-            
+
         if not os.path.exists(contract_path):
-                         raise FileNotFoundError(f"Contract missing: {contract_path}. Run 'synthesize' first.")
-            
+            raise FileNotFoundError(f"Contract missing: {contract_path}. Run 'synthesize' first.")
+
         with open(contract_path, 'r', encoding='utf-8') as f:
             contract = json.load(f)
-            
+
         return {
             "diagnostics": diagnostics,
             "execution_log": execution_log,

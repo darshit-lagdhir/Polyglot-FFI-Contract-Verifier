@@ -4,7 +4,7 @@ PFCV Module 05: IR Normalization
 Transform raw interface artifacts into canonical intermediate representation.
 
 This module provides:
-- Complete IR entity model
+    - Complete IR entity model
 - Type and symbol normalization
 - Validation framework
 - Serialization and caching

@@ -90,7 +90,7 @@ class IREntity:
     Base class for all IR entities.
 
     Every entity has:
-    - Unique identifier (stable across versions)
+        - Unique identifier (stable across versions)
     - Entity kind classification
     - Optional metadata
     """

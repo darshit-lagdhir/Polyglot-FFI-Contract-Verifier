@@ -2,7 +2,7 @@
 Module 06: Contract Schema - Validation Framework
 
 Three-layer validation framework for contracts:
-1. Schema validation (structural correctness)
+    1. Schema validation (structural correctness)
 2. Referential validation (IR entity resolution)
 3. Constraint validation (semantic correctness)
 """
@@ -504,7 +504,7 @@ class ContractValidator:
     Complete multi-layer contract validator.
 
     The ContractValidator orchestrates the three validation layers:
-    1. Schema Layer: Verifies structural integrity against JSON schema.
+        1. Schema Layer: Verifies structural integrity against JSON schema.
     2. Referential Layer: Ensures all symbol identifiers exist in the IR artifact.
     3. Constraint Layer: Checks for logical consistency between constraints.
 

@@ -2,7 +2,7 @@
 Module 06: Contract Schema - Serialization & Persistence
 
 Contract serialization system providing:
-- JSON serialization/deserialization
+    - JSON serialization/deserialization
 - Integrity verification (checksums)
 - Compression support
 - Editoric file operations

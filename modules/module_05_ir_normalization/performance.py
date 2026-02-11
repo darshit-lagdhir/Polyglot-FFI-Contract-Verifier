@@ -131,7 +131,7 @@ class OptimizedTypeDeduplicator:
     Type deduplicator with performance optimizations.
 
     Improvements:
-    - Lightweight cache keys (avoid expensive hash computation)
+        - Lightweight cache keys (avoid expensive hash computation)
     - Pre-computed hashes stored
     - Fast path for common types
     """
@@ -229,7 +229,7 @@ class OptimizedPaddingComputer:
         Compute padding with optimizations.
 
         Optimizations:
-        - Assumes pre-sorted fields (common case)
+            - Assumes pre-sorted fields (common case)
         - Vectorized computation with numpy (if available)
         - Fast path for no-padding case
         """
