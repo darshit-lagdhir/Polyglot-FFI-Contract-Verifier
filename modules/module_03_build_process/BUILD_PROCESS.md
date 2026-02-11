@@ -1,3 +1,4 @@
+# Module 03: Build Process & Toolchain Integration
 
 **Module ID:** 03 of 28  
 **Version:** 1.0.0  
@@ -9,10 +10,12 @@
 ## Table of Contents
 
 1. [Build Philosophy & Core Architecture](#1-build-philosophy-core-architecture)
-2. [Toolchain Detection & Validation](3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
+2. [Toolchain Detection & Validation](#2-toolchain-detection--validation)
+3. [Build Stage Pipeline Infrastructure](#3-build-stage-pipeline-infrastructure)
 4. [Source Enumeration & Dependency Graph](#4-source-enumeration--dependency-graph)
 5. [Dependency Resolution & Package Management](#5-dependency-resolution--package-management)
-6. [Toolchain Validation & Capability Detection](7. [ABI Fidelity Enforcement & Compiler Config](#7-abi-fidelity-enforcement--compiler-configuration)
+6. [Toolchain Validation & Capability Detection](#6-toolchain-validation--capability-detection)
+7. [ABI Fidelity Enforcement & Compiler Config](#7-abi-fidelity-enforcement--compiler-configuration)
 8. [Native Compilation & Object File Generation](#8-native-compilation--object-file-generation)
 9. [Native Validation & Binary Self-Tests](#9-native-validation--binary-self-tests)
 10. [Link-Time Control & Executable Generation](#10-link-time-control--executable-generation)
@@ -35,6 +38,7 @@
 
 ---
 
+## 2. Toolchain Detection & Validation
 
 ...
 
@@ -163,6 +167,7 @@ print(f"Edges: {len(graph_data['edges'])}")
 
 ---
 
+## 2. Toolchain Detection & Validation
 
 ...
 
@@ -218,14 +223,16 @@ Each stage implements a strict contract:
 class BuildStageInterface:
     def check_preconditions(context) -> None:
         # Validate required inputs exist and are valid
-            
+        # Raise BuildPreconditionError if violated
+    
     def execute(context) -> updated_context:
         # Perform stage logic
         # Return updated context with outputs
     
     def validate_postconditions(context) -> None:
         # Validate stage produced required outputs
-        ```
+        # Raise BuildPostconditionError if violated
+```
 
 Violations halt the build immediately with diagnostic information.
 
@@ -269,6 +276,7 @@ orchestrator.execute_build_with_checkpoints(resume_from=BuildStage.DEPENDENCY_RE
 - Resumption validates checkpoint compatibility
 - Stale checkpoints detected via timestamps
 
+### 3.5 Failure Diagnostics
 
 When stages fail, the system generates comprehensive diagnostics:
 
@@ -329,6 +337,7 @@ except BuildError as e:
 
 ---
 
+## 2. Toolchain Detection & Validation
 
 ### 2.1 Introduction
 
@@ -365,6 +374,7 @@ Based on compiler and target, infer:
 - Name mangling scheme (msvc or itanium)
 - Determinism capability
 
+### 2.3 Toolchain Descriptor
 
 Generated descriptor includes:
 - Compiler identity (name, version, executable path, hash)
@@ -448,15 +458,19 @@ strictly isolated.
 **Principle 5: Complete Provenance**
 Every artifact includes metadata documenting how it was produced.
 
+### 1.3 Build Domain Separation
 
+#### Domain 1: Native Verification Tooling
 - Components: ABI observers, runtime controllers, crash handlers
 - Requirements: Exact ABI knowledge, no target dependencies
 - Isolation: Cannot link against verification targets
 
+#### Domain 2: Orchestration & Adapter Tooling
 - Components: Python orchestration, generated wrappers, reporting
 - Requirements: Stable interfaces, target-agnostic
 - Isolation: No compile-time dependencies on targets
 
+#### Domain 3: Verification Targets
 - Components: Native libraries being analyzed
 - Requirements: Described and validated, not built by verifier
 - Isolation: Never influence verifier build
@@ -629,7 +643,9 @@ resolver.install_from_lock(lock_file)
 
 ---
 
+## 6. Toolchain Validation & Capability Detection
 
+### 6.1 Comprehensive Toolchain Validation
 
 Toolchain validation verifies that detected toolchains can build verification
 tooling correctly through:
@@ -638,6 +654,7 @@ tooling correctly through:
 - **Self-tests**: (compile and execute test programs)
 - **Determinism validation**: (reproducible binary outputs)
 
+### 6.2 Toolchain Capabilities
 
 Complete capability model:
 
@@ -702,6 +719,7 @@ Validation results cached to avoid repeated expensive tests:
 # Create validator
 validator = ToolchainValidator(toolchain_descriptor)
 
+# Validate (uses cache if available)
 capabilities = validator.validate()
 
 # Query capabilities
@@ -1816,6 +1834,7 @@ PlatformInfo:
 - Executable permissions
 - Platform-appropriate separators
 
+### 19.4 Toolchain Adaptation
 
 `PlatformToolchainAdapter`: Adds platform-specific compiler flags.
 
@@ -1838,6 +1857,7 @@ PlatformInfo:
 platform_info = PlatformInfo.detect()
 print(f"Platform: {platform_info.os_name}")
 
+# Adapt toolchain
 adapter = PlatformToolchainAdapter(platform_info)
 flags = adapter.get_platform_specific_flags(['-O2'])
 
