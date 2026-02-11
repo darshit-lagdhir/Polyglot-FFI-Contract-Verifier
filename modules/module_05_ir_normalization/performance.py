@@ -293,7 +293,7 @@ class OptimizedPaddingComputer:
             field_size = field.get('type', {}).get('size', 0)
             current_offset = field_offset + field_size
 
-                if total_size > current_offset:
+        if total_size > current_offset:
             trailing_size = total_size - current_offset
             padding_regions.append(
                 PaddingEntity(byte_offset=current_offset, size_bytes=trailing_size, reason="structure end")
