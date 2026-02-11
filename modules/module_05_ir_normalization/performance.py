@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Iterator
 # Optional numpy for vectorization
 try:
     import numpy as np  # type: ignore
+
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
@@ -23,6 +24,7 @@ from .ir_entities import EntityKind, IREntity, PaddingEntity
 # ============================================================================
 # PERFORMANCE PROFILER
 # ============================================================================
+
 
 class PerformanceProfiler:
     """Profiles pipeline performance."""
@@ -45,7 +47,7 @@ class PerformanceProfiler:
     def profile(self, name: str) -> Iterator[None]:
         """
         Profile a code block.
-        
+
         Usage:
             with profiler.profile("operation_name"):
                 # code to profile
@@ -92,11 +94,7 @@ class PerformanceProfiler:
         if not self.timings:
             return "No profiling data collected"
 
-        sorted_timings = sorted(
-            self.timings.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_timings = sorted(self.timings.items(), key=lambda x: x[1], reverse=True)
 
         total_time = sum(self.timings.values())
 
@@ -109,10 +107,7 @@ class PerformanceProfiler:
             avg = duration / calls if calls > 0 else 0
             pct = (duration / total_time) * 100 if total_time > 0 else 0
 
-            lines.append(
-                f"{name:<40} {duration:>10.3f}s {calls:>8}  "
-                f"{avg:>10.3f}s {pct:>6.1f}%"
-            )
+            lines.append(f"{name:<40} {duration:>10.3f}s {calls:>8}  {avg:>10.3f}s {pct:>6.1f}%")
 
         if len(sorted_timings) > 20:
             lines.append(f"\n... and {len(sorted_timings) - 20} more operations")
@@ -125,14 +120,16 @@ class PerformanceProfiler:
         self.call_counts.clear()
         self.stack.clear()
 
+
 # ============================================================================
 # OPTIMIZED TYPE DEDUPLICATOR
 # ============================================================================
 
+
 class OptimizedTypeDeduplicator:
     """
     Type deduplicator with performance optimizations.
-    
+
     Improvements:
     - Lightweight cache keys (avoid expensive hash computation)
     - Pre-computed hashes stored
@@ -140,13 +137,10 @@ class OptimizedTypeDeduplicator:
     """
 
     def __init__(self) -> None:
-        self.type_cache: Dict[str, str] = {} # fast_key -> entity_id
-        self.hash_cache: Dict[str, str] = {} # fast_key -> struct_hash
+        self.type_cache: Dict[str, str] = {}  # fast_key -> entity_id
+        self.hash_cache: Dict[str, str] = {}  # fast_key -> struct_hash
 
-    def get_or_create_type_id(
-        self,
-        type_data: Dict[str, Any]
-    ) -> str:
+    def get_or_create_type_id(self, type_data: Dict[str, Any]) -> str:
         """Get entity ID with optimized lookup."""
         # Fast cache key (lighter than full hash)
         cache_key = self._make_fast_cache_key(type_data)
@@ -159,7 +153,8 @@ class OptimizedTypeDeduplicator:
 
         # Generate entity ID
         # Important: In a real system we'd determine the correct EntityKind
-        # For optimization purposes, we use a generic TYPE_SYMBOL or similar if appropriate,
+        # For optimization purposes, we use a generic TYPE_SYMBOL or similar if
+        # appropriate,
         entity_id = IREntity.generate_id(EntityKind.TYPE_SYMBOL, struct_hash)
 
         # Cache both keys
@@ -171,20 +166,20 @@ class OptimizedTypeDeduplicator:
     def _make_fast_cache_key(self, type_data: Dict[str, Any]) -> str:
         """Create lightweight cache key."""
         # Use tuple of key properties (fast, hashable)
-        kind = type_data.get('kind', '')
-        size = type_data.get('size', 0)
-        name = type_data.get('name', '')
+        kind = type_data.get("kind", "")
+        size = type_data.get("size", 0)
+        name = type_data.get("name", "")
 
         # Build key recursively for nested types
-        if kind == 'pointer':
-            pointee_key = self._make_fast_cache_key(type_data.get('pointee', {}))
+        if kind == "pointer":
+            pointee_key = self._make_fast_cache_key(type_data.get("pointee", {}))
             return f"ptr:{pointee_key}"
-        elif kind == 'array':
-            element_key = self._make_fast_cache_key(type_data.get('element_type', {}))
-            count = type_data.get('element_count', 'incomplete')
+        elif kind == "array":
+            element_key = self._make_fast_cache_key(type_data.get("element_type", {}))
+            count = type_data.get("element_count", "incomplete")
             return f"arr:{element_key}:{count}"
-        elif kind == 'scalar':
-            signed = type_data.get('is_signed', False)
+        elif kind == "scalar":
+            signed = type_data.get("is_signed", False)
             return f"scalar:{name}:{size}:{signed}"
         else:
             return f"{kind}:{name}:{size}"
@@ -202,37 +197,37 @@ class OptimizedTypeDeduplicator:
         normalized = {}
 
         # Include only structural properties
-        for key in ['kind', 'size', 'alignment']:
+        for key in ["kind", "size", "alignment"]:
             if key in type_data:
                 normalized[key] = type_data[key]
 
         # Handle nested types
-        if 'pointee' in type_data:
-            normalized['pointee'] = self._normalize_for_hash(type_data['pointee'])
+        if "pointee" in type_data:
+            normalized["pointee"] = self._normalize_for_hash(type_data["pointee"])
 
-        if 'element_type' in type_data:
-            normalized['element_type'] = self._normalize_for_hash(type_data['element_type'])
+        if "element_type" in type_data:
+            normalized["element_type"] = self._normalize_for_hash(type_data["element_type"])
 
-        if 'is_signed' in type_data:
-            normalized['is_signed'] = type_data['is_signed']
+        if "is_signed" in type_data:
+            normalized["is_signed"] = type_data["is_signed"]
 
         return normalized
+
 
 # ============================================================================
 # OPTIMIZED PADDING COMPUTATION
 # ============================================================================
 
+
 class OptimizedPaddingComputer:
     """Optimized structure padding computation."""
 
     def compute_padding(
-        self,
-        fields_data: List[Dict[str, Any]],
-        total_size: int
+        self, fields_data: List[Dict[str, Any]], total_size: int
     ) -> List[PaddingEntity]:
         """
         Compute padding with optimizations.
-        
+
         Optimizations:
         - Assumes pre-sorted fields (common case)
         - Vectorized computation with numpy (if available)
@@ -240,7 +235,9 @@ class OptimizedPaddingComputer:
         """
         if not fields_data:
             if total_size > 0:
-                return [PaddingEntity(byte_offset=0, size_bytes=total_size, reason="empty structure")]
+                return [
+                    PaddingEntity(byte_offset=0, size_bytes=total_size, reason="empty structure")
+                ]
             return []
 
         # Fast path: check if padding needed at all
@@ -252,66 +249,62 @@ class OptimizedPaddingComputer:
             return self._compute_padding_vectorized(fields_data, total_size)
         return self._compute_padding_sequential(fields_data, total_size)
 
-    def _has_no_padding(
-        self,
-        fields_data: List[Dict[str, Any]],
-        total_size: int
-    ) -> bool:
+    def _has_no_padding(self, fields_data: List[Dict[str, Any]], total_size: int) -> bool:
         """Quick check if structure has no padding."""
         expected_offset = 0
 
         for field in fields_data:
-            if field.get('offset', 0) != expected_offset:
+            if field.get("offset", 0) != expected_offset:
                 return False
-            f_size = field.get('type', {}).get('size', 0)
+            f_size = field.get("type", {}).get("size", 0)
             expected_offset += f_size
 
         return expected_offset == total_size
 
     def _compute_padding_sequential(
-        self,
-        fields_data: List[Dict[str, Any]],
-        total_size: int
+        self, fields_data: List[Dict[str, Any]], total_size: int
     ) -> List[PaddingEntity]:
         """Sequential padding computation (fallback)."""
         padding_regions = []
         current_offset = 0
 
         # Ensure sorted
-        sorted_fields = sorted(fields_data, key=lambda f: f.get('offset', 0))
+        sorted_fields = sorted(fields_data, key=lambda f: f.get("offset", 0))
 
         for field in sorted_fields:
-            field_offset = field.get('offset', 0)
+            field_offset = field.get("offset", 0)
 
             # Gap before this field
             if field_offset > current_offset:
                 gap_size = field_offset - current_offset
                 padding_regions.append(
-                    PaddingEntity(byte_offset=current_offset, size_bytes=gap_size, reason="field alignment")
+                    PaddingEntity(
+                        byte_offset=current_offset, size_bytes=gap_size, reason="field alignment"
+                    )
                 )
 
-            field_size = field.get('type', {}).get('size', 0)
+            field_size = field.get("type", {}).get("size", 0)
             current_offset = field_offset + field_size
 
         if total_size > current_offset:
             trailing_size = total_size - current_offset
             padding_regions.append(
-                PaddingEntity(byte_offset=current_offset, size_bytes=trailing_size, reason="structure end")
+                PaddingEntity(
+                    byte_offset=current_offset, size_bytes=trailing_size, reason="structure end"
+                )
             )
 
         return padding_regions
 
     def _compute_padding_vectorized(
-        self,
-        fields_data: List[Dict[str, Any]],
-        total_size: int
+        self, fields_data: List[Dict[str, Any]], total_size: int
     ) -> List[PaddingEntity]:
         """Vectorized padding computation using numpy."""
         # Sort fields explicitly for vectorized logic
-        sorted_fields = sorted(fields_data, key=lambda f: f.get('offset', 0))
+        sorted_fields = sorted(fields_data, key=lambda f: f.get("offset", 0))
 
-        offsets = np.array([f.get('offset', 0) for f in sorted_fields])
-        sizes = np.array([f.get('type', {}).get('size', 0) for f in sorted_fields])
+        offsets = np.array([f.get("offset", 0) for f in sorted_fields])
+        sizes = np.array([f.get("type", {}).get("size", 0) for f in sorted_fields])
 
         # Compute field end positions
         field_ends = offsets + sizes
@@ -327,22 +320,33 @@ class OptimizedPaddingComputer:
             if gap_size > 0:
                 reason = "structure end" if i == len(gaps) - 1 else "field alignment"
                 padding_regions.append(
-                    PaddingEntity(byte_offset=int(field_ends[i]), size_bytes=int(gap_size), reason=reason)
+                    PaddingEntity(
+                        byte_offset=int(field_ends[i]), size_bytes=int(gap_size), reason=reason
+                    )
                 )
 
-        # Don't forget potential padding at the very beginning (though triple-splitting usually handles this)
+        # Don't forget potential padding at the very beginning (though
+        # triple-splitting usually handles this)
         if len(offsets) > 0 and offsets[0] > 0:
-            padding_regions.insert(0, PaddingEntity(byte_offset=0, size_bytes=int(offsets[0]), reason="structural offset"))
+            padding_regions.insert(
+                0,
+                PaddingEntity(
+                    byte_offset=0, size_bytes=int(offsets[0]), reason="structural offset"
+                ),
+            )
 
         return padding_regions
+
 
 # ============================================================================
 # BENCHMARK SUITE
 # ============================================================================
 
+
 @dataclass
 class BenchmarkResult:
     """Benchmark measurement result."""
+
     name: str
     duration: float
     throughput: float
@@ -354,10 +358,8 @@ class BenchmarkResult:
         if not self.success:
             return f"{self.name}: FAILED - {self.error}"
 
-        return (
-            f"{self.name}: {self.duration:.3f}s "
-            f"({self.throughput:.0f} entities/s, {self.memory_mb:.1f} MB)"
-        )
+        return f"{self.name}: {self.duration:.3f}s ({self.throughput:.0f} entities/s, {self.memory_mb:.1f} MB)"
+
 
 class BenchmarkSuite:
     """Performance benchmark suite."""
@@ -390,7 +392,7 @@ class BenchmarkSuite:
         # Generate test data
         num_types = 1000
         type_data_list = [
-            {'kind': 'scalar', 'name': f'type_{i}', 'size': 4, 'is_signed': True}
+            {"kind": "scalar", "name": f"type_{i}", "size": 4, "is_signed": True}
             for i in range(num_types)
         ]
 
@@ -400,13 +402,13 @@ class BenchmarkSuite:
             dedup.get_or_create_type_id(type_data)
 
         duration = time.perf_counter() - start
-        throughput = num_types / duration if duration > 0 else float('inf')
+        throughput = num_types / duration if duration > 0 else float("inf")
 
         return BenchmarkResult(
             name="Type Deduplication (1000 types)",
             duration=duration,
             throughput=throughput,
-            memory_mb=0.0
+            memory_mb=0.0,
         )
 
     def bench_padding_computation(self) -> BenchmarkResult:
@@ -416,11 +418,7 @@ class BenchmarkSuite:
         # Generate structure with many fields
         num_fields = 100
         fields_data = [
-            {
-                'name': f'field_{i}',
-                'offset': i * 8,
-                'type': {'size': 4, 'alignment': 4}
-            }
+            {"name": f"field_{i}", "offset": i * 8, "type": {"size": 4, "alignment": 4}}
             for i in range(num_fields)
         ]
 
@@ -434,13 +432,13 @@ class BenchmarkSuite:
             computer.compute_padding(fields_data, total_size)
 
         duration = time.perf_counter() - start
-        throughput = (num_fields * iterations) / duration if duration > 0 else float('inf')
+        throughput = (num_fields * iterations) / duration if duration > 0 else float("inf")
 
         return BenchmarkResult(
             name="Padding Computation (100 fields × 1000 iter)",
             duration=duration,
             throughput=throughput,
-            memory_mb=0.0
+            memory_mb=0.0,
         )
 
     def bench_reference_validation(self) -> BenchmarkResult:
@@ -459,32 +457,36 @@ class BenchmarkSuite:
         invalid_count = sum(1 for ref in references if ref not in valid_ids)
 
         duration = time.perf_counter() - start
-        throughput = num_references / duration if duration > 0 else float('inf')
+        throughput = num_references / duration if duration > 0 else float("inf")
 
         return BenchmarkResult(
             name="Reference Validation (10000 refs)",
             duration=duration,
             throughput=throughput,
-            memory_mb=0.0
+            memory_mb=0.0,
         )
+
 
 # ============================================================================
 # GLOBAL PROFILER INSTANCE
 # ============================================================================
 
+
 # Global profiler for easy access
 _global_profiler = PerformanceProfiler()
+
 
 def get_profiler() -> PerformanceProfiler:
     """Get global profiler instance."""
     return _global_profiler
 
+
 __all__ = [
-    'PerformanceProfiler',
-    'OptimizedTypeDeduplicator',
-    'OptimizedPaddingComputer',
-    'BenchmarkSuite',
-    'BenchmarkResult',
-    'get_profiler',
-    'HAS_NUMPY'
+    "PerformanceProfiler",
+    "OptimizedTypeDeduplicator",
+    "OptimizedPaddingComputer",
+    "BenchmarkSuite",
+    "BenchmarkResult",
+    "get_profiler",
+    "HAS_NUMPY",
 ]

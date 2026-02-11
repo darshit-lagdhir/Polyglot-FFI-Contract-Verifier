@@ -1,4 +1,4 @@
-""" 
+"""
 Module 06: Contract Schema & Synthesis
 
 PFCV Contract Schema system for expressing, validating, and enforcing FFI interface assumptions.
@@ -15,11 +15,11 @@ The Contract Schema transforms implicit FFI assumptions into explicit, machine-v
 
 Quick Start:
     >>> from module_06_contract_schema import ContractGenerator
-    >>> 
+    >>>
     >>> # Generate contract from IR
     >>> generator = ContractGenerator()
     >>> contract = generator.generate(ir_artifact, "my_interface")
-    >>> 
+    >>>
     >>> # Validate contract
     >>> from module_06_contract_schema import ContractValidator
     >>> validator = ContractValidator()
@@ -59,14 +59,11 @@ from .contract_entities import (
     ContractDocument,
     ContractHeader,
     ContractClause,
-    
     # References and parameters
     SubjectReference,
     ConstraintParameter,
-    
     # Metadata
     GenerationMetadata,
-    
     # Enumerations
     SchemaVersion,
     GenerationMode,
@@ -79,7 +76,6 @@ from .contract_entities import (
 from .clause_types import (
     # Base
     TypedClause,
-    
     # Concrete clause types
     LayoutClause,
     SizeClause,
@@ -90,7 +86,6 @@ from .clause_types import (
     RelationalClause,
     CallingConventionClause,
     ABICompatibilityClause,
-    
     # Factory
     create_clause_from_type,
 )
@@ -100,13 +95,11 @@ from .contract_validation import (
     # Core validation
     ContractValidator,
     ValidationContext,
-    
     # Results
     ValidationResult,
     CompleteValidationResult,
     ValidationError,
     ValidationWarning,
-    
     # Layer enum
     ValidationLayer,
 )
@@ -115,23 +108,18 @@ from .contract_validation import (
 from .contract_versioning import (
     # Version types
     SemanticVersion,
-    
     # Change tracking
     ChangeType,
     CompatibilityImpact,
     ContractChange,
-    
     # History
     VersionHistory,
     VersionHistoryEntry,
-    
     # Diffing
     ContractDiff,
     ContractDiffer,
-    
     # Recommendations
     VersionRecommender,
-    
     # Deprecation
     DeprecationNotice,
 )
@@ -142,15 +130,12 @@ from .contract_serialization import (
     IntegrityInfo,
     compute_checksum,
     verify_checksum,
-    
     # Serialization
     ContractSerializer,
     ContractDeserializer,
-    
     # File management
     ContractFileManager,
     ContractArtifactManager,
-    
     # Errors
     SerializationError,
     DeserializationError,
@@ -161,13 +146,10 @@ from .contract_serialization import (
 from .contract_generation import (
     # Configuration
     GenerationConfig,
-    
     # Generator
     ContractGenerator,
-    
     # Results
     GeneratedClause,
-    
     # Pattern matching
     NamingPatternMatcher,
 )
@@ -178,18 +160,14 @@ from .contract_diff_advanced import (
     ChangeCategory,
     ChangeImpact,
     MigrationDifficulty,
-    
     # Detailed changes
     ParameterChange,
     DetailedClauseChange,
-    
     # Migration
     MigrationStep,
     MigrationGuide,
-    
     # Diff result
     AdvancedDiffResult,
-    
     # Differ
     AdvancedContractDiffer,
 )
@@ -205,36 +183,33 @@ from .enforcement_boundary import (
     # Modes and types
     EnforcementMode,
     ViolationType,
-    
     # Violations
     EnforcementViolation,
-    
     # Statistics
     EnforcementStats,
-    
     # Adapters
     LanguageAdapter,
     PythonAdapter,
-    
     # Engine
     EnforcementEngine,
 )
 
+
 def load_contract(path: Path) -> ContractDocument:
     """
     Load contract from file.
-    
+
     Convenience function that handles deserialization and validation.
-    
+
     Args:
         path: Path to contract JSON file
-        
+
     Returns:
         Loaded ContractDocument
-        
+
     Raises:
         DeserializationError: If file cannot be loaded
-        
+
     Example:
         >>> contract = load_contract(Path("contract.json"))
         >>> print(f"Loaded {len(contract.clauses)} clauses")
@@ -242,38 +217,40 @@ def load_contract(path: Path) -> ContractDocument:
     manager = ContractFileManager()
     return manager.load(path)
 
+
 def save_contract(contract: ContractDocument, path: Path):
     """
     Save contract to file.
-    
+
     Convenience function that handles serialization.
-    
+
     Args:
         contract: Contract to save
         path: Target file path
-        
+
     Raises:
         SerializationError: If file cannot be saved
-        
+
     Example:
         >>> save_contract(contract, Path("contract.json"))
     """
     manager = ContractFileManager()
     manager.save(contract, path)
 
+
 def quick_validate(contract: ContractDocument) -> bool:
     """
     Quick validation check (schema only).
-    
+
     Performs fast schema validation without referential or constraint checks.
     Useful for quick sanity checks.
-    
+
     Args:
         contract: Contract to validate
-        
+
     Returns:
         True if schema valid
-        
+
     Example:
         >>> if quick_validate(contract):
         ...     print("Contract structure is valid")
@@ -282,106 +259,96 @@ def quick_validate(contract: ContractDocument) -> bool:
     result = validator.validate(contract, skip_referential=True, skip_constraint=True)
     return result.schema_result.passed
 
+
 # Public API Exports
 __all__ = [
     # Version
-    'version',
-    'version_info',
-    'get_version',
-    
+    "version",
+    "version_info",
+    "get_version",
     # Core entities
-    'ContractDocument',
-    'ContractHeader',
-    'ContractClause',
-    'SubjectReference',
-    'ConstraintParameter',
-    'GenerationMetadata',
-    
+    "ContractDocument",
+    "ContractHeader",
+    "ContractClause",
+    "SubjectReference",
+    "ConstraintParameter",
+    "GenerationMetadata",
     # Enums
-    'SchemaVersion',
-    'GenerationMode',
-    'Severity',
-    'ClauseType',
-    'SubjectKind',
-    
+    "SchemaVersion",
+    "GenerationMode",
+    "Severity",
+    "ClauseType",
+    "SubjectKind",
     # Typed clauses
-    'TypedClause',
-    'LayoutClause',
-    'SizeClause',
-    'AlignmentClause',
-    'NullabilityClause',
-    'OwnershipClause',
-    'LifetimeClause',
-    'RelationalClause',
-    'CallingConventionClause',
-    'ABICompatibilityClause',
-    'create_clause_from_type',
-    
+    "TypedClause",
+    "LayoutClause",
+    "SizeClause",
+    "AlignmentClause",
+    "NullabilityClause",
+    "OwnershipClause",
+    "LifetimeClause",
+    "RelationalClause",
+    "CallingConventionClause",
+    "ABICompatibilityClause",
+    "create_clause_from_type",
     # Validation
-    'ContractValidator',
-    'ValidationContext',
-    'ValidationResult',
-    'CompleteValidationResult',
-    'ValidationError',
-    'ValidationWarning',
-    'ValidationLayer',
-    
+    "ContractValidator",
+    "ValidationContext",
+    "ValidationResult",
+    "CompleteValidationResult",
+    "ValidationError",
+    "ValidationWarning",
+    "ValidationLayer",
     # Versioning
-    'SemanticVersion',
-    'ChangeType',
-    'CompatibilityImpact',
-    'ContractChange',
-    'VersionHistory',
-    'ContractDiff',
-    'ContractDiffer',
-    'VersionRecommender',
-    'DeprecationNotice',
-    
+    "SemanticVersion",
+    "ChangeType",
+    "CompatibilityImpact",
+    "ContractChange",
+    "VersionHistory",
+    "ContractDiff",
+    "ContractDiffer",
+    "VersionRecommender",
+    "DeprecationNotice",
     # Serialization
-    'IntegrityInfo',
-    'compute_checksum',
-    'verify_checksum',
-    'ContractSerializer',
-    'ContractDeserializer',
-    'ContractFileManager',
-    'ContractArtifactManager',
-    'SerializationError',
-    'DeserializationError',
-    'IntegrityError',
-    
+    "IntegrityInfo",
+    "compute_checksum",
+    "verify_checksum",
+    "ContractSerializer",
+    "ContractDeserializer",
+    "ContractFileManager",
+    "ContractArtifactManager",
+    "SerializationError",
+    "DeserializationError",
+    "IntegrityError",
     # Generation
-    'GenerationConfig',
-    'ContractGenerator',
-    'GeneratedClause',
-    
+    "GenerationConfig",
+    "ContractGenerator",
+    "GeneratedClause",
     # Advanced diffing
-    'ChangeCategory',
-    'ChangeImpact',
-    'MigrationDifficulty',
-    'ParameterChange',
-    'DetailedClauseChange',
-    'MigrationStep',
-    'MigrationGuide',
-    'AdvancedDiffResult',
-    'AdvancedContractDiffer',
-    
+    "ChangeCategory",
+    "ChangeImpact",
+    "MigrationDifficulty",
+    "ParameterChange",
+    "DetailedClauseChange",
+    "MigrationStep",
+    "MigrationGuide",
+    "AdvancedDiffResult",
+    "AdvancedContractDiffer",
     # CLI
-    'cli',
-    'main',
-    
+    "cli",
+    "main",
     # Enforcement
-    'EnforcementMode',
-    'ViolationType',
-    'EnforcementViolation',
-    'EnforcementStats',
-    'LanguageAdapter',
-    'PythonAdapter',
-    'EnforcementEngine',
-    
+    "EnforcementMode",
+    "ViolationType",
+    "EnforcementViolation",
+    "EnforcementStats",
+    "LanguageAdapter",
+    "PythonAdapter",
+    "EnforcementEngine",
     # Utilities
-    'load_contract',
-    'save_contract',
-    'quick_validate',
+    "load_contract",
+    "save_contract",
+    "quick_validate",
 ]
 
 # Module Metadata

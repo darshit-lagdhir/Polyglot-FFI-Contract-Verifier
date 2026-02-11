@@ -24,6 +24,7 @@ from .type_normalization import (
 # CONFIGURATION
 # ============================================================================
 
+
 @dataclass
 class IRNormalizationConfig:
     """Config for IR normalization pipeline."""
@@ -32,7 +33,7 @@ class IRNormalizationConfig:
     input_artifact_path: Path
 
     # Output
-    output_dir: Path = Path('.pfcv/ir_artifacts')
+    output_dir: Path = Path(".pfcv/ir_artifacts")
     compress_artifacts: bool = True
 
     # Validation
@@ -41,7 +42,7 @@ class IRNormalizationConfig:
 
     # Caching
     enable_caching: bool = True
-    cache_dir: Path = Path('.pfcv/cache/module_05')
+    cache_dir: Path = Path(".pfcv/cache/module_05")
 
     # Diffing
     enable_diffing: bool = False
@@ -66,9 +67,11 @@ class IRNormalizationConfig:
 
         return errors
 
+
 # ============================================================================
 # STATE TRACKING
 # ============================================================================
+
 
 @dataclass
 class OrchestrationState:
@@ -91,9 +94,11 @@ class OrchestrationState:
     changes_detected: int = 0
     abi_impact: str = "neutral"
 
+
 # ============================================================================
 # ERROR HANDLING
 # ============================================================================
+
 
 class OrchestrationError(Exception):
     """Base class for orchestration errors."""
@@ -104,19 +109,25 @@ class OrchestrationError(Exception):
         self.cause = cause
         super().__init__(f"[{stage}] {message}")
 
+
 class ConfigError(OrchestrationError):
     """Config is invalid."""
+
     pass
 
+
 class NormalizationFailure(OrchestrationError):
-        pass
+    pass
+
 
 class ValidationFailure(OrchestrationError):
-        pass
+    pass
+
 
 # ============================================================================
 # PROGRESS REPORTING
 # ============================================================================
+
 
 class ProgressReporter:
     """Reports orchestration progress."""
@@ -155,9 +166,11 @@ class ProgressReporter:
         if self.verbose:
             print(f"\nERROR [{error.stage}]: {error.message}")
 
+
 # ============================================================================
 # ORCHESTRATION REPORT
 # ============================================================================
+
 
 @dataclass
 class OrchestrationReport:
@@ -189,29 +202,31 @@ class OrchestrationReport:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize report."""
         return {
-            'pipeline_version': self.pipeline_version,
-            'execution_timestamp': self.execution_timestamp,
-            'total_duration': self.total_duration,
-            'input_artifact_path': self.input_artifact_path,
-            'types_normalized': self.types_normalized,
-            'symbols_normalized': self.symbols_normalized,
-            'validation_passed': self.validation_passed,
-            'validation_error_count': len(self.validation_errors),
-            'output_artifact_path': self.output_artifact_path,
-            'abi_impact': self.abi_impact,
-            'version_bump': self.version_bump,
-            'stage_timings': self.stage_timings
+            "pipeline_version": self.pipeline_version,
+            "execution_timestamp": self.execution_timestamp,
+            "total_duration": self.total_duration,
+            "input_artifact_path": self.input_artifact_path,
+            "types_normalized": self.types_normalized,
+            "symbols_normalized": self.symbols_normalized,
+            "validation_passed": self.validation_passed,
+            "validation_error_count": len(self.validation_errors),
+            "output_artifact_path": self.output_artifact_path,
+            "abi_impact": self.abi_impact,
+            "version_bump": self.version_bump,
+            "stage_timings": self.stage_timings,
         }
 
     def save(self, output_path: Path):
         """Save report to file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(self.to_dict(), f, indent=2, sort_keys=True)
+
 
 # ============================================================================
 # IR ORCHESTRATOR
 # ============================================================================
+
 
 class IROrchestrator:
     """
@@ -293,9 +308,10 @@ class IROrchestrator:
                 self.raw_data = json.load(f)
 
             from .module_04_bridge import Module04Bridge
+
             self.bridge = Module04Bridge()
 
-            ctx = self.raw_data.get('compilation_context', {})
+            ctx = self.raw_data.get("compilation_context", {})
             self.interface_unit = self.bridge._convert_context(ctx)
             self.bridge.type_converter.set_pointer_width(self.interface_unit.pointer_width)
 
@@ -314,7 +330,7 @@ class IROrchestrator:
         self.reporter.start_stage("Type Normalization")
 
         # In a real integration, we use the bridge to convert types
-        raw_types_data = self.raw_data.get('type_information', [])
+        raw_types_data = self.raw_data.get("type_information", [])
         for t_data in raw_types_data:
             self.bridge.deduplicator.get_or_create_type_id(t_data, self.bridge.type_converter)
 
@@ -333,7 +349,7 @@ class IROrchestrator:
         stage_start = time.time()
         self.reporter.start_stage("Symbol Normalization")
 
-        raw_symbols = self.raw_data.get('external_symbols', [])
+        raw_symbols = self.raw_data.get("external_symbols", [])
         for s_data in raw_symbols:
             symbol = self.bridge.symbol_converter.convert_symbol(s_data)
             self.interface_unit.symbols.append(symbol)
@@ -369,7 +385,10 @@ class IROrchestrator:
             errors_summary = "\n".join(self.validation_report.all_errors()[:10])
             if len(self.validation_report.all_errors()) > 10:
                 errors_summary += "\n... (more errors)"
-            raise ValidationFailure("validation", f"Validation failed with {self.state.validation_errors} errors:\n{errors_summary}")
+            raise ValidationFailure(
+                "validation",
+                f"Validation failed with {self.state.validation_errors} errors:\n{errors_summary}",
+            )
 
         duration = time.time() - stage_start
         self.state.stage_timings["validation"] = duration
@@ -385,7 +404,7 @@ class IROrchestrator:
         self.artifact = IRArtifact(
             schema_version="1.0.0",
             normalization_version="1.0.0",
-            creation_timestamp=datetime.now(timezone.utc).isoformat()
+            creation_timestamp=datetime.now(timezone.utc).isoformat(),
         )
         self.artifact.interface_unit = self.interface_unit
         if self.validation_report:
@@ -404,7 +423,7 @@ class IROrchestrator:
 
         # Save to cache first
         manager = IRArtifactManager(self.config.cache_dir)
-        with open(self.config.input_artifact_path, 'rb') as f:
+        with open(self.config.input_artifact_path, "rb") as f:
             source_hash = hashlib.sha256(f.read()).hexdigest()[:16]
 
         cached_path = manager.save_artifact(
@@ -413,6 +432,7 @@ class IROrchestrator:
 
         # Deploy to output directory
         import shutil
+
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Determine final filename
@@ -436,17 +456,17 @@ class IROrchestrator:
             return
 
         try:
-             with open(self.config.baseline_artifact_path) as f:
-                 baseline_data = json.load(f)
-             baseline_art = IRArtifact.from_dict(baseline_data)
-             computer = IRDiffComputer()
-             diff = computer.compute_diff(baseline_art, self.artifact)
+            with open(self.config.baseline_artifact_path) as f:
+                baseline_data = json.load(f)
+            baseline_art = IRArtifact.from_dict(baseline_data)
+            computer = IRDiffComputer()
+            diff = computer.compute_diff(baseline_art, self.artifact)
 
-             self.state.diff_computed = True
-             self.state.changes_detected = diff.total_changes()
-             self.state.abi_impact = diff.overall_impact.value
-             self.report.diff_summary = f"Detected {diff.total_changes()} changes. Impact: {diff.overall_impact.value.upper()}"
-             self.report.version_bump = recommend_version_bump(diff).value
+            self.state.diff_computed = True
+            self.state.changes_detected = diff.total_changes()
+            self.state.abi_impact = diff.overall_impact.value
+            self.report.diff_summary = f"Detected {diff.total_changes()} changes. Impact: {diff.overall_impact.value.upper()}"
+            self.report.version_bump = recommend_version_bump(diff).value
         except Exception as e:
             self.reporter.report_error(OrchestrationError("diffing", str(e)))
 
@@ -485,8 +505,14 @@ class IROrchestrator:
         report.validation_passed = True
         return report
 
+
 __all__ = [
-    'IRNormalizationConfig', 'OrchestrationState', 'OrchestrationReport',
-    'OrchestrationError', 'ConfigError', 'NormalizationFailure',
-    'ValidationFailure', 'IROrchestrator'
+    "IRNormalizationConfig",
+    "OrchestrationState",
+    "OrchestrationReport",
+    "OrchestrationError",
+    "ConfigError",
+    "NormalizationFailure",
+    "ValidationFailure",
+    "IROrchestrator",
 ]

@@ -78,51 +78,44 @@ from .module_04_bridge import (
 
 __all__ = [
     # Version
-    '__version__',
-    '__version_info__',
-    'get_version',
-
+    "__version__",
+    "__version_info__",
+    "get_version",
     # Orchestration
-    'IROrchestrator',
-    'IRNormalizationConfig',
-    'OrchestrationReport',
-    'OrchestrationError',
-
+    "IROrchestrator",
+    "IRNormalizationConfig",
+    "OrchestrationReport",
+    "OrchestrationError",
     # Entities
-    'InterfaceUnit',
-    'ScalarType',
-    'PointerType',
-    'ArrayType',
-    'StructureType',
-    'UnionType',
-    'EnumerationType',
-    'FunctionPointerType',
-    'FunctionSymbol',
-    'VariableSymbol',
-
+    "InterfaceUnit",
+    "ScalarType",
+    "PointerType",
+    "ArrayType",
+    "StructureType",
+    "UnionType",
+    "EnumerationType",
+    "FunctionPointerType",
+    "FunctionSymbol",
+    "VariableSymbol",
     # Validation
-    'IRValidationOrchestrator',
-    'ValidationReport',
-
+    "IRValidationOrchestrator",
+    "ValidationReport",
     # Serialization
-    'IRArtifact',
-    'IRArtifactManager',
-
+    "IRArtifact",
+    "IRArtifactManager",
     # Diffing
-    'IRDiffComputer',
-    'IRDiff',
-    'recommend_version_bump',
-
+    "IRDiffComputer",
+    "IRDiff",
+    "recommend_version_bump",
     # Diagnostics
-    'DiagnosticCollector',
-    'DiagnosticMessage',
-    'Severity',
-
+    "DiagnosticCollector",
+    "DiagnosticMessage",
+    "Severity",
     # Integration Bridge
-    'Module04Bridge',
-    'TypeDeduplicator',
-    'TypeConverter',
-    'SymbolConverter',
+    "Module04Bridge",
+    "TypeDeduplicator",
+    "TypeConverter",
+    "SymbolConverter",
 ]
 
 # Module metadata

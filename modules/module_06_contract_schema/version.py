@@ -1,4 +1,4 @@
-""" Version information for Module 06: Contract Schema & Synthesis. """
+"""Version information for Module 06: Contract Schema & Synthesis."""
 
 version = "1.0.0"
 version_info = (1, 0, 0)
@@ -20,20 +20,23 @@ VERSION_HISTORY = {
             "Enforcement boundary with language adapters",
             "Python adapter for runtime enforcement",
             "870+ unit and integration tests",
-            "Complete API documentation"
+            "Complete API documentation",
         ],
         "breaking_changes": [],
-        "deprecations": []
+        "deprecations": [],
     }
 }
+
 
 def get_version() -> str:
     """Get current version string."""
     return version
 
+
 def get_version_info() -> tuple:
     """Get version as tuple."""
     return version_info
+
 
 def get_version_history() -> dict:
     """Get complete version history."""

@@ -44,9 +44,9 @@ Command Line:
 
 Python API:
     from system_architecture import verify
-    
+
     result = verify('interface.h', 'library.dll')
-    
+
     if result['status'] == 'passed':
         print("✓ Verification PASSED")
     else:
@@ -136,6 +136,7 @@ import weakref
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @dataclass(frozen=True)
 class PlatformIdentification:
     """Platform-specific identification information."""
@@ -144,6 +145,7 @@ class PlatformIdentification:
     architecture: str
     pointer_width: int
     endianness: str
+
 
 @dataclass(frozen=True)
 class CompilerInformation:
@@ -156,6 +158,7 @@ class CompilerInformation:
     preprocessor_macros: Dict[str, str]
     standard_library_version: Optional[str] = None
 
+
 @dataclass(frozen=True)
 class NativeLibraryInformation:
     """Native library identification and loading information."""
@@ -165,6 +168,7 @@ class NativeLibraryInformation:
     additional_dependencies: List[str]
     interface_header_path: str
 
+
 @dataclass(frozen=True)
 class TargetLanguageRuntime:
     """Target language runtime information."""
@@ -173,6 +177,7 @@ class TargetLanguageRuntime:
     ffi_mechanism: str
     runtime_path: str
     runtime_config: Dict[str, Any]
+
 
 @dataclass(frozen=True)
 class VerificationConfig:
@@ -184,6 +189,7 @@ class VerificationConfig:
     enable_crash_detection: bool
     verbosity_level: str
 
+
 @dataclass(frozen=True)
 class ProvenanceMetadata:
     """Provenance and versioning information."""
@@ -191,6 +197,7 @@ class ProvenanceMetadata:
     creation_timestamp: str
     execution_id: str
     tool_version: str
+
 
 @dataclass(frozen=True)
 class ArtifactPaths:
@@ -205,12 +212,13 @@ class ArtifactPaths:
     report_path: str
     execution_context_path: str
 
+
 @dataclass(frozen=True)
 class ExecutionContext:
     """
     Immutable execution context capturing all environment-specific details
     relevant to FFI correctness verification.
-    
+
     This is the foundational artifact that is passed to every pipeline stage
     and referenced in all downstream artifacts for reproducibility and auditability.
     """
@@ -222,62 +230,64 @@ class ExecutionContext:
     provenance: ProvenanceMetadata
     artifacts: ArtifactPaths
     baseline_contract_path: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert execution context to dictionary for serialization."""
         return asdict(self)
-    
+
     def to_json(self, indent: int = 2) -> str:
         """Serialize execution context to JSON string."""
         return json.dumps(self.to_dict(), indent=indent)
-    
+
     def save(self, path: Optional[str] = None) -> None:
         """
         Save execution context to disk as JSON.
-        
+
         Args:
             path: Optional path to save to. If None, uses artifacts.execution_context_path
         """
         save_path = path or self.artifacts.execution_context_path
         with open(save_path, 'w', encoding='utf-8') as f:
             f.write(self.to_json())
-    
+
     @classmethod
     def load(cls, path: str) -> 'ExecutionContext':
         """
         Load execution context from JSON file.
-        
+
         Args:
             path: Path to execution context JSON file
-            
+
         Returns:
             ExecutionContext instance
         """
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         return cls(
             platform=PlatformIdentification(**data['platform']),
             compiler=CompilerInformation(**data['compiler']),
             native_library=NativeLibraryInformation(**data['native_library']),
             target_runtime=TargetLanguageRuntime(**data['target_runtime']),
-            verification_config=VerificationConfig(**data['verification_config']),
+            verification_config=VerificationConfig(
+                **data['verification_config']),
             provenance=ProvenanceMetadata(**data['provenance']),
             artifacts=ArtifactPaths(**data['artifacts']),
             baseline_contract_path=data.get('baseline_contract_path')
         )
 
+
 class ExecutionContextBuilder:
     """
     Builder for constructing ExecutionContext through a deterministic multi-step process.
-    
+
     This class encapsulates the 8-step construction process that gathers all
     environmental information and produces an immutable ExecutionContext object.
     """
-    
+
     TOOL_VERSION = "1.0.0"
     SCHEMA_VERSION = "1.0.0"
-    
+
     def __init__(self):
         self._platform: Optional[PlatformIdentification] = None
         self._compiler: Optional[CompilerInformation] = None
@@ -286,7 +296,7 @@ class ExecutionContextBuilder:
         self._verification_config: Optional[VerificationConfig] = None
         self._provenance: Optional[ProvenanceMetadata] = None
         self._artifacts: Optional[ArtifactPaths] = None
-    
+
     def build(
         self,
         header_file: str,
@@ -307,7 +317,7 @@ class ExecutionContextBuilder:
     ) -> ExecutionContext:
         """
         Build execution context through deterministic 8-step process.
-        
+
         Args:
             header_file: Path to C header file
             library_file: Path to native library (DLL/SO/DYLIB)
@@ -323,13 +333,13 @@ class ExecutionContextBuilder:
             crash_handling_mode: Crash handling mode ("monitor" or "fail-fast")
             verbosity: Verbosity level ("quiet", "normal", "verbose")
             working_directory: Working directory for artifacts (current dir if None)
-            
+
         Returns:
             Immutable ExecutionContext object
         """
         # Phase 1. Platform Detection
         self._detect_platform()
-        
+
         # Phase 2: Compiler and Tooling Resolution
         self._resolve_compiler(
             compiler_path,
@@ -337,13 +347,13 @@ class ExecutionContextBuilder:
             preprocessor_macros or {},
             compiler_flags or []
         )
-        
+
         # Phase 3. Native Library Validation
         self._validate_native_library(library_file, header_file)
-        
+
         # Phase 4. Target Language Runtime Resolution
         self._resolve_target_runtime(python_interpreter, ffi_mechanism)
-        
+
         # Phase 5: Verification Config
         self._configure_verification(
             library_file,
@@ -354,35 +364,36 @@ class ExecutionContextBuilder:
             enable_crash_detection,
             verbosity
         )
-        
+
         # Phase 6. Provenance Metadata Generation
         self._generate_provenance()
-        
+
         # Phase 7. Artifact Path Resolution
         self._resolve_artifact_paths(working_directory)
-        
+
         # Phase 8. Immutable Context Object Construction
         return self._construct_context()
-    
+
     def _detect_platform(self) -> None:
         """Phase 1. Detect platform identification information."""
         os_name = platform.system()
         os_version = platform.version()
         architecture = platform.machine()
-        
+
         # Determine pointer width
         pointer_width = 64 if sys.maxsize > 2**32 else 32
-        
+
         # Determine endianness
         endianness = sys.byteorder
-        
+
         # Validate platform support (v1 requires Windows x64)
-        if os_name != "Windows" or architecture not in ["AMD64", "x86_64"] or pointer_width != 64:
-            raise ValueError(
+        if os_name != "Windows" or architecture not in [
+            "AMD64", "x86_64"] or pointer_width != 64:
+                raise ValueError(
                 f"Unsupported platform: {os_name} {architecture} {pointer_width}-bit. "
                 f"Version 1.0 requires Windows x64."
             )
-        
+
         self._platform = PlatformIdentification(
             os_name=os_name,
             os_version=os_version,
@@ -390,7 +401,7 @@ class ExecutionContextBuilder:
             pointer_width=pointer_width,
             endianness=endianness
         )
-    
+
     def _resolve_compiler(
         self,
         compiler_path: Optional[str],
@@ -403,16 +414,17 @@ class ExecutionContextBuilder:
         if compiler_path is None:
             # Auto-detect MSVC on Windows
             compiler_path = self._detect_msvc()
-        
+
         if not os.path.exists(compiler_path):
             raise FileNotFoundError(f"Compiler not found at: {compiler_path}")
-        
+
         # Query compiler version
-        compiler_name, compiler_version = self._query_compiler_version(compiler_path)
-        
+        compiler_name, compiler_version = self._query_compiler_version(
+            compiler_path)
+
         # Resolve include paths to absolute paths
         resolved_includes = [os.path.abspath(p) for p in include_paths]
-        
+
         self._compiler = CompilerInformation(
             compiler_name=compiler_name,
             compiler_path=os.path.abspath(compiler_path),
@@ -422,7 +434,7 @@ class ExecutionContextBuilder:
             preprocessor_macros=dict(preprocessor_macros),
             standard_library_version=None
         )
-    
+
     def _detect_msvc(self) -> str:
         """Detect MSVC compiler on Windows."""
         # Try common MSVC locations
@@ -432,17 +444,18 @@ class ExecutionContextBuilder:
             r"C:\Program Files\Microsoft IDE\2022\Enterprise\VC\Tools\MSVC",
             r"C:\Program Files (x86)\Microsoft IDE\2019\Community\VC\Tools\MSVC",
         ]
-        
+
         for base_path in common_paths:
             if os.path.exists(base_path):
                 # Find latest version
                 versions = os.listdir(base_path)
                 if versions:
                     latest = sorted(versions)[-1]
-                    cl_path = os.path.join(base_path, latest, "bin", "Hostx64", "x64", "cl.exe")
+                    cl_path = os.path.join(
+    base_path, latest, "bin", "Hostx64", "x64", "cl.exe")
                     if os.path.exists(cl_path):
                         return cl_path
-        
+
         # Fallback: try to find cl.exe in PATH
         try:
             result = subprocess.run(
@@ -454,12 +467,12 @@ class ExecutionContextBuilder:
             return result.stdout.strip().split('\n')[0]
         except subprocess.CalledProcessError:
             pass
-        
+
         raise FileNotFoundError(
             "MSVC compiler (cl.exe) not found. Please install IDE or "
             "specify compiler path explicitly."
         )
-    
+
     def _query_compiler_version(self, compiler_path: str) -> tuple[str, str]:
         """Query compiler name and version."""
         try:
@@ -473,7 +486,8 @@ class ExecutionContextBuilder:
                 )
                 # MSVC prints version to stderr
                 output = result.stderr
-                # Extract version from output like "Version 19.35.32215 for x64"
+                # Extract version from output like "Version 19.35.32215 for
+                # x64"
                 for line in output.split('\n'):
                     if 'Version' in line:
                         parts = line.split()
@@ -494,31 +508,39 @@ class ExecutionContextBuilder:
                 return "Unknown", first_line
         except Exception as e:
             raise RuntimeError(f"Failed to query compiler version: {e}")
-    
-    def _validate_native_library(self, library_file: str, header_file: str) -> None:
+
+    def _validate_native_library(
+    self,
+    library_file: str,
+     header_file: str) -> None:
         """Phase 3. Validate native library and compute hash."""
         library_path = os.path.abspath(library_file)
         header_path = os.path.abspath(header_file)
-        
+
         if not os.path.exists(library_path):
-            raise FileNotFoundError(f"Native library not found: {library_path}")
-        
+            raise FileNotFoundError(
+    f"Native library not found: {library_path}")
+
         # Compute SHA-256 hash
         library_hash = self._compute_file_hash(library_path)
-        
+
         # Determine library load paths (Windows DLL search order)
         library_dir = os.path.dirname(library_path)
         load_paths = [
             library_dir,
             os.getcwd(),
             os.environ.get('SystemRoot', r'C:\Windows'),
-            os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32'),
+            os.path.join(
+    os.environ.get(
+        'SystemRoot',
+        r'C:\Windows'),
+         'System32'),
         ]
-        
+
         # Add PATH directories
         path_dirs = os.environ.get('PATH', '').split(os.pathsep)
         load_paths.extend([p for p in path_dirs if p])
-        
+
         self._native_library = NativeLibraryInformation(
             library_path=library_path,
             library_hash=library_hash,
@@ -526,7 +548,7 @@ class ExecutionContextBuilder:
             additional_dependencies=[],
             interface_header_path=header_path
         )
-    
+
     def _compute_file_hash(self, file_path: str) -> str:
         """Compute SHA-256 hash of file."""
         sha256 = hashlib.sha256()
@@ -534,7 +556,7 @@ class ExecutionContextBuilder:
             while chunk := f.read(8192):
                 sha256.update(chunk)
         return sha256.hexdigest()
-    
+
     def _resolve_target_runtime(
         self,
         python_interpreter: Optional[str],
@@ -544,10 +566,11 @@ class ExecutionContextBuilder:
         # Detect or validate Python interpreter
         if python_interpreter is None:
             python_interpreter = sys.executable
-        
+
         if not os.path.exists(python_interpreter):
-            raise FileNotFoundError(f"Python interpreter not found: {python_interpreter}")
-        
+            raise FileNotFoundError(
+    f"Python interpreter not found: {python_interpreter}")
+
         # Query Python version
         try:
             result = subprocess.run(
@@ -562,12 +585,13 @@ class ExecutionContextBuilder:
             version = version_output.replace("Python ", "")
         except Exception as e:
             raise RuntimeError(f"Failed to query Python version: {e}")
-        
+
         # Validate FFI mechanism
         if ffi_mechanism not in ["ctypes", "cffi"]:
-            raise ValueError(f"Unsupported FFI mechanism: {ffi_mechanism}. Use 'ctypes' or 'cffi'.")
-        
-                try:
+            raise ValueError(
+    f"Unsupported FFI mechanism: {ffi_mechanism}. Use 'ctypes' or 'cffi'.")
+
+        try:
             result = subprocess.run(
                 [python_interpreter, "-c", f"import {ffi_mechanism}"],
                 capture_output=True,
@@ -576,8 +600,10 @@ class ExecutionContextBuilder:
                 check=True
             )
         except subprocess.CalledProcessError:
-            raise RuntimeError(f"FFI mechanism '{ffi_mechanism}' not available in Python runtime")
-        
+            raise RuntimeError(
+                f"FFI mechanism '{ffi_mechanism}' not available in Python runtime"
+            )
+
         self._target_runtime = TargetLanguageRuntime(
             language_name="Python",
             language_version=version,
@@ -585,7 +611,7 @@ class ExecutionContextBuilder:
             runtime_path=os.path.abspath(python_interpreter),
             runtime_config={}
         )
-    
+
     def _configure_verification(
         self,
         library_file: str,
@@ -603,21 +629,21 @@ class ExecutionContextBuilder:
             lib_path = os.path.abspath(library_file)
             seed_source = f"{lib_path}:{os.path.basename(lib_path)}"
             random_seed = abs(hash(seed_source)) % (2**32)
-            
+
         # Validate crash handling mode
         if crash_handling_mode not in ["monitor", "fail-fast"]:
             raise ValueError(
                 f"Invalid crash handling mode: {crash_handling_mode}. "
                 f"Use 'monitor' or 'fail-fast'."
             )
-        
+
         # Validate verbosity
         if verbosity not in ["quiet", "normal", "verbose"]:
             raise ValueError(
                 f"Invalid verbosity level: {verbosity}. "
                 f"Use 'quiet', 'normal', or 'verbose'."
             )
-        
+
         self._verification_config = VerificationConfig(
             random_seed=random_seed,
             per_test_timeout_seconds=per_test_timeout,
@@ -626,11 +652,11 @@ class ExecutionContextBuilder:
             enable_crash_detection=enable_crash_detection,
             verbosity_level=verbosity
         )
-    
+
     def _generate_deterministic_seed(self, library_file: str) -> int:
         """
         Generate deterministic seed from library path and rounded timestamp.
-        
+
         Timestamp is rounded to nearest hour to allow reproducibility within
         reasonable time windows while still providing freshness.
         """
@@ -638,45 +664,46 @@ class ExecutionContextBuilder:
         now = datetime.now(timezone.utc)
         rounded_hour = now.replace(minute=0, second=0, microsecond=0)
         timestamp_str = rounded_hour.isoformat()
-        
+
         # Combine library path and timestamp
         seed_input = f"{os.path.abspath(library_file)}:{timestamp_str}"
-        
+
         # Hash to generate seed
         hash_bytes = hashlib.sha256(seed_input.encode('utf-8')).digest()
-        
+
         # Convert first 4 bytes to integer
         seed = int.from_bytes(hash_bytes[:4], byteorder='big')
-        
+
         return seed
-    
+
     def _generate_provenance(self) -> None:
         """Phase 6. Generate provenance metadata."""
         # Generate UUID v4 for execution identifier
         execution_id = str(uuid.uuid4())
-        
+
         # Capture current timestamp in UTC, ISO 8601 format
         creation_timestamp = datetime.now(timezone.utc).isoformat()
-        
+
         self._provenance = ProvenanceMetadata(
             schema_version=self.SCHEMA_VERSION,
             creation_timestamp=creation_timestamp,
             execution_id=execution_id,
             tool_version=self.TOOL_VERSION
         )
-    
-    def _resolve_artifact_paths(self, working_directory: Optional[str]) -> None:
+
+    def _resolve_artifact_paths(
+    self, working_directory: Optional[str]) -> None:
         """Phase 7. Resolve artifact paths and create directories."""
         # Use current directory if not specified
         if working_directory is None:
             working_directory = os.getcwd()
-        
+
         working_dir = os.path.abspath(working_directory)
-        
+
         # Create artifacts subdirectory
         artifacts_dir = os.path.join(working_dir, "artifacts")
         os.makedirs(artifacts_dir, exist_ok=True)
-        
+
         # Validate write permissions
         test_file = os.path.join(artifacts_dir, ".write_test")
         try:
@@ -684,8 +711,9 @@ class ExecutionContextBuilder:
                 f.write("test")
             os.remove(test_file)
         except Exception as e:
-            raise PermissionError(f"No write permission for artifacts directory: {e}")
-        
+            raise PermissionError(
+    f"No write permission for artifacts directory: {e}")
+
         # Resolve all artifact paths
         self._artifacts = ArtifactPaths(
             working_directory=working_dir,
@@ -697,12 +725,14 @@ class ExecutionContextBuilder:
             ),
             contract_path=os.path.join(artifacts_dir, "contract.json"),
             test_plan_path=os.path.join(artifacts_dir, "test_plan.json"),
-            execution_log_path=os.path.join(artifacts_dir, "execution_log.json"),
+            execution_log_path=os.path.join(
+    artifacts_dir, "execution_log.json"),
             diagnostics_path=os.path.join(artifacts_dir, "diagnostics.json"),
             report_path=os.path.join(artifacts_dir, "report.txt"),
-            execution_context_path=os.path.join(artifacts_dir, "execution_context.json")
+            execution_context_path=os.path.join(
+    artifacts_dir, "execution_context.json")
         )
-    
+
     def _construct_context(self) -> ExecutionContext:
         """Phase 8. Construct immutable ExecutionContext object."""
         # Verify all components are initialized
@@ -724,10 +754,10 @@ class ExecutionContextBuilder:
             provenance=self._provenance,
             artifacts=self._artifacts
         )
-        
+
         # Serialize to disk
         context.save()
-        
+
         return context
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -740,12 +770,14 @@ class ExecutionContextBuilder:
 
 # Updated imports from consolidated modules
 
+
 class ErrorType(Enum):
     """Classification of error types for proper handling."""
     CONFIGURATION_ERROR = "configuration"
     TOOLING_ERROR = "tooling"
     PRECONDITION_ERROR = "precondition"
     STAGE_ERROR = "stage"
+
 
 class PipelineStage(Enum):
     """Pipeline stages in execution order."""
@@ -759,196 +791,240 @@ class PipelineStage(Enum):
     VALIDATE_SCHEMA = "validate-schema"
     COMPARE_CONTRACTS = "compare-contracts"
 
+
 class VerificationError(Exception):
     """Base exception for verification errors with type classification."""
-    
+
     def __init__(self, message: str, error_type: ErrorType):
         super().__init__(message)
         self.error_type = error_type
 
+
 class ConfigError(VerificationError):
     """Config-related errors."""
-    
+
     def __init__(self, message: str):
         super().__init__(message, ErrorType.CONFIGURATION_ERROR)
 
+
 class ToolingError(VerificationError):
     """Tooling-related errors (compiler, library, runtime not found)."""
-    
+
     def __init__(self, message: str):
         super().__init__(message, ErrorType.TOOLING_ERROR)
 
+
 class PreconditionError(VerificationError):
     """Precondition errors (missing required artifacts)."""
-    
+
     def __init__(self, message: str):
         super().__init__(message, ErrorType.PRECONDITION_ERROR)
 
+
 class StageError(VerificationError):
     """Stage-specific execution errors."""
-    
+
     def __init__(self, message: str):
         super().__init__(message, ErrorType.STAGE_ERROR)
+
 
 class Pipeline:
     """
     Orchestrates execution of verification pipeline stages.
-    
+
     Responsibilities:
-    - Sequence pipeline stages in correct order
+        - Sequence pipeline stages in correct order
     - Validate preconditions before each stage
     - Coordinate artifact flow between stages
     - Handle failures at appropriate abstraction level
     - Support partial execution of individual stages
     """
-    
+
     def __init__(self, context: ExecutionContext):
         """
         Initialize orchestrator with execution context.
-        
+
         Args:
             context: Immutable execution context
         """
         self.context = context
         self._stage_registry: Dict[PipelineStage, Callable] = {}
         self._register_default_stages()
-    
+
     def _register_default_stages(self) -> None:
         """Register default stage handlers."""
         self.register_stage(PipelineStage.INGEST, self._handle_ingest_stage)
-        self.register_stage(PipelineStage.SYNTHESIZE, self._handle_synthesize_stage)
-        self.register_stage(PipelineStage.VALIDATE_SCHEMA, self._handle_validate_schema_stage)
-        self.register_stage(PipelineStage.COMPARE_CONTRACTS, self._handle_compare_contracts_stage)
-        self.register_stage(PipelineStage.GENERATE_ADAPTERS, self._handle_generate_adapters_stage)
-        self.register_stage(PipelineStage.GENERATE_TESTS, self._handle_generate_tests_stage)
+        self.register_stage(
+    PipelineStage.SYNTHESIZE,
+     self._handle_synthesize_stage)
+        self.register_stage(
+    PipelineStage.VALIDATE_SCHEMA,
+     self._handle_validate_schema_stage)
+        self.register_stage(
+    PipelineStage.COMPARE_CONTRACTS,
+     self._handle_compare_contracts_stage)
+        self.register_stage(
+    PipelineStage.GENERATE_ADAPTERS,
+     self._handle_generate_adapters_stage)
+        self.register_stage(
+    PipelineStage.GENERATE_TESTS,
+     self._handle_generate_tests_stage)
         self.register_stage(PipelineStage.EXECUTE, self._handle_execute_stage)
-        self.register_stage(PipelineStage.DIAGNOSE, self._handle_diagnose_stage)
+        self.register_stage(
+    PipelineStage.DIAGNOSE,
+     self._handle_diagnose_stage)
         self.register_stage(PipelineStage.REPORT, self._handle_report_stage)
-    
-    def _handle_ingest_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle native interface ingestion stage."""
-        analyzer = NativeInterfaceAnalyzer()
-        artifact = analyzer.analyze(
+
+    def _handle_ingest_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle native interface ingestion stage."""
+            analyzer = NativeInterfaceAnalyzer()
+            artifact = analyzer.analyze(
             header_path=context.native_library.interface_header_path,
             library_path=context.native_library.library_path,
             context=context
         )
-        analyzer.save_artifact(artifact, context.artifacts.native_interface_path)
+        analyzer.save_artifact(
+    artifact, context.artifacts.native_interface_path)
         return {"artifact_path": context.artifacts.native_interface_path}
 
-    def _handle_synthesize_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle IR normalization and contract synthesis ( & 4)."""
+    def _handle_synthesize_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle IR normalization and contract synthesis ( & 4)."""
         # : IR Normalization
         normalizer = IRNormalizer()
         ir_artifact = normalizer.normalize(context)
-        
-                ir_path = context.artifacts.intermediate_representation_path
+
+        ir_path = context.artifacts.intermediate_representation_path
         normalizer.save_artifact(ir_artifact, ir_path)
-        
+
         # : Contract Synthesis
         synthesizer = ContractSynthesizer()
         contract_artifact = synthesizer.synthesize(context)
-        
+
         return {
             "ir_artifact_path": ir_path,
             "contract_artifact_path": context.artifacts.contract_path
         }
 
-    def _handle_validate_schema_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Validate the contract schema."""
+    def _handle_validate_schema_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Validate the contract schema."""
         validator = ContractSchemaValidator()
         result = validator.validate_contract(context.artifacts.contract_path)
         if not result["valid"]:
-            raise StageError(f"Contract schema validation failed: {', '.join(result['errors'])}")
-        return {"status": "valid", "schema_version": result["contract"]["provenance"]["schema_version"]}
+            raise StageError(
+    f"Contract schema validation failed: {
+        ', '.join(
+            result['errors'])}")
+        return {
+    "status": "valid",
+     "schema_version": result["contract"]["provenance"]["schema_version"]}
 
-    def _handle_compare_contracts_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Compare current contract with a baseline."""
+    def _handle_compare_contracts_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Compare current contract with a baseline."""
         baseline_path = getattr(context, "baseline_contract_path", None)
         if not baseline_path:
-             raise PreconditionError("Baseline contract path not provided for comparison.")
-             
+             raise PreconditionError(
+                 "Baseline contract path not provided for comparison.")
+
         comparator = ContractComparator()
-        diff = comparator.compare_contracts(baseline_path, context.artifacts.contract_path, context.provenance.execution_id)
-        
+        diff = comparator.compare_contracts(
+    baseline_path,
+    context.artifacts.contract_path,
+     context.provenance.execution_id)
+
         # Save diff artifact
-        diff_path = os.path.join(os.path.dirname(context.artifacts.contract_path), "contract_diff.json")
+        diff_path = os.path.join(
+    os.path.dirname(
+        context.artifacts.contract_path),
+         "contract_diff.json")
         with open(diff_path, "w") as f:
             json.dump(diff, f, indent=2)
-            
+
         # Generate human-readable report
         report_gen = CompatibilityReportGenerator()
         report = report_gen.generate_report(diff)
-        report_path = os.path.join(os.path.dirname(context.artifacts.contract_path), "compatibility_report.txt")
+        report_path = os.path.join(
+    os.path.dirname(
+        context.artifacts.contract_path),
+         "compatibility_report.txt")
         with open(report_path, "w") as f:
             f.write(report)
-            
+
         return {
             "diff_path": diff_path,
             "report_path": report_path,
             "summary": diff["summary"]
         }
 
-    def _handle_generate_adapters_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle language adapter generation ()."""
+    def _handle_generate_adapters_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle language adapter generation ()."""
         generator = AdapterGenerator()
         metadata = generator.generate(context)
         return metadata
 
-    def _handle_generate_tests_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle test plan generation ()."""
+    def _handle_generate_tests_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle test plan generation ()."""
         generator = TestPlanGenerator()
         plan = generator.generate(context)
         return plan["test_suite_metadata"]
 
-    def _handle_execute_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle verification execution ( & 9)."""
-        # Monitoring/Crash Detection is now standard behavior in VerificationExecutor via subprocesses
+    def _handle_execute_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle verification execution ( & 9)."""
+        # Monitoring/Crash Detection is now standard behavior in
+        # VerificationExecutor via subprocesses
         executor = VerificationExecutor()
         log = executor.execute(context)
         return log["execution_summary"]
 
-    def _handle_diagnose_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle diagnostics mapping (0)."""
+    def _handle_diagnose_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle diagnostics mapping (0)."""
         mapper = DiagnosticMapper()
         diagnostics = mapper.map_diagnostics(context)
         return diagnostics["summary"]
 
-    def _handle_report_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Handle comprehensive report generation (1)."""
+    def _handle_report_stage(
+        self, context: ExecutionContext) -> Dict[str, Any]:
+            """Handle comprehensive report generation (1)."""
         generator = ReportGenerator()
         metadata = generator.generate_reports(context)
         return metadata["metadata"]
-    
+
     def register_stage(self, stage: PipelineStage, handler: Callable) -> None:
         """Register a pipeline stage handler."""
         self._stage_registry[stage] = handler
-    
+
     def execute_stage(self, stage: PipelineStage) -> Dict[str, Any]:
         """Execute a single pipeline stage with precondition checking."""
         # Check preconditions
         self._check_preconditions(stage)
-        
+
         # Get stage handler
         if stage not in self._stage_registry:
             raise StageError(f"Stage '{stage.value}' not implemented yet")
-        
+
         handler = self._stage_registry[stage]
-        
+
         # Execute stage
         try:
             result = handler(self.context)
-            
+
             # Validate output artifacts
             self._validate_outputs(stage, result)
-            
+
             return result
-            
+
         except Exception as e:
             if isinstance(e, VerificationError):
                 raise
             raise StageError(f"Stage '{stage.value}' failed: {e}")
-    
+
     def execute_full_pipeline(self) -> Dict[str, Any]:
         """Execute full verification pipeline from ingestion to reporting."""
         stages = [
@@ -960,30 +1036,31 @@ class Pipeline:
             PipelineStage.DIAGNOSE,
             PipelineStage.REPORT
         ]
-        
+
         results = {}
-        
+
         for stage in stages:
             try:
                 if self.context.verification_config.verbosity_level != "quiet":
                     print(f"Executing stage: {stage.value}...")
-                
+
                 stage_result = self.execute_stage(stage)
                 results[stage.value] = stage_result
-                
+
                 if self.context.verification_config.verbosity_level == "verbose":
                     print(f"  ✓ Stage '{stage.value}' completed successfully")
-                    
+
             except VerificationError as e:
                 if self.context.verification_config.verbosity_level != "quiet":
                     print(f"  ✗ Stage '{stage.value}' failed: {e}")
-                
-                results[stage.value] = {"error": str(e), "error_type": e.error_type.value}
-                
-                                raise
-        
+
+                results[stage.value] = {"error": str(
+                    e), "error_type": e.error_type.value}
+
+                    raise
+
         return results
-    
+
     def _check_preconditions(self, stage: PipelineStage) -> None:
         """Check preconditions for a pipeline stage."""
         required_artifacts = {
@@ -998,17 +1075,18 @@ class Pipeline:
             PipelineStage.DIAGNOSE: [self.context.artifacts.execution_log_path],
             PipelineStage.REPORT: [self.context.artifacts.diagnostics_path]
         }
-        
+
         for artifact_path in required_artifacts.get(stage, []):
             if not os.path.exists(artifact_path):
                 producing_stage = self._get_producing_stage(artifact_path)
                 raise PreconditionError(
-                    f"Required artifact missing: {os.path.basename(artifact_path)}\n"
+                    f"Required artifact missing: {
+    os.path.basename(artifact_path)}\n"
                     f"  Path: {artifact_path}\n"
                     f"  This artifact is produced by stage: {producing_stage}\n"
                     f"  Run: polyglot-ffi-verifier {producing_stage} [options]"
                 )
-    
+
     def _get_producing_stage(self, artifact_path: str) -> str:
         """Determine which stage produces a given artifact."""
         artifact_map = {
@@ -1021,34 +1099,39 @@ class Pipeline:
             self.context.artifacts.report_path: "report"
         }
         return artifact_map.get(artifact_path, "unknown")
-    
-    def _validate_outputs(self, stage: PipelineStage, result: Dict[str, Any]) -> None:
-        """Validate that expected output artifacts were produced."""
+
+    def _validate_outputs(self, stage: PipelineStage,
+                          result: Dict[str, Any]) -> None:
+                              """Validate that expected output artifacts were produced."""
         expected_artifacts = {
             PipelineStage.INGEST: [self.context.artifacts.native_interface_path],
             PipelineStage.SYNTHESIZE: [self.context.artifacts.intermediate_representation_path],
-            PipelineStage.GENERATE_ADAPTERS: [],  # Adapters stored in result/disk but path not standard in context yet
+            # Adapters stored in result/disk but path not standard in context
+            # yet
+            PipelineStage.GENERATE_ADAPTERS: [],
             PipelineStage.GENERATE_TESTS: [self.context.artifacts.test_plan_path],
             PipelineStage.EXECUTE: [self.context.artifacts.execution_log_path],
             PipelineStage.DIAGNOSE: [self.context.artifacts.diagnostics_path],
             PipelineStage.REPORT: [self.context.artifacts.report_path]
         }
-        
+
         for artifact_path in expected_artifacts.get(stage, []):
             if not os.path.exists(artifact_path):
                 raise StageError(
-                    f"Stage '{stage.value}' did not produce expected artifact: "
+                    f"Stage '{
+    stage.value}' did not produce expected artifact: "
                     f"{os.path.basename(artifact_path)}"
                 )
+
 
 class CLIOrchestrator:
     """
     Command-line interface orchestrator for the verification system.
     """
-    
+
     def __init__(self):
         self.parser = self._build_parser()
-    
+
     def _build_parser(self) -> argparse.ArgumentParser:
         """Build argument parser with all commands and options."""
         parser = argparse.ArgumentParser(
@@ -1056,66 +1139,175 @@ class CLIOrchestrator:
             description="Polyglot FFI Contract Verifier - Make FFI assumptions explicit and enforceable",
             formatter_class=argparse.RawDescriptionHelpFormatter
         )
-        
-        subparsers = parser.add_subparsers(dest="command", help="Command to execute")
-        
+
+        subparsers = parser.add_subparsers(
+    dest="command", help="Command to execute")
+
         # Common arguments for all commands
         common_args = argparse.ArgumentParser(add_help=False)
-        common_args.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
-        common_args.add_argument("--quiet", "-q", action="store_true", help="Suppress non-error output")
-        common_args.add_argument("--working-dir", "-w", type=str, help="Working directory for artifacts (default: current directory)")
-        
+        common_args.add_argument(
+    "--verbose",
+    "-v",
+    action="store_true",
+     help="Enable verbose output")
+        common_args.add_argument(
+    "--quiet",
+    "-q",
+    action="store_true",
+     help="Suppress non-error output")
+        common_args.add_argument(
+    "--working-dir",
+    "-w",
+    type=str,
+     help="Working directory for artifacts (default: current directory)")
+
         # Arguments for stages that need native interface
         native_args = argparse.ArgumentParser(add_help=False)
-        native_args.add_argument("header_file", type=str, help="Path to C header file defining native interface")
-        native_args.add_argument("library_file", type=str, help="Path to native library (DLL/SO/DYLIB)")
-        native_args.add_argument("--compiler", type=str, help="Path to compiler (auto-detected if not specified)")
-        native_args.add_argument("--include", type=str, action="append", dest="include_paths", help="Additional include path")
-        native_args.add_argument("--define", "-D", type=str, action="append", dest="defines", help="Preprocessor macro definition (NAME=VALUE)")
-        native_args.add_argument("--flag", type=str, action="append", dest="compiler_flags", help="Additional compiler flag")
-        native_args.add_argument("--python", type=str, help="Path to Python interpreter")
-        native_args.add_argument("--ffi", type=str, choices=["ctypes", "cffi"], default="ctypes", help="FFI mechanism")
+        native_args.add_argument(
+    "header_file",
+    type=str,
+     help="Path to C header file defining native interface")
+        native_args.add_argument(
+    "library_file",
+    type=str,
+     help="Path to native library (DLL/SO/DYLIB)")
+        native_args.add_argument(
+    "--compiler",
+    type=str,
+     help="Path to compiler (auto-detected if not specified)")
+        native_args.add_argument(
+    "--include",
+    type=str,
+    action="append",
+    dest="include_paths",
+     help="Additional include path")
+        native_args.add_argument(
+    "--define",
+    "-D",
+    type=str,
+    action="append",
+    dest="defines",
+     help="Preprocessor macro definition (NAME=VALUE)")
+        native_args.add_argument(
+    "--flag",
+    type=str,
+    action="append",
+    dest="compiler_flags",
+     help="Additional compiler flag")
+        native_args.add_argument(
+    "--python",
+    type=str,
+     help="Path to Python interpreter")
+        native_args.add_argument(
+    "--ffi",
+    type=str,
+    choices=[
+        "ctypes",
+        "cffi"],
+        default="ctypes",
+         help="FFI mechanism")
         native_args.add_argument("--seed", type=int, help="Random seed")
-        native_args.add_argument("--per-test-timeout", type=int, default=5, help="Timeout per test in seconds")
-        native_args.add_argument("--total-timeout", type=int, default=300, help="Total timeout in seconds")
-        native_args.add_argument("--subprocess-timeout", type=int, default=60, help="Timeout for individual test subprocesses in seconds")
-        native_args.add_argument("--enable-crash-detection", type=str, default="true", help="Enable crash detection (true/false)")
-        
+        native_args.add_argument(
+    "--per-test-timeout",
+    type=int,
+    default=5,
+     help="Timeout per test in seconds")
+        native_args.add_argument(
+    "--total-timeout",
+    type=int,
+    default=300,
+     help="Total timeout in seconds")
+        native_args.add_argument(
+    "--subprocess-timeout",
+    type=int,
+    default=60,
+     help="Timeout for individual test subprocesses in seconds")
+        native_args.add_argument(
+    "--enable-crash-detection",
+    type=str,
+    default="true",
+     help="Enable crash detection (true/false)")
+
         # Commands
-        subparsers.add_parser("verify", parents=[common_args, native_args], help="Execute full verification pipeline")
-        subparsers.add_parser("ingest", parents=[common_args, native_args], help="Ingest native interface (extract ABI information)")
-        subparsers.add_parser("synthesize", parents=[common_args], help="Synthesize FFI contract")
-        subparsers.add_parser("generate-adapters", parents=[common_args], help="Generate language adapters")
-        subparsers.add_parser("generate-tests", parents=[common_args], help="Generate test plan")
-        subparsers.add_parser("execute", parents=[common_args], help="Execute verification tests")
-        subparsers.add_parser("diagnose", parents=[common_args], help="Diagnose failures")
-        subparsers.add_parser("report", parents=[common_args], help="Generate human-readable report")
-        subparsers.add_parser("validate-schema", parents=[common_args], help="Validate contract schema")
-        
-        compare_parser = subparsers.add_parser("compare-contracts", parents=[common_args], help="Compare contracts")
-        compare_parser.add_argument("--baseline", type=str, required=True, help="Path to baseline contract.json")
-        
-        context_parser = subparsers.add_parser("context", parents=[common_args], help="Display/validate execution context")
-        context_parser.add_argument("--validate", action="store_true", help="Validate existing context")
-        
+        subparsers.add_parser(
+    "verify",
+    parents=[
+        common_args,
+        native_args],
+         help="Execute full verification pipeline")
+        subparsers.add_parser(
+    "ingest",
+    parents=[
+        common_args,
+        native_args],
+         help="Ingest native interface (extract ABI information)")
+        subparsers.add_parser(
+    "synthesize",
+    parents=[common_args],
+     help="Synthesize FFI contract")
+        subparsers.add_parser(
+    "generate-adapters",
+    parents=[common_args],
+     help="Generate language adapters")
+        subparsers.add_parser(
+    "generate-tests",
+    parents=[common_args],
+     help="Generate test plan")
+        subparsers.add_parser(
+    "execute",
+    parents=[common_args],
+     help="Execute verification tests")
+        subparsers.add_parser(
+    "diagnose",
+    parents=[common_args],
+     help="Diagnose failures")
+        subparsers.add_parser(
+    "report",
+    parents=[common_args],
+     help="Generate human-readable report")
+        subparsers.add_parser(
+    "validate-schema",
+    parents=[common_args],
+     help="Validate contract schema")
+
+        compare_parser = subparsers.add_parser(
+    "compare-contracts",
+    parents=[common_args],
+     help="Compare contracts")
+        compare_parser.add_argument(
+    "--baseline",
+    type=str,
+    required=True,
+     help="Path to baseline contract.json")
+
+        context_parser = subparsers.add_parser(
+    "context",
+    parents=[common_args],
+     help="Display/validate execution context")
+        context_parser.add_argument(
+    "--validate",
+    action="store_true",
+     help="Validate existing context")
+
         return parser
-    
+
     def run(self, args: Optional[List[str]] = None) -> int:
         parsed_args = self.parser.parse_args(args)
         if not parsed_args.command:
             self.parser.print_help()
             return 1
-        
+
         try:
-            verbosity = "verbose" if parsed_args.verbose else ("quiet" if parsed_args.quiet else "normal")
-            
+            verbosity = "verbose" if parsed_args.verbose else (
+                "quiet" if parsed_args.quiet else "normal")
+
             if parsed_args.command == "context":
                 return self._handle_context_command(parsed_args, verbosity)
             elif parsed_args.command in ["verify", "ingest"]:
                 return self._handle_native_command(parsed_args, verbosity)
             else:
                 return self._handle_stage_command(parsed_args, verbosity)
-                
+
         except Exception as e:
             print(f"Error: {e}")
             if parsed_args.verbose:
@@ -1125,8 +1317,9 @@ class CLIOrchestrator:
 
     def _handle_context_command(self, args, verbosity: str) -> int:
         working_dir = args.working_dir or os.getcwd()
-        context_path = os.path.join(working_dir, "artifacts", "execution_context.json")
-        
+        context_path = os.path.join(
+    working_dir, "artifacts", "execution_context.json")
+
         if args.validate:
             if not os.path.exists(context_path):
                 print(f"Error: Execution context not found at {context_path}")
@@ -1156,7 +1349,7 @@ class CLIOrchestrator:
                     macros[name] = value
                 else:
                     macros[define] = "1"
-        
+
         builder = ExecutionContextBuilder()
         try:
             context = builder.build(
@@ -1171,23 +1364,29 @@ class CLIOrchestrator:
                 random_seed=getattr(args, 'seed', None),
                 per_test_timeout=getattr(args, 'subprocess_timeout', 5),
                 total_timeout=getattr(args, 'total_timeout', 300),
-                enable_crash_detection=str(getattr(args, 'enable_crash_detection', 'true')).lower() == 'true',
+                enable_crash_detection=str(
+    getattr(
+        args,
+        'enable_crash_detection',
+         'true')).lower() == 'true',
                 verbosity=verbosity,
                 working_directory=args.working_dir
             )
-            
+
             if verbosity != "quiet":
                 print(f"✓ Execution context created")
-            
+
             orchestrator = Pipeline(context)
             if args.command == "verify":
                 orchestrator.execute_full_pipeline()
                 if verbosity != "quiet":
-                    print(f"\n✓ Full verification pipeline completed successfully")
+                    print(
+    f"\n✓ Full verification pipeline completed successfully")
                     print(f"  Report: {context.artifacts.report_path}")
                 return 0
             else:
-                orchestrator.execute_stage(PipelineStage.INGEST)                 # Correcting for case consistency
+                # Correcting for case consistency
+                orchestrator.execute_stage(PipelineStage.INGEST)
                 orchestrator.execute_stage(PipelineStage.INGEST)
                 if verbosity != "quiet":
                     print(f"✓ Native interface ingestion completed")
@@ -1197,14 +1396,16 @@ class CLIOrchestrator:
 
     def _handle_stage_command(self, args, verbosity: str) -> int:
         working_dir = args.working_dir or os.getcwd()
-        context_path = os.path.join(working_dir, "artifacts", "execution_context.json")
-        
+        context_path = os.path.join(
+    working_dir, "artifacts", "execution_context.json")
+
         if not os.path.exists(context_path):
-            raise PreconditionError(f"Execution context not found at {context_path}")
-        
+            raise PreconditionError(
+    f"Execution context not found at {context_path}")
+
         context = ExecutionContext.load(context_path)
         orchestrator = Pipeline(context)
-        
+
         stage_map = {
             "synthesize": PipelineStage.SYNTHESIZE,
             "generate-adapters": PipelineStage.GENERATE_ADAPTERS,
@@ -1215,21 +1416,22 @@ class CLIOrchestrator:
             "validate-schema": PipelineStage.VALIDATE_SCHEMA,
             "compare-contracts": PipelineStage.COMPARE_CONTRACTS
         }
-        
+
         if args.command == "compare-contracts":
             # ExecutionContext is frozen, use replace to update it
-            context = dataclasses.replace(context, baseline_contract_path=args.baseline)
-            # Re-initialize orchestrator with updated context if necessary, 
+            context = dataclasses.replace(
+    context, baseline_contract_path=args.baseline)
+            # Re-initialize orchestrator with updated context if necessary,
             # but Pipeline already took the old context.
             # Actually, let's just create a new orchestrator.
             orchestrator = Pipeline(context)
-        
+
         stage = stage_map[args.command]
         orchestrator.execute_stage(stage)
-        
+
         if verbosity != "quiet":
             print(f"✓ Stage '{args.command}' completed successfully")
-        
+
         return 0
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1243,6 +1445,7 @@ class CLIOrchestrator:
 # ============================================================================
 # EXTERNAL DEPENDENCIES (libclang)
 # ============================================================================
+
 
 def _configure_libclang():
     """Configure libclang library path for Windows."""
@@ -1262,6 +1465,7 @@ def _configure_libclang():
             clang.cindex.Config.set_library_file(path)
             return
 
+
 _configure_libclang()
 try:
     import clang.cindex as clang
@@ -1272,6 +1476,7 @@ except ImportError:
 # INTERNAL HELPERS
 # ============================================================================
 
+
 @dataclass(frozen=True)
 class SourceLocation:
     """Immutable source location representation."""
@@ -1279,47 +1484,56 @@ class SourceLocation:
     line: int
     column: int
 
+
 class SourceLocationTracker:
     """Tracks and formats source locations from AST nodes."""
-    
+
     def get_location(self, cursor) -> SourceLocation:
         try:
             location = cursor.location
             if location.file:
                 file_path = os.path.abspath(location.file.name)
-                return SourceLocation(file=file_path, line=location.line, column=location.column)
+                return SourceLocation(
+    file=file_path,
+    line=location.line,
+     column=location.column)
             else:
                 return self._unknown_location()
         except Exception:
             return self._unknown_location()
-    
+
     def format_location(self, location: SourceLocation) -> Dict[str, Any]:
-        return {"file": location.file, "line": location.line, "column": location.column}
-    
+        return {
+    "file": location.file,
+    "line": location.line,
+     "column": location.column}
+
     def _unknown_location(self) -> SourceLocation:
         return SourceLocation(file="<unknown>", line=0, column=0)
-    
+
     def get_location_dict(self, cursor) -> Dict[str, Any]:
         location = self.get_location(cursor)
         return self.format_location(location)
 
+
 class ABIExtractor:
     """Extracts ABI-specific information from AST nodes."""
-    
+
     def compute_struct_layout(self, cursor) -> Dict[str, Any]:
         struct_type = cursor.type
         size_bytes = struct_type.get_size()
         alignment_bytes = struct_type.get_align()
         is_union = cursor.kind == clang.IDEKind.UNION_DECL
-        
+
         declared_fields = []
         for field_cursor in cursor.get_children():
             if field_cursor.kind == clang.IDEKind.FIELD_DECL:
                 field_info = self._extract_field_info(field_cursor)
                 declared_fields.append(field_info)
-        
-        fields_with_padding = self.calculate_padding(declared_fields, size_bytes, alignment_bytes, is_union)
-        
+
+        fields_with_padding = self.calculate_padding(
+    declared_fields, size_bytes, alignment_bytes, is_union)
+
         return {
             "size_bytes": size_bytes,
             "alignment_bytes": alignment_bytes,
@@ -1327,7 +1541,7 @@ class ABIExtractor:
             "is_packed": self._is_packed(cursor),
             "is_union": is_union
         }
-    
+
     def _extract_field_info(self, field_cursor) -> Dict[str, Any]:
         field_name = field_cursor.spelling
         field_type = field_cursor.type
@@ -1336,22 +1550,32 @@ class ABIExtractor:
             offset_bytes = offset_bits // 8
         except:
             offset_bytes = 0
-        
+
         type_info = self.extract_type_info(field_type)
-        return {"name": field_name, "offset_bytes": offset_bytes, "type": type_info, "is_implicit": False}
-    
-    def calculate_padding(self, fields: List[Dict[str, Any]], total_size: int, alignment: int, is_union: bool) -> List[Dict[str, Any]]:
+        return {
+    "name": field_name,
+    "offset_bytes": offset_bytes,
+    "type": type_info,
+     "is_implicit": False}
+
+    def calculate_padding(self,
+    fields: List[Dict[str,
+    Any]],
+    total_size: int,
+    alignment: int,
+    is_union: bool) -> List[Dict[str,
+     Any]]:
         if is_union or not fields: return fields
         result = []
         padding_counter = 1
         sorted_fields = sorted(fields, key=lambda f: f["offset_bytes"])
-        
+
         for i, field in enumerate(sorted_fields):
             result.append(field)
             current_offset = field["offset_bytes"]
             current_size = field["type"]["size_bytes"]
             expected_next = current_offset + current_size
-            
+
             if i + 1 < len(sorted_fields):
                 next_offset = sorted_fields[i + 1]["offset_bytes"]
                 if next_offset > expected_next:
@@ -1366,7 +1590,8 @@ class ABIExtractor:
 
         if sorted_fields:
             last_field = sorted_fields[-1]
-            last_end = last_field["offset_bytes"] + last_field["type"]["size_bytes"]
+            last_end = last_field["offset_bytes"] + \
+                last_field["type"]["size_bytes"]
             if total_size > last_end:
                 result.append({
                     "name": f"__padding_{padding_counter}",
@@ -1375,7 +1600,7 @@ class ABIExtractor:
                     "is_implicit": True
                 })
         return result
-    
+
     def extract_type_info(self, clang_type) -> Dict[str, Any]:
         type_kind = clang_type.kind
         # Primitive types
@@ -1420,7 +1645,10 @@ class ABIExtractor:
                 "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()
             }
         elif type_kind == clang.TypeKind.FUNCTIONPROTO:
-             return {"kind": "function_pointer", "size_bytes": clang_type.get_size(), "alignment_bytes": clang_type.get_align()}
+             return {
+    "kind": "function_pointer",
+    "size_bytes": clang_type.get_size(),
+     "alignment_bytes": clang_type.get_align()}
         else:
              return {
                 "kind": "unknown", "name": clang_type.spelling,
@@ -1445,30 +1673,35 @@ class ABIExtractor:
                 return True
         return False
 
+
 class CompilerFrontend:
     """Interfaces with libclang to parse C header files and provide AST access."""
-    
+
     def __init__(self):
         if not clang:
-            raise ImportError("libclang not found. Install with: pip install libclang")
+            raise ImportError(
+                "libclang not found. Install with: pip install libclang")
         self.index = clang.Index.create()
-    
+
     def parse_header(self, header_path: str, context):
         if not os.path.exists(header_path):
             raise Exception(f"Header file not found: {header_path}")
-        
+
         args = self.get_compiler_command(context)
         try:
             tu = self.index.parse(
                 header_path,
                 args=args,
-                options=(clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD | clang.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
+                options=(clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD |
+                         clang.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
             )
         except Exception as e:
             raise Exception(f"Failed to parse header: {e}")
-        
+
         if not self.validate_compilation(tu):
-            raise Exception(f"Header compilation failed:\n{self._format_diagnostics(tu)}")
+            raise Exception(
+    f"Header compilation failed:\n{
+        self._format_diagnostics(tu)}")
         return tu
 
     def get_compiler_command(self, context) -> List[str]:
@@ -1476,7 +1709,8 @@ class CompilerFrontend:
         for p in context.compiler.include_paths: args.append(f"-I{p}")
         for m in context.compiler.preprocessor_macros: args.append(f"-D{m}")
         if context.platform.os_name == "Windows":
-             args.extend(["-fms-compatibility", "-fms-extensions", f"-fms-compatibility-version={context.compiler.compiler_version}"])
+             args.extend(["-fms-compatibility", "-fms-extensions",
+                         f"-fms-compatibility-version={context.compiler.compiler_version}"])
         if context.platform.architecture == "AMD64": args.append("-m64")
         return args
 
@@ -1488,29 +1722,37 @@ class CompilerFrontend:
     def _format_diagnostics(self, tu) -> str:
         messages = []
         for diag in tu.diagnostics:
-            loc = f"{diag.location.file.name}:{diag.location.line}:{diag.location.column}" if diag.location.file else "<unknown>"
-            messages.append(f"Severity({diag.severity}): {loc}: {diag.spelling}")
+            loc = f"{
+    diag.location.file.name}:{
+        diag.location.line}:{
+            diag.location.column}" if diag.location.file else "<unknown>"
+            messages.append(
+    f"Severity({
+        diag.severity}): {loc}: {
+            diag.spelling}")
         return "\n".join(messages) if messages else "No diagnostics available"
-        
+
     def get_compiler_invocation_string(self, header_path: str, context) -> str:
         args = self.get_compiler_command(context)
         return f"clang {' '.join(args)} {header_path}"
 
+
 class NativeInterfaceAnalyzer:
-    
+
     def __init__(self):
         self.frontend = CompilerFrontend()
         self.abi_extractor = ABIExtractor()
         self.location_tracker = SourceLocationTracker()
 
-    def analyze(self, header_path: str, library_path: str, context) -> Dict[str, Any]:
-        tu = self.frontend.parse_header(header_path, context)
-        
+    def analyze(self, header_path: str, library_path: str,
+                context) -> Dict[str, Any]:
+                    tu = self.frontend.parse_header(header_path, context)
+
         functions = self.extract_functions(tu.cursor)
         structs = self.extract_structs(tu.cursor)
         enums = self.extract_enums(tu.cursor)
         typedefs = self.extract_typedefs(tu.cursor)
-        
+
         return self._build_artifact(
             functions=functions, structs=structs, enums=enums, typedefs=typedefs,
             header_path=header_path, library_path=library_path, context=context
@@ -1527,7 +1769,8 @@ class NativeInterfaceAnalyzer:
         structs = []
         seen = set()
         for node in cursor.walk_preorder():
-            if node.kind in [clang.IDEKind.STRUCT_DECL, clang.IDEKind.UNION_DECL] and node.is_definition():
+            if node.kind in [clang.IDEKind.STRUCT_DECL,
+     clang.IDEKind.UNION_DECL] and node.is_definition():
                 if node.spelling and node.spelling not in seen:
                     seen.add(node.spelling)
                     structs.append(self._extract_struct_info(node))
@@ -1555,7 +1798,8 @@ class NativeInterfaceAnalyzer:
 
     def _extract_function_info(self, cursor) -> Dict[str, Any]:
         func_name = cursor.spelling
-        return_type = self.abi_extractor.extract_type_info(cursor.type.get_result())
+        return_type = self.abi_extractor.extract_type_info(
+            cursor.type.get_result())
         parameters: List[Dict[str, Any]] = []
         for arg in cursor.get_arguments():
             parameters.append({
@@ -1563,7 +1807,7 @@ class NativeInterfaceAnalyzer:
                 "type": self.abi_extractor.extract_type_info(arg.type),
                 "qualifiers": self._extract_qualifiers(arg.type)
             })
-        
+
         return {
             "name": func_name,
             "source_location": self.location_tracker.get_location_dict(cursor),
@@ -1592,8 +1836,9 @@ class NativeInterfaceAnalyzer:
         values = []
         for child in cursor.get_children():
             if child.kind == clang.IDEKind.ENUM_CONSTANT_DECL:
-                values.append({"name": child.spelling, "value": child.enum_value})
-        
+                values.append(
+                    {"name": child.spelling, "value": child.enum_value})
+
         return {
             "name": cursor.spelling,
             "source_location": self.location_tracker.get_location_dict(cursor),
@@ -1615,7 +1860,15 @@ class NativeInterfaceAnalyzer:
         if clang_type.is_restrict_qualified(): q.append("restrict")
         return q
 
-    def _build_artifact(self, functions, structs, enums, typedefs, header_path, library_path, context) -> Dict[str, Any]:
+    def _build_artifact(self,
+    functions,
+    structs,
+    enums,
+    typedefs,
+    header_path,
+    library_path,
+    context) -> Dict[str,
+     Any]:
         ci = self.frontend.get_compiler_invocation_string(header_path, context)
         return {
             "provenance": {
@@ -1653,28 +1906,29 @@ class NativeInterfaceAnalyzer:
 # INTERNAL HELPERS
 # ============================================================================
 
+
 class QualifierNormalizer:
     """
     Normalizes type qualifiers from compiler-specific lists to canonical boolean maps.
     """
-    
+
     def normalize(self, qualifiers: List[str]) -> Dict[str, bool]:
         """
         Convert a list of qualifier strings into a normalized dictionary.
-        
+
         Args:
             qualifiers: List of strings like ["const", "volatile"]
-            
+
         Returns:
             Dictionary with canonical keys and boolean values
         """
         # Ensure input is a list
         if not isinstance(qualifiers, list):
             qualifiers = []
-            
+
         # Case insensitive matching
         q_lower = [q.lower() for q in qualifiers]
-        
+
         return {
             "is_const": "const" in q_lower,
             "is_volatile": "volatile" in q_lower,
@@ -1687,11 +1941,12 @@ class QualifierNormalizer:
         qualifiers = type_info.get("qualifiers", [])
         return QualifierNormalizer().normalize(qualifiers)
 
+
 class TypeResolver:
     """
     Handles type normalization, typedef resolution, and deterministic ID generation.
     """
-    
+
     def __init__(self, platform_info: Dict[str, Any]):
         """
         Initialize with platform information for correct primitive mapping.
@@ -1699,7 +1954,7 @@ class TypeResolver:
         self.os_name = platform_info.get("os_name", "Windows")
         self.arch = platform_info.get("architecture", "AMD64")
         self.ptr_width = platform_info.get("pointer_width", 64)
-        
+
         # Primitive mapping table for Windows x64
         self._primitive_map = {
             "void": "void",
@@ -1723,33 +1978,34 @@ class TypeResolver:
             "__int64": "int64",
             "float": "float32",
             "double": "float64",
-            "long double": "float64", # MSVC treats long double as double
+            "long double": "float64",  # MSVC treats long double as double
             "size_t": "uint64" if self.ptr_width == 64 else "uint32",
             "wchar_t": "wchar"
         }
 
-    def resolve_type(self, type_info: Dict[str, Any], type_registry: Dict[str, Any]) -> str:
-        """
+    def resolve_type(
+        self, type_info: Dict[str, Any], type_registry: Dict[str, Any]) -> str:
+            """
         Resolve a type to its canonical ID and ensure it exists in the registry.
-        
+
         Returns:
             The type_id (e.g., "primitive:int32")
         """
         kind = type_info.get("kind")
-        
+
         # 1. Resolve Typedefs transitively
         if kind == "typedef":
             underlying = type_info.get("underlying_type")
             if not underlying:
                 raise ValueError(f"Malformed typedef: {type_info.get('name')}")
             return self.resolve_type(underlying, type_registry)
-            
+
         # 2. Handle Primitives
         if kind == "primitive":
             raw_name = type_info.get("name", "unknown")
             canon_name = self._primitive_map.get(raw_name, raw_name)
             type_id = f"primitive:{canon_name}"
-            
+
             if type_id not in type_registry:
                 type_registry[type_id] = {
                     "id": type_id,
@@ -1759,7 +2015,7 @@ class TypeResolver:
                     "alignment_bytes": type_info.get("alignment_bytes")
                 }
             return type_id
-            
+
         # 3. Handle Pointers
         if kind == "pointer":
             pointee = type_info.get("pointee")
@@ -1768,10 +2024,10 @@ class TypeResolver:
                                 # Assuming generic void* if missing or check if it's handled upstream
                                 # In our extractor, pointer always has pointee.
                 raise ValueError("Malformed pointer: missing pointee")
-                
+
             pointee_id = self.resolve_type(pointee, type_registry)
             type_id = f"pointer:{pointee_id}"
-            
+
             if type_id not in type_registry:
                 type_registry[type_id] = {
                     "id": type_id,
@@ -1782,12 +2038,12 @@ class TypeResolver:
                     "alignment_bytes": type_info.get("alignment_bytes", self.ptr_width // 8)
                 }
             return type_id
-            
+
         # 4. Handle Structs
         if kind in ["struct", "record"]:
             name = type_info.get("name", "anonymous_struct")
             type_id = f"struct:{name}"
-            
+
             if type_id not in type_registry:
                 type_registry[type_id] = {
                     "id": type_id,
@@ -1803,11 +2059,13 @@ class TypeResolver:
         if kind == "enum":
             name = type_info.get("name", "anonymous_enum")
             type_id = f"enum:{name}"
-            
+
             if type_id not in type_registry:
-                underlying = type_info.get("underlying_type", {"kind": "primitive", "name": "int"})
+                underlying = type_info.get(
+    "underlying_type", {
+        "kind": "primitive", "name": "int"})
                 underlying_id = self.resolve_type(underlying, type_registry)
-                
+
                 type_registry[type_id] = {
                     "id": type_id,
                     "kind": "enum",
@@ -1818,12 +2076,12 @@ class TypeResolver:
                     "source_location": type_info.get("source_location")
                 }
             return type_id
-            
+
         # 6. Handle Padding
         if kind == "padding":
             size = type_info.get("size_bytes", 0)
             type_id = f"padding:{size}"
-            
+
             if type_id not in type_registry:
                 type_registry[type_id] = {
                     "id": type_id,
@@ -1836,17 +2094,17 @@ class TypeResolver:
         if kind == "array":
             element = type_info.get("element_type")
             count = type_info.get("element_count", 0)
-            # Try to get count from type info if not in top level, 
+            # Try to get count from type info if not in top level,
             # In ABIExtractor array size is "size".
             if count == 0 and "size" in type_info:
                  count = type_info["size"]
-                 
+
             if element is not None:
                 element_id = self.resolve_type(element, type_registry)
             else:
                 element_id = "unknown"
             type_id = f"array:{element_id}:{count}"
-            
+
             if type_id not in type_registry:
                 type_registry[type_id] = {
                     "id": type_id,
@@ -1860,44 +2118,51 @@ class TypeResolver:
 
         return f"unknown:{type_info.get('name', 'unnamed')}"
 
+
 class LayoutNormalizer:
     """
     Handles structural normalization of layouts (structs, unions).
     """
-    
+
     def __init__(self, type_resolver: TypeResolver):
         self.type_resolver = type_resolver
-        
-    def normalize_struct(self, struct_info: Dict[str, Any], type_registry: Dict[str, Any]) -> Dict[str, Any]:
+
+    def normalize_struct(self,
+    struct_info: Dict[str,
+    Any],
+    type_registry: Dict[str,
+    Any]) -> Dict[str,
+     Any]:
         """
         Normalize a struct definition.
         """
         type_id = self.type_resolver.resolve_type(struct_info, type_registry)
-        
+
         normalized_fields = []
         for field in struct_info.get("fields", []):
             field_type = field.get("type")
             if not field_type:
                 continue
-                
-            field_type_id = self.type_resolver.resolve_type(field_type, type_registry)
-            
+
+            field_type_id = self.type_resolver.resolve_type(
+                field_type, type_registry)
+
             normalized_field = {
                 "name": field.get("name"),
                 "offset_bytes": field.get("offset_bytes"),
                 "type_id": field_type_id
             }
-            
+
             # Preserve bit width if present
             if field.get("bit_width") is not None:
                 normalized_field["bit_width"] = field["bit_width"]
-                
+
             # Preserve implicit flag (for padding)
             if field.get("is_implicit"):
                 normalized_field["is_implicit"] = True
-                
+
             normalized_fields.append(normalized_field)
-            
+
         return {
             "name": struct_info.get("name"),
             "type_id": type_id,
@@ -1913,56 +2178,64 @@ class LayoutNormalizer:
 # PUBLIC API
 # ============================================================================
 
+
 class IRNormalizer:
     """
     Orchestrates the IR normalization process.
     Produces Intermediate Representation from Native Interface Artifact.
     """
-    
+
     def __init__(self):
         self.qualifier_normalizer = QualifierNormalizer()
-        
+
     def normalize(self, context) -> Dict[str, Any]:
         """
         Produce Intermediate Representation from Native Interface Artifact.
-        
+
         Args:
             context: ExecutionContext containing path to native interface artifact
-        
+
         Returns:
             IR Artifact dictionary
         """
         # 1. Load native interface
         # The path should be from context
         native_interface_path = context.artifacts.native_interface_path
-        
+
         if not os.path.exists(native_interface_path):
-            raise FileNotFoundError(f"Native Interface Artifact not found at {native_interface_path}. Run Ingestion first.")
-            
+            raise FileNotFoundError(
+    f"Native Interface Artifact not found at {native_interface_path}. Run Ingestion first.")
+
         with open(native_interface_path, 'r', encoding='utf-8') as f:
             ni = json.load(f)
-            
+
         # 2. Initialize sub-components
         type_resolver = TypeResolver(ni.get("platform", {}))
         layout_normalizer = LayoutNormalizer(type_resolver)
-        
+
         type_registry: Dict[str, Dict[str, Any]] = {}
-        
+
         # 3. Normalize Enums first (simplest types)
         normalized_enums = []
         for enum in ni.get("enums", []):
-            normalized_enums.append(self._normalize_enum(enum, type_resolver, type_registry))
-            
+            normalized_enums.append(
+    self._normalize_enum(
+        enum, type_resolver, type_registry))
+
         # 4. Normalize Structs
         normalized_structs = []
         for struct in ni.get("structs", []):
-            normalized_structs.append(layout_normalizer.normalize_struct(struct, type_registry))
-            
+            normalized_structs.append(
+    layout_normalizer.normalize_struct(
+        struct, type_registry))
+
         # 5. Normalize Functions
         normalized_functions = []
         for func in ni.get("functions", []):
-            normalized_functions.append(self._normalize_function(func, type_resolver, type_registry))
-            
+            normalized_functions.append(
+    self._normalize_function(
+        func, type_resolver, type_registry))
+
         # 6. Build IR Artifact
         ir_artifact = {
             "provenance": {
@@ -1979,14 +2252,20 @@ class IRNormalizer:
             "structs": normalized_structs,
             "enums": normalized_enums
         }
-        
+
         return ir_artifact
 
-    def _normalize_enum(self, enum: Dict, resolver: TypeResolver, registry: Dict) -> Dict:
+    def _normalize_enum(
+    self,
+    enum: Dict,
+    resolver: TypeResolver,
+     registry: Dict) -> Dict:
         type_id = resolver.resolve_type(enum, registry)
-        underlying_type = enum.get("underlying_type", {"kind": "primitive", "name": "int"})
+        underlying_type = enum.get(
+    "underlying_type", {
+        "kind": "primitive", "name": "int"})
         underlying_id = resolver.resolve_type(underlying_type, registry)
-        
+
         return {
             "name": enum.get("name"),
             "type_id": type_id,
@@ -1995,20 +2274,25 @@ class IRNormalizer:
             "values": enum.get("values", [])
         }
 
-    def _normalize_function(self, func: Dict, resolver: TypeResolver, registry: Dict) -> Dict:
-        return_type_id = resolver.resolve_type(func.get("return_type", {}), registry)
-        
+    def _normalize_function(
+    self,
+    func: Dict,
+    resolver: TypeResolver,
+     registry: Dict) -> Dict:
+        return_type_id = resolver.resolve_type(
+            func.get("return_type", {}), registry)
+
         normalized_params = []
         for param in func.get("parameters", []):
             p_type = param.get("type", {})
             p_type_id = resolver.resolve_type(p_type, registry)
-            
+
             normalized_params.append({
                 "name": param.get("name"),
                 "type_id": p_type_id,
                 "qualifiers": self.qualifier_normalizer.normalize(param.get("qualifiers", []))
             })
-            
+
         return {
             "name": func.get("name"),
             "mangled_name": func.get("mangled_name"),
@@ -2040,16 +2324,22 @@ class IRNormalizer:
 # INTERNAL HELPERS
 # ============================================================================
 
+
 class SynthesisWarningLogger:
     """
     Captures warnings when automated analysis falls back to conservative defaults
     or encounters ambiguous patterns.
     """
-    
+
     def __init__(self):
         self.warnings: List[Dict[str, Any]] = []
 
-    def log(self, category: str, message: str, severity: str = "warning", context: str = ""):
+    def log(
+    self,
+    category: str,
+    message: str,
+    severity: str = "warning",
+     context: str = ""):
         """Add a warning to the list."""
         self.warnings.append({
             "category": category,
@@ -2085,22 +2375,33 @@ class SynthesisWarningLogger:
     def get_all(self) -> List[Dict[str, Any]]:
         return self.warnings
 
+
 class ConstraintIDGenerator:
     """
     Ensures every constraint in the contract has a traceable, unique identifier.
     """
-    
-    def generate_function_id(self, func_name: str, target: str, constraint_type: str) -> str:
+
+    def generate_function_id(
+    self,
+    func_name: str,
+    target: str,
+     constraint_type: str) -> str:
         """
         Generate ID for function-related constraints.
         Format: func_<name>_<target>_<type>
         """
         # Clean target name (e.g. parameter:cfg -> p_cfg)
-        clean_target = target.replace("parameter:", "p_").replace("return_value", "ret")
+        clean_target = target.replace(
+    "parameter:", "p_").replace(
+        "return_value", "ret")
         base = f"func_{func_name}_{clean_target}_{constraint_type}"
         return self._normalize(base)
 
-    def generate_struct_id(self, struct_name: str, field_name: str, constraint_type: str) -> str:
+    def generate_struct_id(
+    self,
+    struct_name: str,
+    field_name: str,
+     constraint_type: str) -> str:
         """
         Generate ID for struct-related constraints.
         Format: struct_<name>_<field>_<type>
@@ -2117,34 +2418,36 @@ class ConstraintIDGenerator:
 
     def _normalize(self, base_id: str) -> str:
         """Ensure IDs are valid identifiers and deduplicated locally if needed."""
-        # In a real system we might append a hash of the justification if multiple
+        # In a real system we might append a hash of the justification if
+        # multiple
                 return base_id.lower().replace(" ", "_").replace("*", "ptr")
+
 
 class ConservativeDefaultPolicy:
     """
     Implements mandatory fallback policies to ensure safety over permissiveness.
     """
-    
+
     @staticmethod
     def default_nullability() -> str:
         """DEFAULT POLICY 1: Pointers are required unless proven optional."""
         return "non_null"
-        
+
     @staticmethod
     def default_ownership() -> str:
         """DEFAULT POLICY 2: Assume borrowed (caller keeps ownership)."""
         return "borrowed"
-        
+
     @staticmethod
     def default_lifetime() -> str:
         """DEFAULT POLICY 3: Valid only during function call."""
         return "call_duration"
-        
+
     @staticmethod
     def default_mutability(is_const: bool) -> str:
         """DEFAULT POLICY 4: Favor immutable if const, else mutable."""
         return "immutable" if is_const else "mutable"
-        
+
     @staticmethod
     def default_buffer_safety() -> Dict[str, Any]:
         """DEFAULT POLICY 5: Buffers are high risk."""
@@ -2153,7 +2456,7 @@ class ConservativeDefaultPolicy:
             "requires_validation": True,
             "severity": "warning"
         }
-        
+
     @staticmethod
     def default_return_semantics(return_type_id: str) -> str:
         """DEFAULT POLICY 6: Integer returns are treated as error codes."""
@@ -2161,96 +2464,144 @@ class ConservativeDefaultPolicy:
             return "error_code"
         return "value"
 
+
 class NamingConventionAnalyzer:
     """
     Analyzes C naming conventions to infer intent for nullability, ownership, etc.
     """
-    
+
     def is_nullable_name(self, name: str) -> bool:
         """Rule 1: Detect nullability hints."""
         lower_name = name.lower()
         prefixes = ["optional_", "maybe_", "nullable_"]
         suffixes = ["_opt", "_nullable", "_maybe"]
-        
+
         return any(lower_name.startswith(p) for p in prefixes) or \
                any(lower_name.endswith(s) for s in suffixes)
 
     def is_ownership_transfer_function(self, func_name: str) -> Optional[str]:
         """Rule 2: Detect ownership transfer intent."""
         lower_name = func_name.lower()
-        
+
         # Transfers to Caller (Allocation)
-        transfers_to_caller = ["create_", "alloc_", "new_", "init_", "clone_", "dup_"]
+        transfers_to_caller = [
+    "create_",
+    "alloc_",
+    "new_",
+    "init_",
+    "clone_",
+     "dup_"]
         if any(lower_name.startswith(p) for p in transfers_to_caller):
             return "caller"
-            
+
         # Transfers to Callee (Deallocation/Take-ownership)
-        transfers_to_callee = ["destroy_", "free_", "delete_", "release_", "sink_", "take_"]
+        transfers_to_callee = [
+    "destroy_",
+    "free_",
+    "delete_",
+    "release_",
+    "sink_",
+     "take_"]
         if any(lower_name.startswith(p) for p in transfers_to_callee):
             return "callee"
-            
+
         return None
 
     def is_borrowed_function(self, func_name: str) -> bool:
         """Detect intent for non-transferring operations."""
         lower_name = func_name.lower()
-        prefixes = ["get_", "find_", "query_", "peek_", "view_", "process_", "write_", "read_"]
+        prefixes = [
+    "get_",
+    "find_",
+    "query_",
+    "peek_",
+    "view_",
+    "process_",
+    "write_",
+     "read_"]
         return any(lower_name.startswith(p) for p in prefixes)
 
-    def detect_buffer_size_relationship(self, pointer_name: str, scalar_name: str) -> bool:
+    def detect_buffer_size_relationship(
+    self,
+    pointer_name: str,
+     scalar_name: str) -> bool:
         """Rule 4: Detect relationship between a buffer and its size parameter."""
         p_name = pointer_name.lower()
         s_name = scalar_name.lower()
-        
+
         # 1. Name match + size/len suffix
-        size_indicators = ["_size", "_len", "_count", "_length", "size", "len", "count"]
+        size_indicators = [
+    "_size",
+    "_len",
+    "_count",
+    "_length",
+    "size",
+    "len",
+     "count"]
         for indicator in size_indicators:
             if s_name == f"{p_name}{indicator}" or s_name == indicator:
                 return True
-                
+
                 common_pairs = {
             "buffer": ["buffer_size", "buf_len", "size"],
             "data": ["data_size", "datalen", "len"],
             "items": ["count", "num_items"],
             "ptr": ["size", "count"]
         }
-        
+
         if p_name in common_pairs and s_name in common_pairs[p_name]:
             return True
-            
+
         return False
 
-    def is_error_code_return(self, func_name: str, return_type_id: str) -> bool:
+    def is_error_code_return(
+    self,
+    func_name: str,
+     return_type_id: str) -> bool:
         """Rule 6: Detect if return value represents an error code."""
-        if return_type_id not in ["primitive:int32", "primitive:int64", "primitive:int16"]:
+        if return_type_id not in [
+    "primitive:int32",
+    "primitive:int64",
+     "primitive:int16"]:
             return False
-            
+
         lower_name = func_name.lower()
-        indicators = ["status", "error", "result", "code", "write", "process", "save", "init", "open"]
+        indicators = [
+    "status",
+    "error",
+    "result",
+    "code",
+    "write",
+    "process",
+    "save",
+    "init",
+     "open"]
         return any(ind in lower_name for ind in indicators)
+
 
 class ConstraintDeriver:
     """
     Applies derivation rules to functions, parameters, and structs.
     """
-    
+
     def __init__(self, warning_logger: SynthesisWarningLogger):
         self.naming_analyzer = NamingConventionAnalyzer()
         self.defaults = ConservativeDefaultPolicy()
         self.id_gen = ConstraintIDGenerator()
         self.logger = warning_logger
 
-    def derive_parameter_contract(self, func_name: str, param: Dict[str, Any]) -> Dict[str, Any]:
-        """derive rules 1, 2, 3, 4, 9 for a parameter."""
+    def derive_parameter_contract(
+        self, func_name: str, param: Dict[str, Any]) -> Dict[str, Any]:
+            """derive rules 1, 2, 3, 4, 9 for a parameter."""
         p_name = param.get("name")
         p_type_id = param.get("type_id", "")
         is_pointer = p_type_id.startswith("pointer:")
         is_const = param.get("qualifiers", {}).get("is_const", False)
-        
+
         # Rule 1: Nullability
         nullability = self.defaults.default_nullability()
         null_just = "Pointer parameter without indication of nullability"
-        
+
         if is_pointer and p_name is not None:
             if self.naming_analyzer.is_nullable_name(p_name):
                 nullability = "nullable"
@@ -2262,18 +2613,22 @@ class ConstraintDeriver:
         # Rule 2: Ownership
         ownership = self.defaults.default_ownership()
         own_just = "No indication of ownership transfer; assumed borrowed"
-        
+
         if is_pointer:
-            transfer_intent = self.naming_analyzer.is_ownership_transfer_function(func_name)
+            transfer_intent = self.naming_analyzer.is_ownership_transfer_function(
+                func_name)
             if transfer_intent == "callee" and not is_const:
-                # If function is 'destroy_config(Config* cfg)', cfg is transferred
+                # If function is 'destroy_config(Config* cfg)', cfg is
+                # transferred
                 ownership = "transferred"
                 own_just = "Function naming suggests callee takes ownership"
             elif transfer_intent == "caller":
-                # This usually applies to return values, but parameters in 'init' might be borrowed
+                # This usually applies to return values, but parameters in
+                # 'init' might be borrowed
                 pass
-            
-            if ownership == self.defaults.default_ownership() and not self.naming_analyzer.is_borrowed_function(func_name):
+
+            if ownership == self.defaults.default_ownership(
+            ) and not self.naming_analyzer.is_borrowed_function(func_name):
                 # We couldn't find a strong rule, so we used default. Log it.
                 if p_name is not None:
                     self.logger.warn_ambiguous_ownership(func_name, p_name)
@@ -2295,7 +2650,7 @@ class ConstraintDeriver:
                 "constraint_type": "valid_pointer",
                 "description": "Must point to valid memory"
             })
-            if "pointer:primitive:" not in p_type_id: # likely struct or complex
+            if "pointer:primitive:" not in p_type_id:  # likely struct or complex
                 constraints.append({
                     "constraint_type": "alignment",
                     "description": "Must be properly aligned for its type"
@@ -2315,9 +2670,10 @@ class ConstraintDeriver:
             "constraints": constraints
         }
 
-    def derive_buffer_constraints(self, func_name: str, parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def derive_buffer_constraints(
+        self, func_name: str, parameters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 constraints = []
-        
+
         for i, p1 in enumerate(parameters):
             p1_name = p1.get("name")
             p1_type = p1.get("type_id", "")
@@ -5998,7 +6354,7 @@ from datetime import timezone
 # Provides command-line access to verification pipeline.
 #
 # USAGE:
-#   python system_architecture.py verify <header> <library>
+    #   python system_architecture.py verify <header> <library>
 #   python system_architecture.py context
 #
 # ═══════════════════════════════════════════════════════════════════════════
@@ -6019,9 +6375,9 @@ if __name__ == '__main__':
 # system. All 12 phases are included and fully functional.
 #
 # For the modular package structure (for development), see:
-#   polyglot_ffi_verifier/ directory
+    #   polyglot_ffi_verifier/ directory
 #
 # For documentation, see:
-#   SYSTEM_ARCHITECTURE.md
+    #   SYSTEM_ARCHITECTURE.md
 #
 # ═══════════════════════════════════════════════════════════════════════════

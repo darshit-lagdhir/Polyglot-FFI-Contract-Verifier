@@ -13,14 +13,16 @@ VERSION_HISTORY = {
             "Module 04 integration bridge",
             "Comprehensive validation framework",
             "Performance optimizations",
-            "Full CLI interface"
-        ]
+            "Full CLI interface",
+        ],
     }
 }
+
 
 def get_version() -> str:
     """Get current version string."""
     return __version__
+
 
 def get_version_info() -> tuple:
     """Get version as tuple."""

@@ -12,76 +12,71 @@ from typing import Any, Dict, List
 # ============================================================================
 
 ERROR_CATALOG = {
-    'E1001': {
-        'title': 'Type Conversion Error',
-        'category': 'conversion',
-        'severity': 'error',
-        'description': 'Failed to convert Module 04 type to IR entity',
-        'common_causes': [
-            'Unsupported type construct in source code',
-            'Incomplete type information from Module 04',
-            'Corrupted artifact data'
+    "E1001": {
+        "title": "Type Conversion Error",
+        "category": "conversion",
+        "severity": "error",
+        "description": "Failed to convert Module 04 type to IR entity",
+        "common_causes": [
+            "Unsupported type construct in source code",
+            "Incomplete type information from Module 04",
+            "Corrupted artifact data",
         ],
-        'solutions': [
-            'Verify Module 04 artifact is valid',
-            'Check artifact version compatibility',
-            'Re-run Module 04 ingestion',
-            'Report issue if type should be supported'
-        ]
+        "solutions": [
+            "Verify Module 04 artifact is valid",
+            "Check artifact version compatibility",
+            "Re-run Module 04 ingestion",
+            "Report issue if type should be supported",
+        ],
     },
-    'E2101': {
-        'title': 'Structure Size Mismatch',
-        'category': 'validation',
-        'severity': 'error',
-        'description': 'Computed structure size does not match compiler-reported size',
-        'common_causes': [
-            'Missing padding in field layout',
-            'Flexible array member not handled',
-            'Packing attribute not captured',
-            'Bitfield layout error'
+    "E2101": {
+        "title": "Structure Size Mismatch",
+        "category": "validation",
+        "severity": "error",
+        "description": "Computed structure size does not match compiler-reported size",
+        "common_causes": [
+            "Missing padding in field layout",
+            "Flexible array member not handled",
+            "Packing attribute not captured",
+            "Bitfield layout error",
         ],
-        'solutions': [
-            'Compare with: clang -cc1 -fdump-record-layouts',
-            'Check for __attribute__((packed))',
-            'Inspect structure: pfcv-ir inspect --show-type <name>',
-            'Verify Module 04 captured all fields'
-        ]
+        "solutions": [
+            "Compare with: clang -cc1 -fdump-record-layouts",
+            "Check for __attribute__((packed))",
+            "Inspect structure: pfcv-ir inspect --show-type <name>",
+            "Verify Module 04 captured all fields",
+        ],
     },
-    'E2102': {
-        'title': 'Overlapping Structure Fields',
-        'category': 'validation',
-        'severity': 'error',
-        'description': 'Structure fields overlap in memory',
-        'common_causes': [
-            'Incorrect field offsets from Module 04',
-            'Bitfield layout error',
-            'Union mistakenly represented as structure'
+    "E2102": {
+        "title": "Overlapping Structure Fields",
+        "category": "validation",
+        "severity": "error",
+        "description": "Structure fields overlap in memory",
+        "common_causes": [
+            "Incorrect field offsets from Module 04",
+            "Bitfield layout error",
+            "Union mistakenly represented as structure",
         ],
-        'solutions': [
-            'Verify source structure definition',
-            'Check if should be union instead of struct',
-            'Re-run Module 04 ingestion'
-        ]
+        "solutions": [
+            "Verify source structure definition",
+            "Check if should be union instead of struct",
+            "Re-run Module 04 ingestion",
+        ],
     },
-    'W1001': {
-        'title': 'Type Deduplication Warning',
-        'category': 'normalization',
-        'severity': 'warning',
-        'description': 'Multiple structurally identical types found',
-        'common_causes': [
-            'Typedef chains to same type',
-            'Forward declarations and definitions'
-        ],
-        'solutions': [
-            'This is usually benign',
-            'Review typedef usage if unexpected'
-        ]
-    }
+    "W1001": {
+        "title": "Type Deduplication Warning",
+        "category": "normalization",
+        "severity": "warning",
+        "description": "Multiple structurally identical types found",
+        "common_causes": ["Typedef chains to same type", "Forward declarations and definitions"],
+        "solutions": ["This is usually benign", "Review typedef usage if unexpected"],
+    },
 }
 
 # ============================================================================
 # DOCUMENTATION GENERATOR
 # ============================================================================
+
 
 class DocumentationGenerator:
     """Generates documentation from code and metadata."""
@@ -97,7 +92,7 @@ class DocumentationGenerator:
             "This guide helps resolve common issues with IR normalization.",
             "",
             "## Table of Contents",
-            ""
+            "",
         ]
 
         # Generate TOC
@@ -125,15 +120,15 @@ class DocumentationGenerator:
             f"{info['description']}",
             "",
             "**Common Causes:**",
-            ""
+            "",
         ]
 
-        for cause in info['common_causes']:
+        for cause in info["common_causes"]:
             lines.append(f"- {cause}")
 
         lines.extend(["", "**Solutions:**", ""])
 
-        for i, solution in enumerate(info['solutions'], 1):
+        for i, solution in enumerate(info["solutions"], 1):
             lines.append(f"{i}. {solution}")
 
         lines.extend(["", "---", ""])
@@ -346,7 +341,5 @@ Collects validation and error messages.
 
         print(f"Documentation generated in {output_dir}/")
 
-__all__ = [
-    'DocumentationGenerator',
-    'ERROR_CATALOG'
-]
+
+__all__ = ["DocumentationGenerator", "ERROR_CATALOG"]

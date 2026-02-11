@@ -9,7 +9,7 @@ that transforms implicit FFI assumptions into explicit, testable correctness cla
 Usage:
     python verification_pipeline.py run <execution_context.json>
     python verification_pipeline.py validate-stage <stage_name>
-    
+
 API:
     from verification_pipeline import VerificationPipeline, PipelineStage
     pipeline = VerificationPipeline(context)
@@ -46,12 +46,13 @@ import argparse
 # 1.1 Stage State Machine
 # ───────────────────────────────────────────────────────────────────
 
+
 class StageState(Enum):
     """
     Enumeration of valid pipeline stage states.
-    
+
     State transitions are strictly controlled:
-    PENDING → READY → EXECUTING → COMPLETED
+        PENDING → READY → EXECUTING → COMPLETED
                                  → FAILED
                      → SKIPPED
     """
@@ -60,14 +61,16 @@ class StageState(Enum):
     EXECUTING = "executing"       # Stage is currently running
     COMPLETED = "completed"       # Successfully finished, postconditions satisfied
     FAILED = "failed"             # Error encountered, postconditions not satisfied
-    SKIPPED = "skipped"           
+    SKIPPED = "skipped"
 # ───────────────────────────────────────────────────────────────────
 # 1.2 Error Classification
 # ───────────────────────────────────────────────────────────────────
 
+
 class PipelineError(Exception):
     """Base class for all pipeline errors."""
     pass
+
 
 class ConfigError(PipelineError):
     """
@@ -76,31 +79,45 @@ class ConfigError(PipelineError):
     """
     pass
 
+
 class PreconditionError(PipelineError):
     """
     Required input artifacts missing or invalid.
     Examples: stage requires IR artifact but it doesn't exist.
     """
-    def __init__(self, message: str, missing_artifact: str, required_stage: str):
+
+    def __init__(
+    self,
+    message: str,
+    missing_artifact: str,
+     required_stage: str):
         super().__init__(message)
         self.missing_artifact = missing_artifact
         self.required_stage = required_stage
+
 
 class StageError(PipelineError):
     """
     Error during stage execution.
     Examples: parse failures, validation errors, runtime exceptions.
     """
-    def __init__(self, message: str, stage_name: str, details: Optional[str] = None):
+
+    def __init__(
+    self,
+    message: str,
+    stage_name: str,
+     details: Optional[str] = None):
         super().__init__(message)
         self.stage_name = stage_name
         self.details = details
+
 
 class PostconditionError(PipelineError):
     """
     Stage completed but produced invalid artifacts.
     This indicates a bug in the stage implementation.
     """
+
     def __init__(self, message: str, stage_name: str, artifact_path: str):
         super().__init__(message)
         self.stage_name = stage_name
@@ -110,11 +127,12 @@ class PostconditionError(PipelineError):
 # 1.3 Artifact Provenance
 # ───────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class ArtifactProvenance:
     """
     Provenance metadata embedded in every artifact.
-    
+
     This metadata enables complete traceability from outputs back to inputs
     and execution context.
     """
@@ -123,8 +141,9 @@ class ArtifactProvenance:
     stage_version: str                     # Version of producing stage
     creation_timestamp: str                # ISO 8601 UTC timestamp
     schema_version: str                    # Version of artifact schema
-    input_artifact_hashes: Dict[str, str]  # Map of input artifact paths to SHA-256 hashes
-    
+    # Map of input artifact paths to SHA-256 hashes
+    input_artifact_hashes: Dict[str, str]
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for embedding in artifacts."""
         return {
@@ -135,7 +154,7 @@ class ArtifactProvenance:
             "schema_version": self.schema_version,
             "input_artifact_hashes": dict(self.input_artifact_hashes)
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ArtifactProvenance':
         """Deserialize from dictionary."""
@@ -152,28 +171,30 @@ class ArtifactProvenance:
 # 1.4 Artifact Validator
 # ───────────────────────────────────────────────────────────────────
 
+
 class ArtifactValidator:
     """
     Validates artifacts against their schemas and checks provenance metadata.
-    
+
     All artifacts must pass validation before being used as inputs to stages.
     This enforces the architectural law: "No stage may read artifacts without
     validating them first."
     """
-    
+
     @staticmethod
-    def validate_artifact(artifact_path: str, expected_schema_version: Optional[str] = None) -> Dict[str, Any]:
-        """
+    def validate_artifact(
+        artifact_path: str, expected_schema_version: Optional[str] = None) -> Dict[str, Any]:
+            """
         Validate artifact exists, is readable, has valid JSON, and contains
         required provenance metadata.
-        
+
         Args:
             artifact_path: Path to artifact file
             expected_schema_version: Optional schema version to enforce
-            
+
         Returns:
             Parsed artifact as dictionary
-            
+
         Raises:
             ConfigError: If artifact doesn't exist or isn't readable
             PostconditionError: If artifact is invalid
@@ -181,11 +202,11 @@ class ArtifactValidator:
         # Check existence
         if not os.path.exists(artifact_path):
             raise ConfigError(f"Artifact not found: {artifact_path}")
-        
+
         # Check readability
         if not os.access(artifact_path, os.R_OK):
             raise ConfigError(f"Artifact not readable: {artifact_path}")
-        
+
         # Parse JSON
         try:
             with open(artifact_path, 'r', encoding='utf-8') as f:
@@ -196,7 +217,7 @@ class ArtifactValidator:
                 stage_name="unknown",
                 artifact_path=artifact_path
             )
-        
+
         # Validate provenance exists
         if "provenance" not in artifact:
             raise PostconditionError(
@@ -204,13 +225,13 @@ class ArtifactValidator:
                 stage_name="unknown",
                 artifact_path=artifact_path
             )
-        
+
         # Validate required provenance fields
         required_fields = [
             "execution_id", "stage_name", "stage_version",
             "creation_timestamp", "schema_version", "input_artifact_hashes"
         ]
-        
+
         provenance = artifact["provenance"]
         for field in required_fields:
             if field not in provenance:
@@ -219,7 +240,7 @@ class ArtifactValidator:
                     stage_name=provenance.get("stage_name", "unknown"),
                     artifact_path=artifact_path
                 )
-        
+
         # Validate schema version if specified
         if expected_schema_version is not None:
             actual_version = provenance["schema_version"]
@@ -229,19 +250,20 @@ class ArtifactValidator:
                     stage_name=provenance["stage_name"],
                     artifact_path=artifact_path
                 )
-        
+
         return artifact
-    
+
     @staticmethod
     def compute_artifact_hash(artifact_path: str) -> str:
         """
         Compute SHA-256 hash of artifact file.
-        
+
         Used for provenance tracking and change detection.
         """
         if not os.path.exists(artifact_path):
-            raise ConfigError(f"Cannot hash non-existent artifact: {artifact_path}")
-        
+            raise ConfigError(
+    f"Cannot hash non-existent artifact: {artifact_path}")
+
         sha256 = hashlib.sha256()
         with open(artifact_path, 'rb') as f:
             while chunk := f.read(8192):
@@ -252,36 +274,37 @@ class ArtifactValidator:
 # 1.5 Pipeline Stage (Abstract Base Class)
 # ───────────────────────────────────────────────────────────────────
 
+
 class PipelineStage(ABC):
     """
     Abstract base class for all pipeline stages.
-    
+
     Each stage is a correctness boundary with explicit preconditions,
     postconditions, and invariants. Stages must implement:
-    - Precondition checking (required inputs exist and are valid)
+        - Precondition checking (required inputs exist and are valid)
     - Execution logic (transformation from inputs to outputs)
     - Postcondition checking (outputs satisfy requirements)
-    
+
     The stage lifecycle is:
-    1. __init__: Stage created in PENDING state
+        1. __init__: Stage created in PENDING state
     2. validate_preconditions: Check inputs → READY or raise PreconditionError
     3. execute: Perform transformation → COMPLETED or raise StageError
     4. validate_postconditions: Check outputs → success or raise PostconditionError
     """
-    
+
     # Subclasses must override these
     STAGE_NAME: str = "abstract_stage"
     STAGE_VERSION: str = "1.0.0"
     STAGE_DESCRIPTION: str = "Abstract pipeline stage"
-    
+
     # Subclasses must specify required inputs and produced outputs
     REQUIRED_INPUTS: List[str] = []        # List of artifact types required
     PRODUCED_OUTPUTS: List[str] = []       # List of artifact types produced
-    
+
     def __init__(self, execution_context: Dict[str, Any]):
         """
         Initialize stage with execution context.
-        
+
         Args:
             execution_context: Deserialized ExecutionContext artifact
         """
@@ -290,59 +313,64 @@ class PipelineStage(ABC):
         self.error: Optional[Exception] = None
         self.start_time: Optional[str] = None
         self.end_time: Optional[str] = None
-        
+
         # Extract execution ID for provenance
         if "provenance" not in execution_context:
             raise ConfigError("ExecutionContext missing provenance metadata")
-        
+
         self.execution_id = execution_context["provenance"]["execution_id"]
-    
+
     def validate_preconditions(self) -> None:
         """
         Validate that all required input artifacts exist and are valid.
-        
+
         This method enforces the architectural law: "No stage executes until
         all preconditions are satisfied."
-        
+
         Raises:
             PreconditionError: If required artifacts are missing or invalid
         """
-        artifacts_dir = self.execution_context.get("artifacts", {}).get("working_directory", "artifacts")
-        
+        artifacts_dir = self.execution_context.get(
+    "artifacts", {}).get(
+        "working_directory", "artifacts")
+
         for required_input in self.REQUIRED_INPUTS:
             # Map artifact type to file path
-            artifact_path = self._resolve_artifact_path(artifacts_dir, required_input)
-            
+            artifact_path = self._resolve_artifact_path(
+                artifacts_dir, required_input)
+
             # Validate artifact exists and is valid
             try:
                 ArtifactValidator.validate_artifact(artifact_path)
             except ConfigError:
                 raise PreconditionError(
-                    f"Stage '{self.STAGE_NAME}' requires artifact '{required_input}' which doesn't exist",
+                    f"Stage '{
+    self.STAGE_NAME}' requires artifact '{required_input}' which doesn't exist",
                     missing_artifact=required_input,
                     required_stage=self._infer_required_stage(required_input)
                 )
             except PostconditionError as e:
                 raise PreconditionError(
-                    f"Stage '{self.STAGE_NAME}' requires valid artifact '{required_input}' but it's corrupted: {e}",
+                    f"Stage '{
+    self.STAGE_NAME}' requires valid artifact '{required_input}' but it's corrupted: {e}",
                     missing_artifact=required_input,
                     required_stage=self._infer_required_stage(required_input)
                 )
-        
+
         # Transition to READY state
         self.state = StageState.READY
-    
+
     def execute(self) -> None:
         """
         Execute stage transformation.
-        
+
         This is the main entry point for stage execution. It:
-        1. Validates preconditions
+            1. Validates preconditions
         2. Transitions to EXECUTING state
         3. Calls _execute_impl (implemented by subclass)
         4. Validates postconditions
         5. Transitions to COMPLETED or FAILED state
-        
+
         Raises:
             PreconditionError: If preconditions aren't satisfied
             StageError: If execution fails
@@ -351,33 +379,35 @@ class PipelineStage(ABC):
         # Validate preconditions
         if self.state == StageState.PENDING:
             self.validate_preconditions()
-        
+
         if self.state != StageState.READY:
             raise StageError(
-                f"Stage '{self.STAGE_NAME}' cannot execute from state {self.state.value}",
+                f"Stage '{
+    self.STAGE_NAME}' cannot execute from state {
+        self.state.value}",
                 stage_name=self.STAGE_NAME
             )
-        
+
         # Transition to EXECUTING
         self.state = StageState.EXECUTING
         self.start_time = datetime.now(timezone.utc).isoformat()
-        
+
         try:
             # Execute stage logic (implemented by subclass)
             self._execute_impl()
-            
+
             # Validate postconditions
             self.validate_postconditions()
-            
+
             # Transition to COMPLETED
             self.state = StageState.COMPLETED
             self.end_time = datetime.now(timezone.utc).isoformat()
-            
+
         except Exception as e:
                         self.error = e
-            self.state = StageState.FAILED
-            self.end_time = datetime.now(timezone.utc).isoformat()
-            raise
+                        self.state = StageState.FAILED
+                        self.end_time = datetime.now(timezone.utc).isoformat()
+                        raise
     
     @abstractmethod
     def _execute_impl(self) -> None:
@@ -386,7 +416,7 @@ class PipelineStage(ABC):
         
         Subclasses must implement this method to perform their transformation.
         This method should:
-        1. Read input artifacts (already validated)
+            1. Read input artifacts (already validated)
         2. Perform stage-specific processing
         3. Write output artifacts with provenance metadata
         
@@ -426,7 +456,7 @@ class PipelineStage(ABC):
         Map artifact type to file system path.
         
         This uses a standard naming convention:
-        - native_interface → native_interface.json
+            - native_interface → native_interface.json
         - ir → ir.json
         - contract → contract.json
         - etc.
@@ -585,7 +615,7 @@ class PipelineExecutionLog:
     Records all pipeline execution events.
     
     The execution log is append-only and immutable. It captures:
-    - Which stages executed
+        - Which stages executed
     - State transitions
     - Errors and warnings
     - Produced artifacts
@@ -676,7 +706,7 @@ class VerificationPipeline:
     Main pipeline orchestrator.
     
     Responsibilities:
-    - Load and validate execution context
+        - Load and validate execution context
     - Register and instantiate stages
     - Execute stages in correct order
     - Enforce preconditions and postconditions
@@ -684,7 +714,7 @@ class VerificationPipeline:
     - Produce pipeline execution log
     
     The pipeline enforces all architectural laws:
-    - No stage executes until preconditions are satisfied
+        - No stage executes until preconditions are satisfied
     - No stage reads unvalidated artifacts
     - No validation steps are skipped
     - All failures are classified and reported
@@ -761,11 +791,11 @@ class VerificationPipeline:
                 
             except StageError as e:
                                 self.execution_log.log_stage_failed(stage, e)
-                print(f"ERROR: Stage '{e.stage_name}' failed: {e}")
-                if e.details:
-                    print(f"Details: {e.details}")
-                success = False
-                break
+                                print(f"ERROR: Stage '{e.stage_name}' failed: {e}")
+                                if e.details:
+                                    print(f"Details: {e.details}")
+                                    success = False
+                                    break
                 
             except PostconditionError as e:
                 # Stage produced invalid output (internal error)
@@ -921,7 +951,7 @@ class StateMachineValidator:
     @classmethod
     def can_retry(cls, state: StageState) -> bool:
         """Check if a stage in this state can be retried."""
-                return state in {StageState.FAILED, StageState.SKIPPED}
+        return state in {StageState.FAILED, StageState.SKIPPED}
 
 # ───────────────────────────────────────────────────────────────────
 # 2.3 Schema Version Comparator
@@ -967,7 +997,7 @@ class SemanticVersion:
         Check if this version is compatible with a required version.
         
         Compatibility rules (semantic versioning):
-        - Major version must match (breaking changes)
+            - Major version must match (breaking changes)
         - Minor version must be >= required (backward compatible additions)
         - Patch version irrelevant (bug fixes always compatible)
         
@@ -1431,8 +1461,8 @@ class ArtifactSchema:
                 errors.append(f"Missing required field: {field.name}")
         
                 for field in self.fields:
-            if field.name not in artifact_data:
-                continue
+                    if field.name not in artifact_data:
+                        continue
             
             value = artifact_data[field.name]
             
@@ -1443,8 +1473,8 @@ class ArtifactSchema:
                     f"expected {field.field_type}, got {type(value).__name__}"
                 )
             
-                        if field.constraints:
-                constraint_errors = self._check_constraints(field.name, value, field.constraints)
+                if field.constraints:
+                    constraint_errors = self._check_constraints(field.name, value, field.constraints)
                 errors.extend(constraint_errors)
             
             # Nested schema validation
@@ -1470,21 +1500,21 @@ class ArtifactSchema:
     def _check_constraints(self, field_name: str, value: Any, constraints: Dict) -> List[str]:
                 errors = []
         
-        if "min" in constraints and value < constraints["min"]:
-            errors.append(f"Field {field_name} below minimum: {value} < {constraints['min']}")
+                if "min" in constraints and value < constraints["min"]:
+                    errors.append(f"Field {field_name} below minimum: {value} < {constraints['min']}")
         
-        if "max" in constraints and value > constraints["max"]:
-            errors.append(f"Field {field_name} above maximum: {value} > {constraints['max']}")
+                    if "max" in constraints and value > constraints["max"]:
+                        errors.append(f"Field {field_name} above maximum: {value} > {constraints['max']}")
         
-        if "enum" in constraints and value not in constraints["enum"]:
-            errors.append(f"Field {field_name} not in allowed values: {constraints['enum']}")
+                        if "enum" in constraints and value not in constraints["enum"]:
+                            errors.append(f"Field {field_name} not in allowed values: {constraints['enum']}")
         
-        if "pattern" in constraints and isinstance(value, str):
-            import re
-            if not re.match(constraints["pattern"], value):
-                errors.append(f"Field {field_name} doesn't match pattern: {constraints['pattern']}")
+                            if "pattern" in constraints and isinstance(value, str):
+                                import re
+                                if not re.match(constraints["pattern"], value):
+                                    errors.append(f"Field {field_name} doesn't match pattern: {constraints['pattern']}")
         
-        return errors
+                                    return errors
 
 class SchemaRegistry:
     """
@@ -1625,8 +1655,8 @@ class ProvenanceChainValidator:
         if self._has_cycle(dep_graph):
             errors.append("Provenance chain contains cycle (artifact depends on itself)")
         
-                for path, artifact in artifacts:
-            provenance = artifact["provenance"]
+            for path, artifact in artifacts:
+                provenance = artifact["provenance"]
             for input_path, declared_hash in provenance["input_artifact_hashes"].items():
                 if not os.path.exists(input_path):
                     errors.append(f"{path} references missing input: {input_path}")
@@ -1752,12 +1782,12 @@ class StalenessDetector:
         Check if execution context changed in ways that affect artifacts.
         
         Material changes:
-        - Platform architecture changed (x64 → x86)
+            - Platform architecture changed (x64 → x86)
         - Compiler changed or upgraded
         - Compiler flags changed
         
         Non-material changes:
-        - Timestamp changed
+            - Timestamp changed
         - execution_id changed
         - Working directory changed
         """
@@ -1992,7 +2022,7 @@ class TypeExtractor:
                     clang.TypeKind.ULONG, clang.TypeKind.LONG,
                     clang.TypeKind.ULONGLONG, clang.TypeKind.LONGLONG,
                     clang.TypeKind.FLOAT, clang.TypeKind.DOUBLE]:
-            type_info["kind"] = "primitive"
+                        type_info["kind"] = "primitive"
             type_info["name"] = clang_type.spelling
             type_info["is_signed"] = kind not in [
                 clang.TypeKind.UCHAR, clang.TypeKind.USHORT,
@@ -2135,7 +2165,7 @@ class StructLayoutExtractor:
                     result.append(padding_field)
         
                 if fields:
-            last_field = fields[-1]
+                    last_field = fields[-1]
             last_end = last_field["offset_bytes"] + last_field["size_bytes"]
             
             if total_size > last_end:
@@ -2172,7 +2202,7 @@ class NativeInterfaceIngestionStage(PipelineStage):
     
     def _execute_impl(self) -> None:
         """Extract native interface from header file."""
-                if not LIBCLANG_AVAILABLE:
+        if not LIBCLANG_AVAILABLE:
             raise StageError(
                 "libclang not available. Install with: pip install libclang",
                 stage_name=self.STAGE_NAME,
@@ -2452,7 +2482,7 @@ class TypeRegistry:
     Registry of all types with bidirectional lookup.
     
     Maintains:
-    - type_id → type_info (forward lookup)
+        - type_id → type_info (forward lookup)
     - type_structure → type_id (reverse lookup for deduplication)
     """
     
@@ -2526,7 +2556,7 @@ class TypedefResolver:
     Resolves typedef chains to underlying canonical types.
     
     Handles:
-    - Transitive typedef resolution
+        - Transitive typedef resolution
     - Circular typedef detection
     - Preservation of typedef info for diagnostics
     """
@@ -2593,7 +2623,7 @@ class TypeNormalizer:
     Normalizes types from native interface to canonical IR form.
     
     Handles:
-    - Typedef resolution
+        - Typedef resolution
     - Type registration
     - Qualifier normalization
     - Recursive type processing
@@ -2857,16 +2887,16 @@ class IRNormalizationStage(PipelineStage):
 
 class ConstraintType(Enum):
         NON_NULL = "non_null"
-    NULLABLE = "nullable"
-    CONDITIONALLY_NULL = "conditionally_null"
-    BUFFER_SIZE = "buffer_size"
-    NULL_TERMINATED = "null_terminated"
-    OWNERSHIP_BORROWED = "ownership_borrowed"
-    OWNERSHIP_TRANSFERRED_IN = "ownership_transferred_in"
-    OWNERSHIP_TRANSFERRED_OUT = "ownership_transferred_out"
-    ALIGNMENT = "alignment"
-    CALLING_CONVENTION = "calling_convention"
-    OUTPUT_PARAMETER = "output_parameter"
+        NULLABLE = "nullable"
+        CONDITIONALLY_NULL = "conditionally_null"
+        BUFFER_SIZE = "buffer_size"
+        NULL_TERMINATED = "null_terminated"
+        OWNERSHIP_BORROWED = "ownership_borrowed"
+        OWNERSHIP_TRANSFERRED_IN = "ownership_transferred_in"
+        OWNERSHIP_TRANSFERRED_OUT = "ownership_transferred_out"
+        ALIGNMENT = "alignment"
+        CALLING_CONVENTION = "calling_convention"
+        OUTPUT_PARAMETER = "output_parameter"
 
 @dataclass
 class Constraint:
@@ -2990,7 +3020,7 @@ class ConstraintSynthesizer:
         func_name = function["name"]
         
                 for param in function.get("parameters", []):
-            param_constraints = self._synthesize_parameter_constraints(
+                    param_constraints = self._synthesize_parameter_constraints(
                 func_name, param, function["parameters"]
             )
             constraints.extend(param_constraints)
@@ -4840,7 +4870,7 @@ class FailureClassifier:
         # Case 1: Expected violation, got success
         if (expected.get("type") == "contract_violation" and 
             actual.get("type") == "success"):
-            return {
+                return {
                 "failure_category": FailureCategory.UNCAUGHT_VIOLATION,
                 "severity": Severity.CRITICAL,
                 "root_cause": "Adapter failed to detect contract violation",
@@ -4851,7 +4881,7 @@ class FailureClassifier:
         if (expected.get("type") == "success" and 
             actual.get("type") == "contract_violation" and
             category_name == "positive"):
-            return {
+                return {
                 "failure_category": FailureCategory.FALSE_POSITIVE,
                 "severity": Severity.HIGH,
                 "root_cause": "Valid input rejected by adapter",
@@ -4861,7 +4891,7 @@ class FailureClassifier:
         # Case 3: Expected success, got crash
         if (expected.get("type") == "success" and 
             actual.get("type") in ["crash", "unexpected_exception"]):
-            return {
+                return {
                 "failure_category": FailureCategory.NATIVE_BUG,
                 "severity": Severity.CRITICAL,
                 "root_cause": "Native code crashed or raised exception",
@@ -5022,7 +5052,7 @@ class HTMLReportGenerator:
         html.append("</table>")
         
                 if failures:
-            html.append("<h2>Failure Analysis</h2>")
+                    html.append("<h2>Failure Analysis</h2>")
             
             for failure in failures:
                 test_id = failure.get("test_id", "unknown")
@@ -5185,7 +5215,7 @@ class MarkdownReportGenerator:
         md.append("")
         
                 if failures:
-            md.append("            md.append("")
+                    md.append("            md.append("")
             
             for failure in failures:
                 test_id = failure.get("test_id", "unknown")
@@ -5627,9 +5657,9 @@ def verify(
     Example:
         >>> result = verify("interface.h", "library.dll")
         >>> if result.success:
-        ...     print(f"Verification passed: {result.pass_rate}%")
+            ...     print(f"Verification passed: {result.pass_rate}%")
         ... else:
-        ...     print(f"Verification failed: {len(result.critical_issues)} critical issues")
+            ...     print(f"Verification failed: {len(result.critical_issues)} critical issues")
     """
     pipeline = CompletePipeline(header_path, library_path, output_dir)
     return pipeline.execute(verbose=verbose)
@@ -6158,7 +6188,7 @@ class PerformanceProfiler:
         start_memory = 0
         
                 try:
-            import psutil
+                    import psutil
             process = psutil.Process()
             start_cpu = process.cpu_times()
             start_memory = process.memory_info().rss

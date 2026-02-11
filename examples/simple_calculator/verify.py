@@ -5,20 +5,25 @@ Simple calculator verification example.
 This demonstrates basic FFI verification workflow.
 """
 
+from verification_pipeline import verify
 import sys
 import os
 
 # Add parent directories to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'modules', 'module_02_verification_pipeline'))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "modules", "module_02_verification_pipeline"
+    ),
+)
 
-from verification_pipeline import verify
 
 def main():
     print("=" * 60)
     print("SIMPLE CALCULATOR VERIFICATION EXAMPLE")
     print("=" * 60)
     print()
-    
+
     # Determine library name based on platform
     if sys.platform == "win32":
         library = "calculator.dll"
@@ -26,7 +31,7 @@ def main():
         library = "libcalculator.dylib"
     else:
         library = "libcalculator.so"
-    
+
     # Check if library exists
     if not os.path.exists(library):
         print(f"Error: Library '{library}' not found.")
@@ -36,25 +41,25 @@ def main():
         else:
             print("  ./build.sh")
         return 1
-    
+
     # Run verification
     print(f"Verifying: calculator.h + {library}")
     print()
-    
+
     result = verify(
         header_path="calculator.h",
         library_path=library,
         output_dir="verification_results",
-        verbose=True
+        verbose=True,
     )
-    
+
     # Print results
     print()
     print("=" * 60)
     print("RESULTS")
     print("=" * 60)
     print(result)
-    
+
     if result.success:
         print()
         print("✓ All tests passed!")
@@ -66,6 +71,7 @@ def main():
         print(f"  Critical issues: {len(result.critical_issues)}")
         print(f"  Report: {result.report_path}")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

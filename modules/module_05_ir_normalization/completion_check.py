@@ -8,13 +8,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+
 @dataclass
 class CompletionCheck:
     """Represents a completion check."""
+
     name: str
     description: str
     passed: bool
     details: str = ""
+
 
 class ModuleCompletionVerifier:
     """Verifies module completion and production readiness."""
@@ -35,17 +38,17 @@ class ModuleCompletionVerifier:
     def check_implementation(self) -> None:
         """Verify implementation completeness."""
         required_modules = [
-            'ir_entities.py',
-            'type_normalization.py',
-            'ir_validation.py',
-            'ir_serialization.py',
-            'ir_diff.py',
-            'ir_orchestrator.py',
-            'cli.py',
-            'module_04_bridge.py',
-            'performance.py',
-            'diagnostics.py',
-            'documentation.py'
+            "ir_entities.py",
+            "type_normalization.py",
+            "ir_validation.py",
+            "ir_serialization.py",
+            "ir_diff.py",
+            "ir_orchestrator.py",
+            "cli.py",
+            "module_04_bridge.py",
+            "performance.py",
+            "diagnostics.py",
+            "documentation.py",
         ]
 
         base_path = Path(__file__).parent
@@ -55,73 +58,88 @@ class ModuleCompletionVerifier:
             if not (base_path / module).exists():
                 missing.append(module)
 
-        self.checks.append(CompletionCheck(
-            name="Implementation Complete",
-            description="All required modules implemented",
-            passed=len(missing) == 0,
-            details=f"Missing: {missing}" if missing else "All modules present"
-        ))
+        self.checks.append(
+            CompletionCheck(
+                name="Implementation Complete",
+                description="All required modules implemented",
+                passed=len(missing) == 0,
+                details=f"Missing: {missing}" if missing else "All modules present",
+            )
+        )
 
     def check_testing(self) -> None:
         """Verify test completeness."""
         # Check test count
-        test_dir = Path(__file__).parent.parent.parent / 'tests'
+        test_dir = Path(__file__).parent.parent.parent / "tests"
 
-        unit_tests = len(list((test_dir / 'unit').glob('test_*.py')))
-        integration_tests = len(list((test_dir / 'integration').glob('test_*.py')))
+        unit_tests = len(list((test_dir / "unit").glob("test_*.py")))
+        integration_tests = len(list((test_dir / "integration").glob("test_*.py")))
 
         total_tests = unit_tests + integration_tests
 
-        self.checks.append(CompletionCheck(
-            name="Test Coverage",
-            description="Comprehensive test suite",
-            passed=total_tests >= 10,
-            details=f"{total_tests} test files ({unit_tests} unit, {integration_tests} integration)"
-        ))
+        self.checks.append(
+            CompletionCheck(
+                name="Test Coverage",
+                description="Comprehensive test suite",
+                passed=total_tests >= 10,
+                details=f"{total_tests} test files ({unit_tests} unit, {integration_tests} integration)",
+            )
+        )
 
     def check_documentation(self) -> None:
         """Verify documentation completeness."""
-        docs_dir = Path(__file__).parent.parent.parent / 'docs'
+        docs_dir = Path(__file__).parent.parent.parent / "docs"
 
         required_docs = [
-            'README.md',
-            'CHANGELOG.md',
+            "README.md",
+            "CHANGELOG.md",
         ]
 
-        missing = [doc for doc in required_docs
-                  if not (Path(__file__).parent.parent.parent / doc).exists()]
+        missing = [
+            doc for doc in required_docs if not (Path(__file__).parent.parent.parent / doc).exists()
+        ]
 
-        self.checks.append(CompletionCheck(
-            name="Documentation Complete",
-            description="Required documentation present",
-            passed=len(missing) == 0,
-            details=f"Missing: {missing}" if missing else "All docs present"
-        ))
+        self.checks.append(
+            CompletionCheck(
+                name="Documentation Complete",
+                description="Required documentation present",
+                passed=len(missing) == 0,
+                details=f"Missing: {missing}" if missing else "All docs present",
+            )
+        )
 
     def check_packaging(self) -> None:
         """Verify packaging configuration."""
         base_path = Path(__file__).parent.parent.parent
 
-        required_files = ['pyproject.toml', 'LICENSE']
+        required_files = ["pyproject.toml", "LICENSE"]
         missing = [f for f in required_files if not (base_path / f).exists()]
 
-        self.checks.append(CompletionCheck(
-            name="Packaging Ready",
-            description="Package configuration complete",
-            passed=len(missing) == 0,
-            details=f"Missing: {missing}" if missing else "Ready for distribution"
-        ))
+        self.checks.append(
+            CompletionCheck(
+                name="Packaging Ready",
+                description="Package configuration complete",
+                passed=len(missing) == 0,
+                details=f"Missing: {missing}" if missing else "Ready for distribution",
+            )
+        )
 
     def check_examples(self) -> None:
         """Verify examples exist."""
-        examples_dir = Path(__file__).parent.parent.parent / 'examples'
+        examples_dir = Path(__file__).parent.parent.parent / "examples"
 
-        self.checks.append(CompletionCheck(
-            name="Examples Available",
-            description="Examples provided",
-            passed=examples_dir.exists() if examples_dir else True,
-            details="Examples directory present" if examples_dir and examples_dir.exists() else "Optional"
-        ))
+        self.checks.append(
+            CompletionCheck(
+                name="Examples Available",
+                description="Examples provided",
+                passed=examples_dir.exists() if examples_dir else True,
+                details=(
+                    "Examples directory present"
+                    if examples_dir and examples_dir.exists()
+                    else "Optional"
+                ),
+            )
+        )
 
     def generate_report(self) -> str:
         """Generate completion report."""
@@ -148,7 +166,8 @@ class ModuleCompletionVerifier:
 
         return "\n".join(lines)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     verifier = ModuleCompletionVerifier()
     all_passed = verifier.verify_all()
 

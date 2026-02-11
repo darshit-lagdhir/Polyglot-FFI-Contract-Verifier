@@ -4,6 +4,7 @@ Module 05: Type Normalization Pipeline
 Transforms raw compiler-extracted types into canonical IR types.
 """
 
+from .ir_entities import AttributeEntity, FunctionSymbol, VariableSymbol
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -32,9 +33,11 @@ from .ir_entities import (
 # RAW TYPE DATA STRUCTURES (INPUT FROM MODULE 04)
 # ============================================================================
 
+
 @dataclass
 class RawTypeData:
     """Raw type data from Module 04 ingestion."""
+
     kind: str  # "scalar", "pointer", "array", "structure", etc.
     name: str
     size_bytes: int
@@ -52,8 +55,8 @@ class RawTypeData:
     element_type_name: Optional[str] = None
     element_count: Optional[int] = None
 
-    fields: List['RawFieldData'] = field(default_factory=list)
-    members: List['RawFieldData'] = field(default_factory=list)
+    fields: List["RawFieldData"] = field(default_factory=list)
+    members: List["RawFieldData"] = field(default_factory=list)
 
     enumerators: Dict[str, int] = field(default_factory=dict)
     underlying_type_name: Optional[str] = None
@@ -62,9 +65,11 @@ class RawTypeData:
     is_typedef: bool = False
     typedef_target: Optional[str] = None
 
+
 @dataclass
 class RawFieldData:
     """Raw field/member data."""
+
     name: Optional[str]
     type_name: str
     byte_offset: int
@@ -73,27 +78,34 @@ class RawFieldData:
     bit_offset: Optional[int] = None
     bit_width: Optional[int] = None
 
+
 # ============================================================================
 # NORMALIZATION ERRORS
 # ============================================================================
 
+
 class NormalizationError(Exception):
     """Base class for normalization errors."""
+
     pass
 
+
 class CircularTypedefError(NormalizationError):
-        pass
+    pass
+
 
 class TypeResolutionError(NormalizationError):
     """Type reference cannot be resolved."""
+
     pass
+
 
 # ============================================================================
 # TYPEDEF RESOLVER
 # ============================================================================
 
+
 class TypedefResolver:
-    
     def __init__(self) -> None:
         self.typedef_map: Dict[str, str] = {}
         self.typedef_chains: Dict[str, List[str]] = {}
@@ -105,7 +117,7 @@ class TypedefResolver:
     def resolve(self, type_name: str) -> Tuple[str, List[str]]:
         """
         Resolve typedef chain to canonical type.
-        
+
         Returns:
             (canonical_name, typedef_chain)
         """
@@ -131,9 +143,7 @@ class TypedefResolver:
 
         while current in self.typedef_map:
             if current in visited:
-                raise CircularTypedefError(
-                    f"Circular typedef: {' -> '.join(chain + [current])}"
-                )
+                raise CircularTypedefError(f"Circular typedef: {' -> '.join(chain + [current])}")
 
             visited.add(current)
             chain.append(current)
@@ -144,9 +154,11 @@ class TypedefResolver:
 
         return (current, chain)
 
+
 # ============================================================================
 # ALIGNMENT UTILITIES
 # ============================================================================
+
 
 def align_up(value: int, alignment: int) -> int:
     """Align value up to next alignment boundary."""
@@ -154,25 +166,28 @@ def align_up(value: int, alignment: int) -> int:
         return value
     return (value + alignment - 1) & ~(alignment - 1)
 
+
 def is_power_of_two(n: int) -> bool:
     """Check if number is power of 2."""
     return n > 0 and (n & (n - 1)) == 0
+
 
 # ============================================================================
 # TYPE NORMALIZATION PIPELINE
 # ============================================================================
 
+
 class TypeNormalizationPipeline:
     """
     Orchestrates type normalization process.
-    
+
     Transforms raw compiler-extracted types into canonical IR types.
     """
 
     def __init__(self, interface_unit: InterfaceUnit) -> None:
         """
         Initialize normalization pipeline.
-        
+
         Args:
             interface_unit: IR interface unit providing platform context
         """
@@ -184,26 +199,20 @@ class TypeNormalizationPipeline:
         self.normalized_types: Dict[str, TypeEntity] = {}
         self.in_progress: Set[str] = set()
 
-    def normalize_all_types(
-        self,
-        raw_types: List[RawTypeData]
-    ) -> List[TypeEntity]:
+    def normalize_all_types(self, raw_types: List[RawTypeData]) -> List[TypeEntity]:
         """
         Normalize all types from raw compiler data.
-        
+
         Args:
             raw_types: Raw type data from Module 04
-            
+
         Returns:
             List of normalized type entities
         """
         # : Build typedef map
         for raw_type in raw_types:
             if raw_type.is_typedef and raw_type.typedef_target:
-                self.typedef_resolver.add_typedef(
-                    raw_type.name,
-                    raw_type.typedef_target
-                )
+                self.typedef_resolver.add_typedef(raw_type.name, raw_type.typedef_target)
 
         # : Normalize each type
         normalized = []
@@ -216,26 +225,22 @@ class TypeNormalizationPipeline:
                 if normalized_type:
                     normalized.append(normalized_type)
             except Exception as e:
-                raise NormalizationError(
-                    f"Failed to normalize type {raw_type.name}: {e}"
-                )
+                raise NormalizationError(f"Failed to normalize type {raw_type.name}: {e}")
 
         # : Validate all references
         errors = self.type_registry.validate_references()
         if errors:
-            raise NormalizationError(
-                "Type reference validation failed:\n" + "\n".join(errors)
-            )
+            raise NormalizationError("Type reference validation failed:\n" + "\n".join(errors))
 
         return normalized
 
     def normalize_type(self, raw_type: RawTypeData) -> Optional[TypeEntity]:
         """
         Normalize a single type.
-        
+
         Args:
             raw_type: Raw type data
-            
+
         Returns:
             Normalized type entity
         """
@@ -245,9 +250,7 @@ class TypeNormalizationPipeline:
 
         # Detect circular dependencies
         if raw_type.name in self.in_progress:
-            raise NormalizationError(
-                f"Circular type dependency: {raw_type.name}"
-            )
+            raise NormalizationError(f"Circular type dependency: {raw_type.name}")
 
         self.in_progress.add(raw_type.name)
 
@@ -285,22 +288,18 @@ class TypeNormalizationPipeline:
     def _normalize_scalar(self, raw_type: RawTypeData) -> ScalarType:
         """Normalize scalar type."""
         if not raw_type.scalar_kind or raw_type.bit_width is None:
-            raise NormalizationError(
-                f"Scalar type {raw_type.name} missing required fields"
-            )
+            raise NormalizationError(f"Scalar type {raw_type.name} missing required fields")
 
         return ScalarType(
             scalar_kind=raw_type.scalar_kind,
             bit_width=raw_type.bit_width,
-            is_signed=raw_type.is_signed or False
+            is_signed=raw_type.is_signed or False,
         )
 
     def _normalize_pointer(self, raw_type: RawTypeData) -> PointerType:
         """Normalize pointer type."""
         if not raw_type.target_type_name:
-            raise NormalizationError(
-                f"Pointer type {raw_type.name} missing target type"
-            )
+            raise NormalizationError(f"Pointer type {raw_type.name} missing target type")
 
         # Resolve target type reference
         target_name, _ = self.typedef_resolver.resolve(raw_type.target_type_name)
@@ -315,20 +314,16 @@ class TypeNormalizationPipeline:
         return PointerType(
             pointer_depth=raw_type.pointer_depth or 1,
             target_type_reference=target_id,
-            pointer_width=self.interface_unit.pointer_width
+            pointer_width=self.interface_unit.pointer_width,
         )
 
     def _normalize_array(self, raw_type: RawTypeData) -> ArrayType:
         """Normalize array type."""
         if not raw_type.element_type_name or not raw_type.array_kind:
-            raise NormalizationError(
-                f"Array type {raw_type.name} missing required fields"
-            )
+            raise NormalizationError(f"Array type {raw_type.name} missing required fields")
 
         # Resolve element type
-        element_name, _ = self.typedef_resolver.resolve(
-            raw_type.element_type_name
-        )
+        element_name, _ = self.typedef_resolver.resolve(raw_type.element_type_name)
 
         if element_name in self.normalized_types:
             element_type = self.normalized_types[element_name]
@@ -345,7 +340,7 @@ class TypeNormalizationPipeline:
             element_type_reference=element_id,
             element_count=raw_type.element_count,
             element_size=element_size,
-            element_alignment=element_align
+            element_alignment=element_align,
         )
 
     def _normalize_structure(self, raw_type: RawTypeData) -> StructureType:
@@ -353,7 +348,7 @@ class TypeNormalizationPipeline:
         struct = StructureType(
             structure_name=raw_type.name,
             size_bytes=raw_type.size_bytes,
-            alignment_bytes=raw_type.alignment_bytes
+            alignment_bytes=raw_type.alignment_bytes,
         )
 
         # Sort fields by offset
@@ -362,9 +357,7 @@ class TypeNormalizationPipeline:
         current_offset = 0
         for i, raw_field in enumerate(sorted_fields):
             # Resolve field type
-            field_type_name, _ = self.typedef_resolver.resolve(
-                raw_field.type_name
-            )
+            field_type_name, _ = self.typedef_resolver.resolve(raw_field.type_name)
 
             if field_type_name in self.normalized_types:
                 field_type_id = self.normalized_types[field_type_name].entity_id
@@ -375,9 +368,7 @@ class TypeNormalizationPipeline:
             if raw_field.byte_offset > current_offset:
                 padding_size = raw_field.byte_offset - current_offset
                 padding = PaddingEntity(
-                    byte_offset=current_offset,
-                    size_bytes=padding_size,
-                    reason="field alignment"
+                    byte_offset=current_offset, size_bytes=padding_size, reason="field alignment"
                 )
                 struct.add_padding(padding)
 
@@ -386,7 +377,7 @@ class TypeNormalizationPipeline:
                 field_index=i,
                 field_name=raw_field.name,
                 type_reference=field_type_id,
-                byte_offset=raw_field.byte_offset
+                byte_offset=raw_field.byte_offset,
             )
             field.size_bytes = raw_field.size_bytes
             field.alignment_bytes = raw_field.alignment_bytes
@@ -401,9 +392,7 @@ class TypeNormalizationPipeline:
         if raw_type.size_bytes > current_offset:
             trailing_size = raw_type.size_bytes - current_offset
             trailing_padding = PaddingEntity(
-                byte_offset=current_offset,
-                size_bytes=trailing_size,
-                reason="structure end padding"
+                byte_offset=current_offset, size_bytes=trailing_size, reason="structure end padding"
             )
             struct.add_padding(trailing_padding)
         return struct
@@ -413,14 +402,12 @@ class TypeNormalizationPipeline:
         union = UnionType(
             union_name=raw_type.name,
             size_bytes=raw_type.size_bytes,
-            alignment_bytes=raw_type.alignment_bytes
+            alignment_bytes=raw_type.alignment_bytes,
         )
 
         for i, raw_member in enumerate(raw_type.members):
             # Resolve member type
-            member_type_name, _ = self.typedef_resolver.resolve(
-                raw_member.type_name
-            )
+            member_type_name, _ = self.typedef_resolver.resolve(raw_member.type_name)
 
             if member_type_name in self.normalized_types:
                 member_type_id = self.normalized_types[member_type_name].entity_id
@@ -432,7 +419,7 @@ class TypeNormalizationPipeline:
                 field_index=i,
                 field_name=raw_member.name,
                 type_reference=member_type_id,
-                byte_offset=0  # Union invariant
+                byte_offset=0,  # Union invariant
             )
             member.size_bytes = raw_member.size_bytes
             member.alignment_bytes = raw_member.alignment_bytes
@@ -444,14 +431,10 @@ class TypeNormalizationPipeline:
     def _normalize_enum(self, raw_type: RawTypeData) -> EnumerationType:
         """Normalize enumeration type."""
         if not raw_type.underlying_type_name:
-            raise NormalizationError(
-                f"Enum {raw_type.name} missing underlying type"
-            )
+            raise NormalizationError(f"Enum {raw_type.name} missing underlying type")
 
         # Resolve underlying type
-        underlying_name, _ = self.typedef_resolver.resolve(
-            raw_type.underlying_type_name
-        )
+        underlying_name, _ = self.typedef_resolver.resolve(raw_type.underlying_type_name)
 
         if underlying_name in self.normalized_types:
             underlying_id = self.normalized_types[underlying_name].entity_id
@@ -462,7 +445,7 @@ class TypeNormalizationPipeline:
             enum_name=raw_type.name,
             underlying_type_reference=underlying_id,
             size_bytes=raw_type.size_bytes,
-            alignment_bytes=raw_type.alignment_bytes
+            alignment_bytes=raw_type.alignment_bytes,
         )
 
         # Add enumerators
@@ -471,10 +454,7 @@ class TypeNormalizationPipeline:
 
         return enum
 
-    def _normalize_function_pointer(
-        self,
-        raw_type: RawTypeData
-    ) -> FunctionPointerType:
+    def _normalize_function_pointer(self, raw_type: RawTypeData) -> FunctionPointerType:
         """Normalize function pointer type."""
         # Use default calling convention if not specified
         calling_conv = CallingConvention.CDECL  # Platform default
@@ -489,64 +469,70 @@ class TypeNormalizationPipeline:
         func_ptr = FunctionPointerType(
             calling_convention=calling_conv,
             return_type_reference=return_type_id,
-            pointer_width=self.interface_unit.pointer_width
+            pointer_width=self.interface_unit.pointer_width,
         )
 
         return func_ptr
+
 
 # ============================================================================
 # SYMBOL NORMALIZATION ()
 # ============================================================================
 
-from .ir_entities import AttributeEntity, FunctionSymbol, VariableSymbol
 
 @dataclass
 class RawFunctionData:
     """Raw function data from Module 04."""
+
     linkage_name: str
     source_name: Optional[str] = None
     return_type_name: str = "void"
-    parameters: List['RawParameterData'] = field(default_factory=list)
+    parameters: List["RawParameterData"] = field(default_factory=list)
     is_variadic: bool = False
-    attributes: List['RawAttributeData'] = field(default_factory=list)
+    attributes: List["RawAttributeData"] = field(default_factory=list)
     calling_convention_attr: Optional[str] = None
+
 
 @dataclass
 class RawParameterData:
     """Raw parameter data."""
+
     name: Optional[str]
     type_name: str
     is_const: bool = False
     is_volatile: bool = False
     is_restrict: bool = False
 
+
 @dataclass
 class RawVariableData:
     """Raw global variable data."""
+
     linkage_name: str
     source_name: Optional[str] = None
     type_name: str = ""
     is_const: bool = False
     visibility: Optional[str] = None
-    attributes: List['RawAttributeData'] = field(default_factory=list)
+    attributes: List["RawAttributeData"] = field(default_factory=list)
+
 
 @dataclass
 class RawAttributeData:
     """Raw attribute data."""
+
     name: str
     value: Optional[str] = None
 
+
 # Calling convention resolution
 
+
 def resolve_calling_convention(
-    func_data: RawFunctionData,
-    platform_os: str,
-    platform_arch: str,
-    compiler_family: str
+    func_data: RawFunctionData, platform_os: str, platform_arch: str, compiler_family: str
 ) -> CallingConvention:
     """
     Resolve function calling convention.
-    
+
     Priority:
     1. Explicit function attribute
     2. Platform default
@@ -579,10 +565,9 @@ def resolve_calling_convention(
     # Fallback
     return CallingConvention.CDECL
 
+
 def determine_return_mechanism(
-    return_type: TypeEntity,
-    calling_convention: CallingConvention,
-    platform_arch: str
+    return_type: TypeEntity, calling_convention: CallingConvention, platform_arch: str
 ) -> ReturnMechanism:
     """Determine how return value is passed."""
 
@@ -612,7 +597,9 @@ def determine_return_mechanism(
 
     return ReturnMechanism.DIRECT
 
+
 # Symbol normalization pipeline
+
 
 class SymbolNormalizationPipeline:
     """Normalizes function and variable symbols."""
@@ -621,16 +608,13 @@ class SymbolNormalizationPipeline:
         self,
         type_registry: TypeRegistry,
         typedef_resolver: TypedefResolver,
-        interface_unit: InterfaceUnit
+        interface_unit: InterfaceUnit,
     ):
         self.type_registry = type_registry
         self.typedef_resolver = typedef_resolver
         self.interface_unit = interface_unit
 
-    def normalize_function(
-        self,
-        func_data: RawFunctionData
-    ) -> FunctionSymbol:
+    def normalize_function(self, func_data: RawFunctionData) -> FunctionSymbol:
         """Normalize function symbol."""
 
         # Resolve calling convention
@@ -638,40 +622,35 @@ class SymbolNormalizationPipeline:
             func_data,
             self.interface_unit.operating_system,
             self.interface_unit.target_architecture,
-            self.interface_unit.compiler_family
+            self.interface_unit.compiler_family,
         )
 
         # Create function symbol
         func = FunctionSymbol(
             linkage_name=func_data.linkage_name,
             calling_convention=calling_conv,
-            source_name=func_data.source_name
+            source_name=func_data.source_name,
         )
 
         # Normalize return type
-        return_type_name, _ = self.typedef_resolver.resolve(
-            func_data.return_type_name
-        )
+        return_type_name, _ = self.typedef_resolver.resolve(func_data.return_type_name)
 
         return_type = self.type_registry.resolve_type(return_type_name)
         if not return_type:
             # Try to find by name in normalized types
             for t in self.type_registry.get_all_types():
-                if hasattr(t, 'structure_name') and t.structure_name == return_type_name:
+                if hasattr(t, "structure_name") and t.structure_name == return_type_name:
                     return_type = t
                     break
 
         if return_type:
             # Determine return mechanism
             return_mechanism = determine_return_mechanism(
-                return_type,
-                calling_conv,
-                self.interface_unit.target_architecture
+                return_type, calling_conv, self.interface_unit.target_architecture
             )
 
             func.return_entity = ReturnEntity(
-                type_reference=return_type.entity_id,
-                return_mechanism=return_mechanism
+                type_reference=return_type.entity_id, return_mechanism=return_mechanism
             )
 
         # Normalize parameters
@@ -683,7 +662,7 @@ class SymbolNormalizationPipeline:
                 param = ParameterEntity(
                     parameter_index=i,
                     parameter_name=param_data.name or f"arg{i}",
-                    type_reference=param_type.entity_id
+                    type_reference=param_type.entity_id,
                 )
                 param.is_const = param_data.is_const
                 param.is_volatile = param_data.is_volatile
@@ -701,10 +680,7 @@ class SymbolNormalizationPipeline:
 
         return func
 
-    def normalize_variable(
-        self,
-        var_data: RawVariableData
-    ) -> VariableSymbol:
+    def normalize_variable(self, var_data: RawVariableData) -> VariableSymbol:
         """Normalize global variable symbol."""
 
         # Resolve variable type
@@ -712,15 +688,13 @@ class SymbolNormalizationPipeline:
 
         var_type = self.type_registry.resolve_type(type_name)
         if not var_type:
-            raise NormalizationError(
-                f"Variable {var_data.linkage_name} type {type_name} undefined"
-            )
+            raise NormalizationError(f"Variable {var_data.linkage_name} type {type_name} undefined")
 
         # Create variable symbol
         var = VariableSymbol(
             linkage_name=var_data.linkage_name,
             type_reference=var_type.entity_id,
-            source_name=var_data.source_name
+            source_name=var_data.source_name,
         )
 
         var.is_const = var_data.is_const
@@ -750,19 +724,20 @@ class SymbolNormalizationPipeline:
 
         return errors
 
+
 __all__ = [
-    'TypeNormalizationPipeline',
-    'TypedefResolver',
-    'NormalizationError',
-    'CircularTypedefError',
-    'TypeResolutionError',
-    'RawTypeData',
-    'RawFieldData',
-    'SymbolNormalizationPipeline',
-    'RawFunctionData',
-    'RawParameterData',
-    'RawVariableData',
-    'RawAttributeData',
-    'resolve_calling_convention',
-    'determine_return_mechanism'
+    "TypeNormalizationPipeline",
+    "TypedefResolver",
+    "NormalizationError",
+    "CircularTypedefError",
+    "TypeResolutionError",
+    "RawTypeData",
+    "RawFieldData",
+    "SymbolNormalizationPipeline",
+    "RawFunctionData",
+    "RawParameterData",
+    "RawVariableData",
+    "RawAttributeData",
+    "resolve_calling_convention",
+    "determine_return_mechanism",
 ]

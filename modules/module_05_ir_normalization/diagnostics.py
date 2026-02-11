@@ -16,15 +16,19 @@ from typing import Any, Dict, List, Optional
 # ENUMERATIONS
 # ============================================================================
 
+
 class Severity(Enum):
     """Diagnostic severity levels."""
-    ERROR = "error"      # Fatal, blocks pipeline
+
+    ERROR = "error"  # Fatal, blocks pipeline
     WARNING = "warning"  # Non-fatal, may indicate problems
-    INFO = "info"        # Informational, no action needed
-    DEBUG = "debug"      # Debug information
+    INFO = "info"  # Informational, no action needed
+    DEBUG = "debug"  # Debug information
+
 
 class ErrorCategory(Enum):
     """Error category classification."""
+
     USER_ERROR = "user"
     DATA_QUALITY = "data"
     SYSTEM_ERROR = "system"
@@ -33,13 +37,16 @@ class ErrorCategory(Enum):
     CONVERSION = "conversion"
     IO = "io"
 
+
 # ============================================================================
 # SOURCE LOCATION
 # ============================================================================
 
+
 @dataclass
 class SourceLocation:
     """Source code location."""
+
     file: Optional[str] = None
     line: Optional[int] = None
     column: Optional[int] = None
@@ -55,15 +62,13 @@ class SourceLocation:
         return "unknown location"
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            'file': self.file,
-            'line': self.line,
-            'column': self.column
-        }
+        return {"file": self.file, "line": self.line, "column": self.column}
+
 
 # ============================================================================
 # DIAGNOSTIC MESSAGE
 # ============================================================================
+
 
 @dataclass
 class DiagnosticMessage:
@@ -91,18 +96,18 @@ class DiagnosticMessage:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
-            'code': self.code,
-            'severity': self.severity.value,
-            'category': self.category.value,
-            'title': self.title,
-            'description': self.description,
-            'source_location': self.source_location.to_dict() if self.source_location else None,
-            'entity_id': self.entity_id,
-            'stage': self.stage,
-            'causes': self.causes,
-            'solutions': self.solutions,
-            'technical_details': self.technical_details,
-            'documentation_url': self.documentation_url
+            "code": self.code,
+            "severity": self.severity.value,
+            "category": self.category.value,
+            "title": self.title,
+            "description": self.description,
+            "source_location": self.source_location.to_dict() if self.source_location else None,
+            "entity_id": self.entity_id,
+            "stage": self.stage,
+            "causes": self.causes,
+            "solutions": self.solutions,
+            "technical_details": self.technical_details,
+            "documentation_url": self.documentation_url,
         }
 
     def format_for_terminal(self, use_color: bool = True) -> str:
@@ -165,16 +170,18 @@ class DiagnosticMessage:
     def _get_severity_color(self) -> str:
         """Get ANSI color code for severity."""
         colors = {
-            Severity.ERROR: "\033[91m",    # Red
+            Severity.ERROR: "\033[91m",  # Red
             Severity.WARNING: "\033[93m",  # Yellow
-            Severity.INFO: "\033[94m",     # Blue
-            Severity.DEBUG: "\033[90m"     # Gray
+            Severity.INFO: "\033[94m",  # Blue
+            Severity.DEBUG: "\033[90m",  # Gray
         }
         return colors.get(self.severity, "")
+
 
 # ============================================================================
 # DIAGNOSTIC COLLECTOR
 # ============================================================================
+
 
 class DiagnosticCollector:
     """Collects and manages diagnostic messages."""
@@ -195,7 +202,9 @@ class DiagnosticCollector:
             self._error_count += 1
             if self._error_count > self.max_errors:
                 if not self._truncated_errors:
-                    self.diagnostics.append(self._make_truncation_message(Severity.ERROR, self.max_errors))
+                    self.diagnostics.append(
+                        self._make_truncation_message(Severity.ERROR, self.max_errors)
+                    )
                     self._truncated_errors = True
                 return
 
@@ -203,7 +212,9 @@ class DiagnosticCollector:
             self._warning_count += 1
             if self._warning_count > self.max_warnings:
                 if not self._truncated_warnings:
-                    self.diagnostics.append(self._make_truncation_message(Severity.WARNING, self.max_warnings))
+                    self.diagnostics.append(
+                        self._make_truncation_message(Severity.WARNING, self.max_warnings)
+                    )
                     self._truncated_warnings = True
                 return
 
@@ -212,11 +223,11 @@ class DiagnosticCollector:
     def add_error(self, code: str, title: str, description: str, **kwargs):
         """Add error diagnostic."""
         params = {
-            'code': code,
-            'severity': Severity.ERROR,
-            'category': kwargs.pop('category', ErrorCategory.USER_ERROR),
-            'title': title,
-            'description': description
+            "code": code,
+            "severity": Severity.ERROR,
+            "category": kwargs.pop("category", ErrorCategory.USER_ERROR),
+            "title": title,
+            "description": description,
         }
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
@@ -225,11 +236,11 @@ class DiagnosticCollector:
     def add_warning(self, code: str, title: str, description: str, **kwargs):
         """Add warning diagnostic."""
         params = {
-            'code': code,
-            'severity': Severity.WARNING,
-            'category': kwargs.pop('category', ErrorCategory.DATA_QUALITY),
-            'title': title,
-            'description': description
+            "code": code,
+            "severity": Severity.WARNING,
+            "category": kwargs.pop("category", ErrorCategory.DATA_QUALITY),
+            "title": title,
+            "description": description,
         }
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
@@ -238,11 +249,11 @@ class DiagnosticCollector:
     def add_info(self, code: str, title: str, description: str, **kwargs):
         """Add info diagnostic."""
         params = {
-            'code': code,
-            'severity': Severity.INFO,
-            'category': kwargs.pop('category', ErrorCategory.USER_ERROR),
-            'title': title,
-            'description': description
+            "code": code,
+            "severity": Severity.INFO,
+            "category": kwargs.pop("category", ErrorCategory.USER_ERROR),
+            "title": title,
+            "description": description,
         }
         params.update(kwargs)
         diagnostic = DiagnosticMessage(**params)
@@ -292,18 +303,18 @@ class DiagnosticCollector:
     def save_json_report(self, output_path: Path):
         """Save diagnostics as JSON."""
         report = {
-            'summary': {
-                'total_errors': self._error_count,
-                'total_warnings': self._warning_count,
-                'total_messages': len(self.diagnostics),
-                'truncated_errors': self._truncated_errors,
-                'truncated_warnings': self._truncated_warnings
+            "summary": {
+                "total_errors": self._error_count,
+                "total_warnings": self._warning_count,
+                "total_messages": len(self.diagnostics),
+                "truncated_errors": self._truncated_errors,
+                "truncated_warnings": self._truncated_warnings,
             },
-            'diagnostics': [d.to_dict() for d in self.diagnostics]
+            "diagnostics": [d.to_dict() for d in self.diagnostics],
         }
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(report, f, indent=2)
 
     def _make_truncation_message(self, severity: Severity, limit: int) -> DiagnosticMessage:
@@ -314,26 +325,24 @@ class DiagnosticCollector:
             category=ErrorCategory.SYSTEM_ERROR,
             title=f"{severity.value.capitalize()} limit reached",
             description=f"More than {limit} {severity.value}s detected. "
-                       f"Additional {severity.value}s have been suppressed.",
+            f"Additional {severity.value}s have been suppressed.",
             solutions=[
                 f"Fix reported {severity.value}s and re-run",
-                f"Increase limit with --max-{severity.value}s={limit * 2}"
-            ]
+                f"Increase limit with --max-{severity.value}s={limit * 2}",
+            ],
         )
+
 
 # ============================================================================
 # ERROR CONTEXT MANAGER
 # ============================================================================
 
+
 @contextmanager
-def error_context(
-    collector: DiagnosticCollector,
-    stage: str,
-    entity_id: Optional[str] = None
-):
+def error_context(collector: DiagnosticCollector, stage: str, entity_id: Optional[str] = None):
     """
     Context manager for error enrichment.
-    
+
     Usage:
         with error_context(collector, "type_normalization", "struct_123"):
             normalize_type(...)
@@ -362,57 +371,60 @@ def error_context(
             stage=stage,
             entity_id=entity_id,
             stack_trace=traceback.format_exc(),
-            technical_details={
-                'exception_type': type(e).__name__
-            }
+            technical_details={"exception_type": type(e).__name__},
         )
         raise
+
 
 # ============================================================================
 # USER GUIDANCE
 # ============================================================================
 
+
 class UserGuidance:
     """Provides contextual user guidance."""
 
     ERROR_GUIDANCE = {
-        'E1001': {
-            'title': 'Conversion Error',
-            'suggestions': [
+        "E1001": {
+            "title": "Conversion Error",
+            "suggestions": [
                 "Verify input is valid Module 04 artifact",
                 "Check artifact version compatibility",
-                "Re-run Module 04 ingestion if needed"
-            ]
+                "Re-run Module 04 ingestion if needed",
+            ],
         },
-        'E2001': {
-            'title': 'Validation Error',
-            'suggestions': [
+        "E2001": {
+            "title": "Validation Error",
+            "suggestions": [
                 "Inspect problematic entity with pfcv-ir inspect",
                 "Review validation report for specific issues",
-                "Compare with compiler output"
-            ]
+                "Compare with compiler output",
+            ],
         },
-        'E2101': {
-            'title': 'Structure Size Mismatch',
-            'suggestions': [
+        "E2101": {
+            "title": "Structure Size Mismatch",
+            "suggestions": [
                 "Verify Module 04 ingestion captured all fields",
                 "Check for compiler-specific packing attributes",
-                "Compare with 'clang -cc1 -fdump-record-layouts'"
-            ]
-        }
+                "Compare with 'clang -cc1 -fdump-record-layouts'",
+            ],
+        },
     }
 
     @classmethod
     def get_guidance(cls, error_code: str) -> Dict[str, Any]:
         """Get guidance for error code."""
-        return cls.ERROR_GUIDANCE.get(error_code, {
-            'title': 'Unknown Error',
-            'suggestions': [
-                "Review error message carefully",
-                "Check documentation: https://pfcv.dev/troubleshooting",
-                "Report issue if persistent"
-            ]
-        })
+        return cls.ERROR_GUIDANCE.get(
+            error_code,
+            {
+                "title": "Unknown Error",
+                "suggestions": [
+                    "Review error message carefully",
+                    "Check documentation: https://pfcv.dev/troubleshooting",
+                    "Report issue if persistent",
+                ],
+            },
+        )
 
     @staticmethod
     def get_common_issues_help() -> str:
@@ -440,9 +452,11 @@ Common Issues and Solutions
 For more help: https://pfcv.dev/troubleshooting
         """
 
+
 # ============================================================================
 # PROGRESS TRACKER
 # ============================================================================
+
 
 class ProgressTracker:
     """Tracks and reports pipeline progress."""
@@ -470,7 +484,7 @@ class ProgressTracker:
         """Update progress within stage."""
         if self.verbose and total > 0:
             pct = (current / total) * 100
-            print(f"  Processing: {current}/{total} ({pct:.0f}%) {item}", end='\r')
+            print(f"  Processing: {current}/{total} ({pct:.0f}%) {item}", end="\r")
 
     def complete_stage(self, duration: float):
         """Signal stage completion."""
@@ -483,13 +497,14 @@ class ProgressTracker:
         if self.verbose:
             print(f"  ✗ Error: {error}")
 
+
 __all__ = [
-    'Severity',
-    'ErrorCategory',
-    'SourceLocation',
-    'DiagnosticMessage',
-    'DiagnosticCollector',
-    'error_context',
-    'UserGuidance',
-    'ProgressTracker'
+    "Severity",
+    "ErrorCategory",
+    "SourceLocation",
+    "DiagnosticMessage",
+    "DiagnosticCollector",
+    "error_context",
+    "UserGuidance",
+    "ProgressTracker",
 ]

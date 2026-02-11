@@ -15,8 +15,10 @@ from typing import Any, Dict, List, Optional
 # ENUMERATIONS FOR IR ENTITY CLASSIFICATION
 # ============================================================================
 
+
 class EntityKind(Enum):
     """Classification of IR entities."""
+
     INTERFACE_UNIT = "interface_unit"
     FUNCTION_SYMBOL = "function_symbol"
     VARIABLE_SYMBOL = "variable_symbol"
@@ -35,8 +37,10 @@ class EntityKind(Enum):
     ATTRIBUTE = "attribute"
     METADATA = "metadata"
 
+
 class ScalarKind(Enum):
     """Classification of scalar types."""
+
     SIGNED_INTEGER = "signed_integer"
     UNSIGNED_INTEGER = "unsigned_integer"
     FLOATING_POINT = "floating_point"
@@ -44,8 +48,10 @@ class ScalarKind(Enum):
     CHARACTER = "character"
     VOID = "void"
 
+
 class CallingConvention(Enum):
     """Calling conventions for functions."""
+
     CDECL = "cdecl"
     STDCALL = "stdcall"
     FASTCALL = "fastcall"
@@ -56,27 +62,33 @@ class CallingConvention(Enum):
     AAPCS = "aapcs"
     AAPCS_VFP = "aapcs_vfp"
 
+
 class ReturnMechanism(Enum):
     """How return values are passed."""
+
     DIRECT = "direct"  # Returned in registers
     HIDDEN_POINTER = "hidden_pointer"  # Via implicit first parameter
     AGGREGATE = "aggregate"  # Platform-specific aggregate rules
     SPLIT = "split"  # Split across multiple registers
 
+
 class Endianness(Enum):
     """Byte ordering."""
+
     LITTLE = "little"
     BIG = "big"
+
 
 # ============================================================================
 # BASE IR ENTITY
 # ============================================================================
 
+
 @dataclass
 class IREntity:
     """
     Base class for all IR entities.
-    
+
     Every entity has:
     - Unique identifier (stable across versions)
     - Entity kind classification
@@ -89,33 +101,35 @@ class IREntity:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize entity to dictionary."""
-        meta = getattr(self, 'metadata', None)
+        meta = getattr(self, "metadata", None)
         return {
-            'entity_id': self.entity_id,
-            'kind': self.kind.value,
-            'metadata': meta.to_dict() if meta else None
+            "entity_id": self.entity_id,
+            "kind": self.kind.value,
+            "metadata": meta.to_dict() if meta else None,
         }
 
     @staticmethod
     def generate_id(kind: EntityKind, *components: str) -> str:
         """
         Generate stable entity ID from structural components.
-        
+
         IDs are deterministic and based on entity structure, not memory
         addresses or traversal order.
         """
         content = f"{kind.value}::" + "::".join(str(c) for c in components)
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
+
 # ============================================================================
 # METADATA ENTITY
 # ============================================================================
+
 
 @dataclass
 class MetadataEntity(IREntity):
     """
     Provenance and traceability information.
-    
+
     Attached to IR entities to provide source location, origin, and context.
     """
 
@@ -128,37 +142,39 @@ class MetadataEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.METADATA)
-    
+
     # Metadata for consistency (though unusual)
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.METADATA
         self.entity_id = self.generate_id(
-            EntityKind.METADATA,
-            self.source_file or "unknown",
-            str(self.line_number or 0)
+            EntityKind.METADATA, self.source_file or "unknown", str(self.line_number or 0)
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize metadata."""
         data = super().to_dict()
-        data.update({
-            'source_file': self.source_file,
-            'line_number': self.line_number,
-            'column_number': self.column_number,
-            'header_origin': self.header_origin
-        })
+        data.update(
+            {
+                "source_file": self.source_file,
+                "line_number": self.line_number,
+                "column_number": self.column_number,
+                "header_origin": self.header_origin,
+            }
+        )
         return data
+
 
 # ============================================================================
 # ============================================================================
+
 
 @dataclass
 class InterfaceUnit(IREntity):
     """
     Root container for all IR entities.
-    
+
     Represents a complete native interface surface observed under a specific
     compilation context. All entities are interpreted relative to this context.
     """
@@ -180,15 +196,15 @@ class InterfaceUnit(IREntity):
     normalization_version: str = "1.0.0"
     creation_timestamp: Optional[str] = None
 
-    symbols: List['SymbolEntity'] = field(default_factory=list)
-    types: List['TypeEntity'] = field(default_factory=list)
+    symbols: List["SymbolEntity"] = field(default_factory=list)
+    types: List["TypeEntity"] = field(default_factory=list)
 
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.INTERFACE_UNIT)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.INTERFACE_UNIT
@@ -197,47 +213,52 @@ class InterfaceUnit(IREntity):
             self.target_architecture,
             self.operating_system,
             str(self.pointer_width),
-            self.abi_mode
+            self.abi_mode,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize interface unit."""
         data = super().to_dict()
-        data.update({
-            'target_architecture': self.target_architecture,
-            'operating_system': self.operating_system,
-            'pointer_width': self.pointer_width,
-            'endianness': self.endianness.value,
-            'abi_mode': self.abi_mode,
-            'compiler_family': self.compiler_family,
-            'compiler_version': self.compiler_version,
-            'compilation_flags': self.compilation_flags,
-            'ir_schema_version': self.ir_schema_version,
-            'normalization_version': self.normalization_version,
-            'symbols': [s.to_dict() for s in self.symbols],
-            'types': [t.to_dict() for t in self.types]
-        })
+        data.update(
+            {
+                "target_architecture": self.target_architecture,
+                "operating_system": self.operating_system,
+                "pointer_width": self.pointer_width,
+                "endianness": self.endianness.value,
+                "abi_mode": self.abi_mode,
+                "compiler_family": self.compiler_family,
+                "compiler_version": self.compiler_version,
+                "compilation_flags": self.compilation_flags,
+                "ir_schema_version": self.ir_schema_version,
+                "normalization_version": self.normalization_version,
+                "symbols": [s.to_dict() for s in self.symbols],
+                "types": [t.to_dict() for t in self.types],
+            }
+        )
         return data
+
 
 # ============================================================================
 # SYMBOL ENTITIES
 # ============================================================================
 
+
 @dataclass
 class SymbolEntity(IREntity):
     """
     Base class for externally visible symbols.
-    
+
     Represents linkage points that may be referenced across language boundaries.
     """
 
     linkage_name: str  # Mangled name in binary
-    source_name: Optional[str]  # Human-readable name (REQUIRED for Python 3.9 MRO compat)
+    # Human-readable name (REQUIRED for Python 3.9 MRO compat)
+    source_name: Optional[str]
 
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False)
-    
+
     # NOTE: metadata is NOT added here because subclasses (FunctionSymbol)
     # add non-default fields. It must be added to subclasses.
 
@@ -249,31 +270,29 @@ class SymbolEntity(IREntity):
     def to_dict(self) -> Dict[str, Any]:
         """Serialize symbol."""
         data = super().to_dict()
-        data.update({
-            'linkage_name': self.linkage_name,
-            'source_name': self.source_name
-        })
+        data.update({"linkage_name": self.linkage_name, "source_name": self.source_name})
         return data
+
 
 @dataclass
 class FunctionSymbol(SymbolEntity):
     """
     Callable function symbol.
-    
+
     Represents a function that may be called across FFI boundaries.
     """
 
     calling_convention: CallingConvention
-    return_entity: Optional['ReturnEntity'] = None
-    parameters: List['ParameterEntity'] = field(default_factory=list)
+    return_entity: Optional["ReturnEntity"] = None
+    parameters: List["ParameterEntity"] = field(default_factory=list)
     is_variadic: bool = False
-    attributes: List['AttributeEntity'] = field(default_factory=list)
+    attributes: List["AttributeEntity"] = field(default_factory=list)
 
     # Overrides
     kind: EntityKind = field(init=False, default=EntityKind.FUNCTION_SYMBOL)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.FUNCTION_SYMBOL
@@ -282,33 +301,36 @@ class FunctionSymbol(SymbolEntity):
     def to_dict(self) -> Dict[str, Any]:
         """Serialize function symbol."""
         data = super().to_dict()
-        data.update({
-            'calling_convention': self.calling_convention.value,
-            'return_entity': self.return_entity.to_dict() if self.return_entity else None,
-            'parameters': [p.to_dict() for p in self.parameters],
-            'is_variadic': self.is_variadic,
-            'attributes': [a.to_dict() for a in self.attributes]
-        })
+        data.update(
+            {
+                "calling_convention": self.calling_convention.value,
+                "return_entity": self.return_entity.to_dict() if self.return_entity else None,
+                "parameters": [p.to_dict() for p in self.parameters],
+                "is_variadic": self.is_variadic,
+                "attributes": [a.to_dict() for a in self.attributes],
+            }
+        )
         return data
+
 
 @dataclass
 class VariableSymbol(SymbolEntity):
     """
     Global variable symbol.
-    
+
     Represents a global variable accessible across FFI boundaries.
     """
 
     type_reference: str
     is_const: bool = False
     visibility: str = "extern"  # extern, static, internal
-    attributes: List['AttributeEntity'] = field(default_factory=list)
+    attributes: List["AttributeEntity"] = field(default_factory=list)
 
     # Overrides
     kind: EntityKind = field(init=False, default=EntityKind.VARIABLE_SYMBOL)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.VARIABLE_SYMBOL
@@ -317,23 +339,27 @@ class VariableSymbol(SymbolEntity):
     def to_dict(self) -> Dict[str, Any]:
         """Serialize variable symbol."""
         data = super().to_dict()
-        data.update({
-            'type_reference': self.type_reference,
-            'is_const': self.is_const,
-            'visibility': self.visibility,
-            'attributes': [a.to_dict() for a in self.attributes]
-        })
+        data.update(
+            {
+                "type_reference": self.type_reference,
+                "is_const": self.is_const,
+                "visibility": self.visibility,
+                "attributes": [a.to_dict() for a in self.attributes],
+            }
+        )
         return data
+
 
 # ============================================================================
 # TYPE ENTITIES
 # ============================================================================
 
+
 @dataclass
 class TypeEntity(IREntity):
     """
     Base class for canonical types.
-    
+
     All types have size and alignment. Type entities are immutable once created.
     """
 
@@ -345,22 +371,22 @@ class TypeEntity(IREntity):
     kind: EntityKind = field(init=False)
 
     def __post_init__(self) -> None:
-        self.entity_id = self.generate_id(self.kind, str(self.size_bytes), str(self.alignment_bytes))
+        self.entity_id = self.generate_id(
+            self.kind, str(self.size_bytes), str(self.alignment_bytes)
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize type."""
         data = super().to_dict()
-        data.update({
-            'size_bytes': self.size_bytes,
-            'alignment_bytes': self.alignment_bytes
-        })
+        data.update({"size_bytes": self.size_bytes, "alignment_bytes": self.alignment_bytes})
         return data
+
 
 @dataclass
 class ScalarType(TypeEntity):
     """
     Scalar type (integers, floats, booleans).
-    
+
     Represents primitive types with explicit width, signedness, and representation.
     """
 
@@ -372,9 +398,9 @@ class ScalarType(TypeEntity):
     size_bytes: int = 0
     alignment_bytes: int = 0
     kind: EntityKind = field(init=False, default=EntityKind.SCALAR_TYPE)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.SCALAR_TYPE
@@ -384,27 +410,27 @@ class ScalarType(TypeEntity):
             self.alignment_bytes = max(1, self.size_bytes)
 
         self.entity_id = self.generate_id(
-            EntityKind.SCALAR_TYPE,
-            self.scalar_kind.value,
-            str(self.bit_width),
-            str(self.is_signed)
+            EntityKind.SCALAR_TYPE, self.scalar_kind.value, str(self.bit_width), str(self.is_signed)
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize scalar type."""
         data = super().to_dict()
-        data.update({
-            'scalar_kind': self.scalar_kind.value,
-            'bit_width': self.bit_width,
-            'is_signed': self.is_signed
-        })
+        data.update(
+            {
+                "scalar_kind": self.scalar_kind.value,
+                "bit_width": self.bit_width,
+                "is_signed": self.is_signed,
+            }
+        )
         return data
+
 
 @dataclass
 class PointerType(TypeEntity):
     """
     Pointer type.
-    
+
     Represents pointer with explicit depth, target type, and platform-specific
     pointer size.
     """
@@ -417,9 +443,9 @@ class PointerType(TypeEntity):
     size_bytes: int = 0
     alignment_bytes: int = 0
     kind: EntityKind = field(init=False, default=EntityKind.POINTER_TYPE)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self, pointer_width: int) -> None:
         self.kind = EntityKind.POINTER_TYPE
@@ -427,29 +453,31 @@ class PointerType(TypeEntity):
         self.alignment_bytes = self.size_bytes
 
         self.entity_id = self.generate_id(
-            EntityKind.POINTER_TYPE,
-            str(self.pointer_depth),
-            self.target_type_reference
+            EntityKind.POINTER_TYPE, str(self.pointer_depth), self.target_type_reference
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize pointer type."""
         data = super().to_dict()
-        data.update({
-            'pointer_depth': self.pointer_depth,
-            'target_type_reference': self.target_type_reference
-        })
+        data.update(
+            {
+                "pointer_depth": self.pointer_depth,
+                "target_type_reference": self.target_type_reference,
+            }
+        )
         return data
+
 
 # ============================================================================
 # FIELD AND PADDING ENTITIES
 # ============================================================================
 
+
 @dataclass
 class FieldEntity(IREntity):
     """
     Structure or union field.
-    
+
     Represents a single field with explicit offset and type information.
     """
 
@@ -464,9 +492,9 @@ class FieldEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.FIELD)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.FIELD
@@ -474,28 +502,31 @@ class FieldEntity(IREntity):
             EntityKind.FIELD,
             str(self.field_index),
             self.field_name or f"field_{self.field_index}",
-            str(self.byte_offset)
+            str(self.byte_offset),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize field."""
         data = super().to_dict()
-        data.update({
-            'field_index': self.field_index,
-            'field_name': self.field_name,
-            'type_reference': self.type_reference,
-            'byte_offset': self.byte_offset,
-            'bit_offset': self.bit_offset,
-            'size_bytes': self.size_bytes,
-            'alignment_bytes': self.alignment_bytes
-        })
+        data.update(
+            {
+                "field_index": self.field_index,
+                "field_name": self.field_name,
+                "type_reference": self.type_reference,
+                "byte_offset": self.byte_offset,
+                "bit_offset": self.bit_offset,
+                "size_bytes": self.size_bytes,
+                "alignment_bytes": self.alignment_bytes,
+            }
+        )
         return data
+
 
 @dataclass
 class PaddingEntity(IREntity):
     """
     Explicit padding region.
-    
+
     Padding is represented as a first-class entity rather than an implied gap.
     This is critical for detecting layout mismatches.
     """
@@ -507,37 +538,35 @@ class PaddingEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.PADDING)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.PADDING
         self.entity_id = self.generate_id(
-            EntityKind.PADDING,
-            str(self.byte_offset),
-            str(self.size_bytes)
+            EntityKind.PADDING, str(self.byte_offset), str(self.size_bytes)
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize padding."""
         data = super().to_dict()
-        data.update({
-            'byte_offset': self.byte_offset,
-            'size_bytes': self.size_bytes,
-            'reason': self.reason
-        })
+        data.update(
+            {"byte_offset": self.byte_offset, "size_bytes": self.size_bytes, "reason": self.reason}
+        )
         return data
+
 
 # ============================================================================
 # PARAMETER AND RETURN ENTITIES
 # ============================================================================
 
+
 @dataclass
 class ParameterEntity(IREntity):
     """
     Function parameter.
-    
+
     Represents a single parameter with explicit type and position information.
     """
 
@@ -551,9 +580,9 @@ class ParameterEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.PARAMETER)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.PARAMETER
@@ -561,27 +590,30 @@ class ParameterEntity(IREntity):
             EntityKind.PARAMETER,
             str(self.parameter_index),
             self.parameter_name or f"param_{self.parameter_index}",
-            self.type_reference
+            self.type_reference,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize parameter."""
         data = super().to_dict()
-        data.update({
-            'parameter_index': self.parameter_index,
-            'parameter_name': self.parameter_name,
-            'type_reference': self.type_reference,
-            'is_const': self.is_const,
-            'is_volatile': self.is_volatile,
-            'is_restrict': self.is_restrict
-        })
+        data.update(
+            {
+                "parameter_index": self.parameter_index,
+                "parameter_name": self.parameter_name,
+                "type_reference": self.type_reference,
+                "is_const": self.is_const,
+                "is_volatile": self.is_volatile,
+                "is_restrict": self.is_restrict,
+            }
+        )
         return data
+
 
 @dataclass
 class ReturnEntity(IREntity):
     """
     Function return value.
-    
+
     Explicit representation of return mechanism allows modeling complex return
     behavior (hidden pointers, aggregate returns, etc.).
     """
@@ -592,36 +624,35 @@ class ReturnEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.RETURN)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.RETURN
         self.entity_id = self.generate_id(
-            EntityKind.RETURN,
-            self.type_reference,
-            self.return_mechanism.value
+            EntityKind.RETURN, self.type_reference, self.return_mechanism.value
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize return entity."""
         data = super().to_dict()
-        data.update({
-            'type_reference': self.type_reference,
-            'return_mechanism': self.return_mechanism.value
-        })
+        data.update(
+            {"type_reference": self.type_reference, "return_mechanism": self.return_mechanism.value}
+        )
         return data
+
 
 # ============================================================================
 # ATTRIBUTE ENTITY
 # ============================================================================
 
+
 @dataclass
 class AttributeEntity(IREntity):
     """
     ABI-relevant attribute.
-    
+
     Captures modifiers that affect calling conventions, layout, or visibility.
     """
 
@@ -631,36 +662,37 @@ class AttributeEntity(IREntity):
     # Defaults for base fields
     entity_id: str = field(init=False)
     kind: EntityKind = field(init=False, default=EntityKind.ATTRIBUTE)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.ATTRIBUTE
         self.entity_id = self.generate_id(
-            EntityKind.ATTRIBUTE,
-            self.attribute_name,
-            self.attribute_value or ""
+            EntityKind.ATTRIBUTE, self.attribute_name, self.attribute_value or ""
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize attribute."""
         data = super().to_dict()
-        data.update({
-            'attribute_name': self.attribute_name,
-            'attribute_value': self.attribute_value
-        })
+        data.update(
+            {"attribute_name": self.attribute_name, "attribute_value": self.attribute_value}
+        )
         return data
+
 
 # ============================================================================
 # ARRAY TYPE ()
 # ============================================================================
 
+
 class ArrayKind(Enum):
     """Classification of array types."""
+
     FIXED_SIZE = "fixed_size"
     INCOMPLETE = "incomplete"
     FLEXIBLE_MEMBER = "flexible_member"
+
 
 @dataclass
 class ArrayType(TypeEntity):
@@ -679,9 +711,9 @@ class ArrayType(TypeEntity):
     alignment_bytes: int = 0
     kind: EntityKind = field(init=False, default=EntityKind.ARRAY_TYPE)
     entity_id: str = field(init=False)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self, element_size: int, element_alignment: int) -> None:
         self.kind = EntityKind.ARRAY_TYPE
@@ -698,8 +730,7 @@ class ArrayType(TypeEntity):
 
         count_str = str(self.element_count) if self.element_count is not None else "incomplete"
         self.entity_id = self.generate_id(
-            EntityKind.ARRAY_TYPE, self.array_kind.value,
-            self.element_type_reference, count_str
+            EntityKind.ARRAY_TYPE, self.array_kind.value, self.element_type_reference, count_str
         )
 
     def is_complete(self) -> bool:
@@ -707,17 +738,21 @@ class ArrayType(TypeEntity):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        data.update({
-            'array_kind': self.array_kind.value,
-            'element_type_reference': self.element_type_reference,
-            'element_count': self.element_count,
-            'is_complete': self.is_complete()
-        })
+        data.update(
+            {
+                "array_kind": self.array_kind.value,
+                "element_type_reference": self.element_type_reference,
+                "element_count": self.element_count,
+                "is_complete": self.is_complete(),
+            }
+        )
         return data
+
 
 # ============================================================================
 # STRUCTURE TYPE
 # ============================================================================
+
 
 @dataclass
 class StructureType(TypeEntity):
@@ -732,9 +767,9 @@ class StructureType(TypeEntity):
     # Defaults for base fields
     kind: EntityKind = field(init=False, default=EntityKind.STRUCTURE_TYPE)
     entity_id: str = field(init=False)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.STRUCTURE_TYPE
@@ -758,9 +793,7 @@ class StructureType(TypeEntity):
             current_end = current.byte_offset + current.size_bytes
 
             if next_field.byte_offset < current_end:
-                errors.append(
-                    f"Field {next_field.field_name} overlaps with {current.field_name}"
-                )
+                errors.append(f"Field {next_field.field_name} overlaps with {current.field_name}")
 
         if self.fields:
             last_field = sorted_fields[-1]
@@ -776,17 +809,21 @@ class StructureType(TypeEntity):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        data.update({
-            'structure_name': self.structure_name,
-            'fields': [f.to_dict() for f in self.fields],
-            'padding_regions': [p.to_dict() for p in self.padding_regions],
-            'is_packed': self.is_packed
-        })
+        data.update(
+            {
+                "structure_name": self.structure_name,
+                "fields": [f.to_dict() for f in self.fields],
+                "padding_regions": [p.to_dict() for p in self.padding_regions],
+                "is_packed": self.is_packed,
+            }
+        )
         return data
+
 
 # ============================================================================
 # UNION TYPE
 # ============================================================================
+
 
 @dataclass
 class UnionType(TypeEntity):
@@ -798,9 +835,9 @@ class UnionType(TypeEntity):
     # Defaults for base fields
     kind: EntityKind = field(init=False, default=EntityKind.UNION_TYPE)
     entity_id: str = field(init=False)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.UNION_TYPE
@@ -810,9 +847,7 @@ class UnionType(TypeEntity):
 
     def add_member(self, member: FieldEntity) -> None:
         if member.byte_offset != 0:
-            raise ValueError(
-                f"Union member {member.field_name} must be at offset 0"
-            )
+            raise ValueError(f"Union member {member.field_name} must be at offset 0")
         self.members.append(member)
 
     def validate_union_invariants(self) -> List[str]:
@@ -835,15 +870,14 @@ class UnionType(TypeEntity):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        data.update({
-            'union_name': self.union_name,
-            'members': [m.to_dict() for m in self.members]
-        })
+        data.update({"union_name": self.union_name, "members": [m.to_dict() for m in self.members]})
         return data
+
 
 # ============================================================================
 # ENUMERATION TYPE
 # ============================================================================
+
 
 @dataclass
 class EnumerationType(TypeEntity):
@@ -856,9 +890,9 @@ class EnumerationType(TypeEntity):
     # Defaults for base fields
     kind: EntityKind = field(init=False, default=EntityKind.ENUM_TYPE)
     entity_id: str = field(init=False)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self) -> None:
         self.kind = EntityKind.ENUM_TYPE
@@ -877,16 +911,20 @@ class EnumerationType(TypeEntity):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        data.update({
-            'enum_name': self.enum_name,
-            'underlying_type_reference': self.underlying_type_reference,
-            'enumerators': self.enumerators
-        })
+        data.update(
+            {
+                "enum_name": self.enum_name,
+                "underlying_type_reference": self.underlying_type_reference,
+                "enumerators": self.enumerators,
+            }
+        )
         return data
+
 
 # ============================================================================
 # FUNCTION POINTER TYPE
 # ============================================================================
+
 
 @dataclass
 class FunctionPointerType(TypeEntity):
@@ -903,9 +941,9 @@ class FunctionPointerType(TypeEntity):
     entity_id: str = field(init=False)
     size_bytes: int = field(init=False)
     alignment_bytes: int = field(init=False)
-    
+
     # Metadata
-    metadata: Optional['MetadataEntity'] = None
+    metadata: Optional["MetadataEntity"] = None
 
     def __post_init__(self, pointer_width: int) -> None:
         self.kind = EntityKind.FUNCTION_POINTER_TYPE
@@ -913,13 +951,14 @@ class FunctionPointerType(TypeEntity):
         self.alignment_bytes = self.size_bytes
         self.entity_id = self.generate_id(
             EntityKind.FUNCTION_POINTER_TYPE,
-            self.calling_convention.value, self.return_type_reference
+            self.calling_convention.value,
+            self.return_type_reference,
         )
 
     def add_parameter(self, parameter: ParameterEntity) -> None:
         self.parameters.append(parameter)
 
-    def signature_matches(self, other: 'FunctionPointerType') -> bool:
+    def signature_matches(self, other: "FunctionPointerType") -> bool:
         if self.calling_convention != other.calling_convention:
             return False
         if self.return_type_reference != other.return_type_reference:
@@ -935,17 +974,21 @@ class FunctionPointerType(TypeEntity):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
-        data.update({
-            'calling_convention': self.calling_convention.value,
-            'return_type_reference': self.return_type_reference,
-            'parameters': [p.to_dict() for p in self.parameters],
-            'is_variadic': self.is_variadic
-        })
+        data.update(
+            {
+                "calling_convention": self.calling_convention.value,
+                "return_type_reference": self.return_type_reference,
+                "parameters": [p.to_dict() for p in self.parameters],
+                "is_variadic": self.is_variadic,
+            }
+        )
         return data
+
 
 # ============================================================================
 # TYPE REGISTRY
 # ============================================================================
+
 
 class TypeRegistry:
     """Registry for resolving type references."""
@@ -992,9 +1035,11 @@ class TypeRegistry:
     def get_all_types(self) -> List[TypeEntity]:
         return list(self._types.values())
 
+
 # ============================================================================
 # MODULE METADATA
 # ============================================================================
+
 
 __version__ = "1.0.0"
 __module__ = "Module 05: IR Normalization"
