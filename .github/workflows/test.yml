@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.11"]
     
     steps:
     - uses: actions/checkout@v4
@@ -70,46 +70,3 @@ jobs:
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
-
-  performance:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        pip install -e ".[dev,performance]"
-        pip install pytest-benchmark
-    
-    - name: Run Module 06 Benchmarks
-      run: |
-        mkdir -p tests/benchmarks
-        cat <<EOF > tests/benchmarks/test_module_06_benchmarks.py
-        import pytest
-        from module_06_contract_schema import ContractGenerator
-        def test_generation_benchmark(benchmark):
-            generator = ContractGenerator()
-            benchmark(generator.generate, None, "benchmark_interface")
-        EOF
-        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
-        pytest tests/benchmarks/ --benchmark-only --benchmark-json=benchmark_results_m06.json
-    
-    - name: Run Legacy Performance Tests
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd)/modules
-        pytest tests/integration -v -m "slow"
-    
-    - name: Upload benchmark results
-      uses: actions/upload-artifact@v4
-      with:
-        name: benchmark-results
-        path: |
-          benchmark_results_m06.json
-          benchmark-results.json

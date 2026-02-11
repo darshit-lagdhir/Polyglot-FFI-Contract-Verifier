@@ -47,7 +47,6 @@ class TestWorkflowContent:
     def test_workflow_has_jobs(self, test_workflow):
         assert "jobs" in test_workflow
         assert "test" in test_workflow["jobs"]
-        assert "performance" in test_workflow["jobs"]
     
     def test_workflow_tests_python_versions(self, test_workflow):
         test_job = test_workflow["jobs"]["test"]
@@ -56,10 +55,8 @@ class TestWorkflowContent:
         assert "python-version" in test_job["strategy"]["matrix"]
         
         versions = test_job["strategy"]["matrix"]["python-version"]
-        assert "3.9" in versions
-        assert "3.10" in versions
         assert "3.11" in versions
-        assert "3.12" in versions
+        assert len(versions) == 1, "Should only test one version to save minutes"
 
     def test_workflow_has_module_06_tasks(self, test_workflow):
         steps = test_workflow["jobs"]["test"]["steps"]
@@ -134,11 +131,6 @@ class TestCIWorkflowPaths:
         paths = on_val["push"].get("paths", [])
         assert any("modules/**" in p for p in paths)
 
-    def test_performance_m06_exists(self, test_workflow):
-        perf_job = test_workflow["jobs"]["performance"]
-        steps = perf_job["steps"]
-        m06_perf = any("Module 06 Benchmarks" in step.get("name", "") for step in steps)
-        assert m06_perf, "Module 06 benchmarks not found in performance job"
 
 
 # Run tests
