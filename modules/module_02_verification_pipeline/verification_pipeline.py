@@ -4426,12 +4426,12 @@ class OutcomeValidator:
         if expected_type == "success":
             if actual_type == "success" and actual.get("no_violations"):
                 return ("PASS", None)
-        else:
-            reason = f"Expected success, got {actual_type}"
+            else:
+                reason = f"Expected success, got {actual_type}"
                 if actual_type == "contract_violation":
                     reason += f" (constraint: {actual.get('constraint_id')})"
-        elif actual_type == "unexpected_exception":
-            reason += f" ({actual.get('exception_type')}: {actual.get('message')})"
+                elif actual_type == "unexpected_exception":
+                    reason += f" ({actual.get('exception_type')}: {actual.get('message')})"
                 return ("FAIL", reason)
 
         # Case 2: Expected contract violation
@@ -4442,14 +4442,14 @@ class OutcomeValidator:
                 actual_constraint = actual.get("constraint_id")
                 if actual_constraint == expected_constraint:
                     return ("PASS", None)
-            else:
-                reason = f"Expected violation of {expected_constraint}, got {actual_constraint}"
+                else:
+                    reason = f"Expected violation of {expected_constraint}, got {actual_constraint}"
                     return ("FAIL", reason)
-        elif actual_type == "success":
-            reason = f"Expected violation of {expected_constraint}, but test passed (uncaught violation)"
+            elif actual_type == "success":
+                reason = f"Expected violation of {expected_constraint}, but test passed (uncaught violation)"
                 return ("FAIL", reason)
-        else:
-            reason = f"Expected violation, got {actual_type}"
+            else:
+                reason = f"Expected violation, got {actual_type}"
                 return ("FAIL", reason)
 
         # Case 3: Expected undefined behavior (rare)
@@ -4607,8 +4607,8 @@ class TestExecutor:
         for key, value in inputs.items():
             if isinstance(value, bytes):
                 serialized[key] = repr(value)  # b'Hello' as string
-        else:
-            serialized[key] = value
+            else:
+                serialized[key] = value
         return serialized
 
     def _generate_diagnostic(
@@ -4678,12 +4678,12 @@ class ExecutionSummarizer:
             test_id = result["test_id"]
             if "_pos" in test_id:
                 category = "positive"
-        elif "_neg" in test_id:
-            category = "negative"
-        elif "_bnd" in test_id:
-            category = "boundary"
-        else:
-            category = "unknown"
+            elif "_neg" in test_id:
+                category = "negative"
+            elif "_bnd" in test_id:
+                category = "boundary"
+            else:
+                category = "unknown"
 
             if category not in by_category:
                 by_category[category] = {"total": 0, "passed": 0, "failed": 0}
@@ -4691,10 +4691,10 @@ class ExecutionSummarizer:
             by_category[category]["total"] += 1
             if result["validation_result"] == "PASS":
                 by_category[category]["passed"] += 1
-        elif result["validation_result"] == "FAIL":
-            by_category[category]["failed"] += 1
+            elif result["validation_result"] == "FAIL":
+                by_category[category]["failed"] += 1
 
-                all_constraints = set()
+        all_constraints = set()
         for result in test_results:
             all_constraints.update(result.get("constraints_exercised", []))
 
@@ -4770,13 +4770,13 @@ class VerificationExecutionStage(PipelineStage):
 
         except Exception as e:
             # Catch unexpected errors
-                print(f"  [{i}/{len(test_cases)}] ✗ {test_case['test_id']} (ERROR)")
-                test_results.append({
-                    "test_id": test_case["test_id"],
-                    "validation_result": "ERROR",
-                    "error": str(e),
-                    "traceback": traceback.format_exc()
-                })
+            print(f"  [{i}/{len(test_cases)}] ✗ {test_case['test_id']} (ERROR)")
+            test_results.append({
+                "test_id": test_case["test_id"],
+                "validation_result": "ERROR",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
 
         # Generate summary
         summary = ExecutionSummarizer.summarize(test_results)
@@ -4870,7 +4870,7 @@ class FailureClassifier:
         # Case 1: Expected violation, got success
         if (expected.get("type") == "contract_violation" and 
             actual.get("type") == "success"):
-                return {
+            return {
                 "failure_category": FailureCategory.UNCAUGHT_VIOLATION,
                 "severity": Severity.CRITICAL,
                 "root_cause": "Adapter failed to detect contract violation",
@@ -4881,7 +4881,7 @@ class FailureClassifier:
         if (expected.get("type") == "success" and 
             actual.get("type") == "contract_violation" and
             category_name == "positive"):
-                return {
+            return {
                 "failure_category": FailureCategory.FALSE_POSITIVE,
                 "severity": Severity.HIGH,
                 "root_cause": "Valid input rejected by adapter",
@@ -4891,7 +4891,7 @@ class FailureClassifier:
         # Case 3: Expected success, got crash
         if (expected.get("type") == "success" and 
             actual.get("type") in ["crash", "unexpected_exception"]):
-                return {
+            return {
                 "failure_category": FailureCategory.NATIVE_BUG,
                 "severity": Severity.CRITICAL,
                 "root_cause": "Native code crashed or raised exception",
@@ -6083,7 +6083,7 @@ class ParallelPipelineExecutor:
             print(f"Executing level {level_num + 1}/{len(levels)}: {len(level_stages)} stage(s)")
 
             if not self._execute_level(level_stages):
-                return False          
+                return False
         return True
 
     def _compute_execution_levels(self, dep_graph: DependencyGraph) -> List[List[str]]:
@@ -6135,12 +6135,13 @@ class ParallelPipelineExecutor:
             for future in as_completed(futures):
                 stage_name = futures[future]
                 try:
+                try:
                     success = future.result()
                     results.append(success)
                     if not success:
                         print(f"✗ Stage {stage_name} failed")
-            except Exception as e:
-                print(f"✗ Stage {stage_name} raised exception: {e}")
+                except Exception as e:
+                    print(f"✗ Stage {stage_name} raised exception: {e}")
                     results.append(False)
 
             return all(results)
@@ -6187,8 +6188,8 @@ class PerformanceProfiler:
         start_time = time.time()
         start_memory = 0
 
-                try:
-                    import psutil
+        try:
+            import psutil
             process = psutil.Process()
             start_cpu = process.cpu_times()
             start_memory = process.memory_info().rss
@@ -6421,7 +6422,7 @@ class CustomConstraint(ABC):
     Users extend this to create domain-specific constraint types.
     """
 
-    CONSTRAINT_TYPE: str      
+    CONSTRAINT_TYPE: str
     def __init__(self, constraint_type: str, target: str, **metadata):
         """
         Initialize constraint.
@@ -6651,8 +6652,8 @@ class HookManager:
         for func in self.hooks[hook_point]:
             try:
                 func(context, **kwargs)
-        except Exception as e:
-            print(f"Warning: Hook {func.__name__} failed: {e}")
+            except Exception as e:
+                print(f"Warning: Hook {func.__name__} failed: {e}")
 
     def list_hooks(self, hook_point: Optional[str] = None) -> Dict[str, int]:
         """
