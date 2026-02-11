@@ -375,7 +375,7 @@ class PipelineStage(ABC):
             self.end_time = datetime.now(timezone.utc).isoformat()
             
         except Exception as e:
-                        self.error = e
+            self.error = e
             self.state = StageState.FAILED
             self.end_time = datetime.now(timezone.utc).isoformat()
             raise
@@ -924,7 +924,7 @@ class StateMachineValidator:
     @classmethod
     def can_retry(cls, state: StageState) -> bool:
         """Check if a stage in this state can be retried."""
-                return state in {StageState.FAILED, StageState.SKIPPED}
+        return state in {StageState.FAILED, StageState.SKIPPED}
 
 # ───────────────────────────────────────────────────────────────────
 # 2.3 Schema Version Comparator

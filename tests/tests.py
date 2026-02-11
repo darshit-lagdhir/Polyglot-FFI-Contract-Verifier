@@ -13,7 +13,21 @@
 import pytest
 import tempfile
 import os
+import sys
 from pathlib import Path
+
+# Fix sys.path to allow imports from all modules
+# Add 'modules' and all its subdirectories to sys.path
+modules_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../modules"))
+sys.path.insert(0, modules_dir)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Add each subdirectory in modules to sys.path
+for item in os.listdir(modules_dir):
+    item_path = os.path.join(modules_dir, item)
+    if os.path.isdir(item_path):
+        sys.path.insert(0, item_path)
+
 
 # ───────────────────────────────────────────────────────────────
 # Pytest Config
