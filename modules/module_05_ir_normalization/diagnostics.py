@@ -17,13 +17,15 @@ from typing import Any, Dict, List, Optional
 # ============================================================================
 
 
-class Severity(Enum):
+class IRSeverity(Enum):
     """Diagnostic severity levels."""
 
+    FATAL = "fatal"
     ERROR = "error"  # Fatal, blocks pipeline
     WARNING = "warning"  # Non-fatal, may indicate problems
     INFO = "info"  # Informational, no action needed
     DEBUG = "debug"  # Debug information
+    ADVISORY = "advisory"
 
 
 class ErrorCategory(Enum):
@@ -50,6 +52,13 @@ class SourceLocation:
     file: Optional[str] = None
     line: Optional[int] = None
     column: Optional[int] = None
+    file_path: Optional[str] = None  # Alias for compatibility at the end
+
+    def __post_init__(self):
+        if self.file and not self.file_path:
+            self.file_path = self.file
+        elif self.file_path and not self.file:
+            self.file = self.file_path
 
     def __str__(self):
         if self.file:
@@ -75,7 +84,7 @@ class DiagnosticMessage:
     """Structured diagnostic message."""
 
     code: str
-    severity: Severity
+    severity: IRSeverity
     category: ErrorCategory
 
     title: str
@@ -169,13 +178,19 @@ class DiagnosticMessage:
 
     def _get_severity_color(self) -> str:
         """Get ANSI color code for severity."""
+        sev = self.severity
+        if hasattr(sev, "value"):
+            sev = sev.value
+
         colors = {
-            Severity.ERROR: "\033[91m",  # Red
-            Severity.WARNING: "\033[93m",  # Yellow
-            Severity.INFO: "\033[94m",  # Blue
-            Severity.DEBUG: "\033[90m",  # Gray
+            "fatal": "\033[91m",
+            "error": "\033[91m",
+            "warning": "\033[93m",
+            "info": "\033[94m",
+            "debug": "\033[90m",
+            "advisory": "\033[96m",
         }
-        return colors.get(self.severity, "")
+        return colors.get(sev, "")
 
 
 # ============================================================================
@@ -198,22 +213,22 @@ class DiagnosticCollector:
 
     def add(self, diagnostic: DiagnosticMessage):
         """Add diagnostic message."""
-        if diagnostic.severity == Severity.ERROR:
+        if diagnostic.severity == IRSeverity.ERROR:
             self._error_count += 1
             if self._error_count > self.max_errors:
                 if not self._truncated_errors:
                     self.diagnostics.append(
-                        self._make_truncation_message(Severity.ERROR, self.max_errors)
+                        self._make_truncation_message(IRSeverity.ERROR, self.max_errors)
                     )
                     self._truncated_errors = True
                 return
 
-        elif diagnostic.severity == Severity.WARNING:
+        elif diagnostic.severity == IRSeverity.WARNING:
             self._warning_count += 1
             if self._warning_count > self.max_warnings:
                 if not self._truncated_warnings:
                     self.diagnostics.append(
-                        self._make_truncation_message(Severity.WARNING, self.max_warnings)
+                        self._make_truncation_message(IRSeverity.WARNING, self.max_warnings)
                     )
                     self._truncated_warnings = True
                 return
@@ -224,7 +239,7 @@ class DiagnosticCollector:
         """Add error diagnostic."""
         params = {
             "code": code,
-            "severity": Severity.ERROR,
+            "severity": IRSeverity.ERROR,
             "category": kwargs.pop("category", ErrorCategory.USER_ERROR),
             "title": title,
             "description": description,
@@ -237,7 +252,7 @@ class DiagnosticCollector:
         """Add warning diagnostic."""
         params = {
             "code": code,
-            "severity": Severity.WARNING,
+            "severity": IRSeverity.WARNING,
             "category": kwargs.pop("category", ErrorCategory.DATA_QUALITY),
             "title": title,
             "description": description,
@@ -250,7 +265,7 @@ class DiagnosticCollector:
         """Add info diagnostic."""
         params = {
             "code": code,
-            "severity": Severity.INFO,
+            "severity": IRSeverity.INFO,
             "category": kwargs.pop("category", ErrorCategory.USER_ERROR),
             "title": title,
             "description": description,
@@ -269,11 +284,11 @@ class DiagnosticCollector:
 
     def get_errors(self) -> List[DiagnosticMessage]:
         """Get all error messages."""
-        return [d for d in self.diagnostics if d.severity == Severity.ERROR]
+        return [d for d in self.diagnostics if d.severity == IRSeverity.ERROR]
 
     def get_warnings(self) -> List[DiagnosticMessage]:
         """Get all warning messages."""
-        return [d for d in self.diagnostics if d.severity == Severity.WARNING]
+        return [d for d in self.diagnostics if d.severity == IRSeverity.WARNING]
 
     def generate_report(self, use_color: bool = True) -> str:
         """Generate human-readable report."""
@@ -317,11 +332,11 @@ class DiagnosticCollector:
         with open(output_path, "w") as f:
             json.dump(report, f, indent=2)
 
-    def _make_truncation_message(self, severity: Severity, limit: int) -> DiagnosticMessage:
+    def _make_truncation_message(self, severity: IRSeverity, limit: int) -> DiagnosticMessage:
         """Create message indicating truncation."""
         return DiagnosticMessage(
             code="W9999",
-            severity=Severity.WARNING,
+            severity=IRSeverity.WARNING,
             category=ErrorCategory.SYSTEM_ERROR,
             title=f"{severity.value.capitalize()} limit reached",
             description=f"More than {limit} {severity.value}s detected. "
@@ -499,6 +514,7 @@ class ProgressTracker:
 
 
 __all__ = [
+    "IRSeverity",
     "Severity",
     "ErrorCategory",
     "SourceLocation",
@@ -508,3 +524,7 @@ __all__ = [
     "UserGuidance",
     "ProgressTracker",
 ]
+
+
+# Compatibility Alias
+Severity = IRSeverity

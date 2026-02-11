@@ -769,7 +769,7 @@ class VerificationError(Exception):
         super().__init__(message)
         self.error_type = error_type
 
-class ConfigError(VerificationError):
+class VerifierConfigError(VerificationError):
     """Config-related errors."""
     
     def __init__(self, message: str):

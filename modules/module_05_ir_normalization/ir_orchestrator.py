@@ -110,7 +110,7 @@ class OrchestrationError(Exception):
         super().__init__(f"[{stage}] {message}")
 
 
-class ConfigError(OrchestrationError):
+class IRConfigError(OrchestrationError):
     """Config is invalid."""
 
     pass
@@ -291,7 +291,7 @@ class IROrchestrator:
         self.state.current_stage = "configuration"
         errors = self.config.validate_config()
         if errors:
-            raise ConfigError("configuration", f"Invalid configuration: {', '.join(errors)}")
+            raise IRConfigError("configuration", f"Invalid configuration: {', '.join(errors)}")
 
     def _check_cache(self) -> Optional[IRArtifact]:
         """Check if cached artifact exists."""
@@ -316,7 +316,7 @@ class IROrchestrator:
             self.bridge.type_converter.set_pointer_width(self.interface_unit.pointer_width)
 
         except Exception as e:
-            raise ConfigError("input_preparation", f"Failed to load input: {e}")
+            raise IRConfigError("input_preparation", f"Failed to load input: {e}")
 
         duration = time.time() - stage_start
         self.state.stage_timings["input_preparation"] = duration
@@ -511,8 +511,13 @@ __all__ = [
     "OrchestrationState",
     "OrchestrationReport",
     "OrchestrationError",
+    "IRConfigError",
     "ConfigError",
     "NormalizationFailure",
     "ValidationFailure",
     "IROrchestrator",
 ]
+
+
+# Compatibility Alias
+ConfigError = IRConfigError

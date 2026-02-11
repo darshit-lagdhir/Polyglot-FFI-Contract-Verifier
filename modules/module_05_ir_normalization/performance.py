@@ -29,11 +29,30 @@ from .ir_entities import EntityKind, IREntity, PaddingEntity
 class PerformanceProfiler:
     """Profiles pipeline performance."""
 
-    def __init__(self) -> None:
+    def __init__(self, enabled: bool = False) -> None:
         self.timings: Dict[str, float] = {}
         self.call_counts: Dict[str, int] = {}
-        self.enabled = False
+        self.enabled = enabled
         self.stack: List[tuple] = []
+
+    @property
+    def stage_profiles(self) -> Dict[str, Dict[str, Any]]:
+        """Compatibility property for tests."""
+        return {
+            name: {
+                "wall_time": duration,
+                "call_count": self.call_counts.get(name, 1),
+            }
+            for name, duration in self.timings.items()
+        }
+
+    def generate_report(self) -> str:
+        """Generate performance report string."""
+        lines = ["Performance Profile", "=" * 40]
+        for name, duration in self.timings.items():
+            count = self.call_counts.get(name, 1)
+            lines.append(f"{name}: {duration:.4f}s (calls: {count})")
+        return "\n".join(lines)
 
     def enable(self) -> None:
         """Enable profiling."""
@@ -42,6 +61,22 @@ class PerformanceProfiler:
     def disable(self) -> None:
         """Disable profiling."""
         self.enabled = False
+
+    def profile_stage(self, name: str, func, *args, **kwargs) -> Any:
+        """
+        Profile a function execution as a stage.
+        
+        Args:
+            name: Stage name
+            func: Function to execute
+            *args: Positional arguments for func
+            **kwargs: Keyword arguments for func
+            
+        Returns:
+            Result of func execution
+        """
+        with self.profile(name):
+            return func(*args, **kwargs)
 
     @contextmanager
     def profile(self, name: str) -> Iterator[None]:

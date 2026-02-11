@@ -534,7 +534,7 @@ def deserialize_compressed(input_path: Path) -> IRArtifact:
 # ============================================================================
 
 
-class IntegrityError(Exception):
+class IRIntegrityError(Exception):
     pass
 
 
@@ -624,7 +624,7 @@ class IRArtifactManager:
         # Verify integrity
         if verify_integrity and expected_hash:
             if not verify_artifact_integrity(artifact, expected_hash):
-                raise IntegrityError(f"Artifact integrity check failed for {source_hash}")
+                raise IRIntegrityError(f"Artifact integrity check failed for {source_hash}")
 
         # Cache in memory
         self._loaded_artifacts[source_hash] = artifact
@@ -709,7 +709,7 @@ __all__ = [
     "IRArtifact",
     "IRManifest",
     "IRArtifactManager",
-    "IntegrityError",
+    "IRIntegrityError",
     "serialize_deterministically",
     "compute_artifact_hash",
     "verify_artifact_integrity",
@@ -718,3 +718,7 @@ __all__ = [
     "validate_loaded_artifact",
     "IREntityFactory",
 ]
+
+
+# Compatibility Alias
+IntegrityError = IRIntegrityError

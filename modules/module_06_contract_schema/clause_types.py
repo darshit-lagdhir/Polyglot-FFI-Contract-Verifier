@@ -13,7 +13,7 @@ from .contract_entities import (
     SubjectReference,
     ConstraintParameter,
     ClauseType,
-    Severity,
+    ContractSeverity as Severity,
     SubjectKind,
 )
 

@@ -111,7 +111,7 @@ class DeserializationError(Exception):
     pass
 
 
-class IntegrityError(Exception):
+class ContractIntegrityError(Exception):
     pass
 
 
@@ -231,7 +231,7 @@ class ContractDeserializer:
 
         Raises:
             DeserializationError: If deserialization fails
-            IntegrityError: If checksum verification fails
+            ContractIntegrityError: If checksum verification fails
         """
         try:
             # Parse JSON
@@ -264,7 +264,7 @@ class ContractDeserializer:
             raise DeserializationError(f"Invalid JSON: {e}")
 
         except Exception as e:
-            if isinstance(e, (DeserializationError, IntegrityError)):
+            if isinstance(e, (DeserializationError, ContractIntegrityError)):
                 raise
             raise DeserializationError(f"Failed to deserialize contract: {e}")
 
@@ -285,7 +285,7 @@ class ContractDeserializer:
         if not verify_checksum(
             content_without_integrity, integrity.checksum, integrity.checksum_algorithm
         ):
-            raise IntegrityError("Checksum verification failed - contract may be corrupted")
+            raise ContractIntegrityError("Checksum verification failed - contract may be corrupted")
 
     def _is_supported_schema(self, schema_version: str) -> bool:
         """Check if schema version is supported."""
@@ -555,6 +555,7 @@ __all__ = [
     "verify_checksum",
     "SerializationError",
     "DeserializationError",
+    "ContractIntegrityError",
     "IntegrityError",
     "ContractSerializer",
     "ContractDeserializer",
@@ -562,3 +563,7 @@ __all__ = [
     "ContractArtifact",
     "ContractArtifactManager",
 ]
+
+
+# Compatibility Alias
+IntegrityError = ContractIntegrityError

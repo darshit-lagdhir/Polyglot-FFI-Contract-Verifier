@@ -5171,7 +5171,7 @@ class VerificationExecutionStage(PipelineStage):
 # ═══════════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────────
-# 10.1 Failure Categories and Severity
+# 10.1 Failure Categories and PipelineSeverity
 # ───────────────────────────────────────────────────────────────────
 
 
@@ -5187,13 +5187,18 @@ class FailureCategory(Enum):
     UNKNOWN = "unknown"
 
 
-class Severity(Enum):
+class PipelineSeverity(Enum):
     """Failure severity levels."""
 
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
+    ERROR = "error"
+    WARNING = "warning"
+    FATAL = "fatal"
+    INFO = "info"
+    DEBUG = "debug"
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -5229,7 +5234,7 @@ class FailureClassifier:
         ):
             return {
                 "failure_category": FailureCategory.UNCAUGHT_VIOLATION,
-                "severity": Severity.CRITICAL,
+                "severity": PipelineSeverity.CRITICAL,
                 "root_cause": "Adapter failed to detect contract violation",
                 "hypothesis": "Check function missing or incorrect in generated adapter",
             }
@@ -5242,7 +5247,7 @@ class FailureClassifier:
         ):
             return {
                 "failure_category": FailureCategory.FALSE_POSITIVE,
-                "severity": Severity.HIGH,
+                "severity": PipelineSeverity.HIGH,
                 "root_cause": "Valid input rejected by adapter",
                 "hypothesis": "Constraint too strict or check logic incorrect",
             }
@@ -5254,7 +5259,7 @@ class FailureClassifier:
         ]:
             return {
                 "failure_category": FailureCategory.NATIVE_BUG,
-                "severity": Severity.CRITICAL,
+                "severity": PipelineSeverity.CRITICAL,
                 "root_cause": "Native code crashed or raised exception",
                 "hypothesis": "Bug in native implementation",
             }
@@ -5263,7 +5268,7 @@ class FailureClassifier:
         if test_result.get("validation_result") == "ERROR":
             return {
                 "failure_category": FailureCategory.TEST_INFRASTRUCTURE,
-                "severity": Severity.LOW,
+                "severity": PipelineSeverity.LOW,
                 "root_cause": "Test execution infrastructure issue",
                 "hypothesis": test_result.get("error", "Unknown error"),
             }
@@ -5271,7 +5276,7 @@ class FailureClassifier:
         # Default: Unknown
         return {
             "failure_category": FailureCategory.UNKNOWN,
-            "severity": Severity.MEDIUM,
+            "severity": PipelineSeverity.MEDIUM,
             "root_cause": "Failure classification inconclusive",
             "hypothesis": test_result.get("failure_reason", "Unknown"),
         }
@@ -5743,7 +5748,7 @@ class DiagnosticsReportingStage(PipelineStage):
         print("DIAGNOSTICS & REPORTING COMPLETE")
         print("=" * 60)
         print(f"Total failures analyzed: {len(failure_analysis)}")
-        print("Severity breakdown:")
+        print("PipelineSeverity breakdown:")
         for sev, count in severity_counts.items():
             if count > 0:
                 print(f"  {sev}: {count}")
@@ -6341,7 +6346,7 @@ class CacheManager:
                 """
                 SELECT stage_version, outputs_json, hits
                 FROM cache_entries
-                WHERE cache_key = 
+                WHERE cache_key = ?
             """,
                 (cache_key,),
             )
@@ -6372,8 +6377,8 @@ class CacheManager:
             cursor.execute(
                 """
                 UPDATE cache_entries
-                SET hits = , last_accessed = 
-                WHERE cache_key = 
+                SET hits = ?, last_accessed = ?
+                WHERE cache_key = ?
             """,
                 (hits + 1, datetime.now(timezone.utc).isoformat(), cache_key),
             )
@@ -6409,7 +6414,7 @@ class CacheManager:
                 """
                 INSERT OR REPLACE INTO cache_entries
                 (cache_key, stage_name, stage_version, inputs_json, outputs_json, created_at, hits, last_accessed)
-                VALUES (, , , , , , , )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     cache_key,
@@ -6432,7 +6437,7 @@ class CacheManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM cache_entries WHERE stage_name = ", (stage_name,)
+                "DELETE FROM cache_entries WHERE stage_name = ?", (stage_name,)
             )
             conn.commit()
             conn.close()
@@ -7403,3 +7408,7 @@ def verify_extensible(
 
 if __name__ == "__main__":
     sys.exit(cli_main())
+
+
+# Compatibility Alias
+Severity = PipelineSeverity

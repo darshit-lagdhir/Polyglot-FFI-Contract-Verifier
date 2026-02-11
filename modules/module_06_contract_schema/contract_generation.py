@@ -17,8 +17,9 @@ from .contract_entities import (
     GenerationMetadata,
     SubjectReference,
     SubjectKind,
-    Severity,
+    ContractSeverity,
 )
+Severity = ContractSeverity
 from .clause_types import (
     LayoutClause,
     SizeClause,
@@ -150,7 +151,7 @@ class LayoutClauseGenerator:
             expected_size=ir_type.size_bytes,
             expected_alignment=ir_type.alignment_bytes,
             field_layout={},
-            severity=Severity.ERROR,
+            severity=ContractSeverity.ERROR,
             explanation=f"Memory layout for {ir_type.type_name} must match specifications.",
         )
         return GeneratedClause(clause, 1.0, "Derived from structural IR truth", ir_type.entity_id)
@@ -172,7 +173,7 @@ class NullabilityClauseGenerator:
             clause_id=f"null_{func_name}_{p_name}",
             subject_reference=ref,
             nullable=nullable,
-            severity=Severity.ERROR if not nullable else Severity.WARNING,
+            severity=ContractSeverity.ERROR if not nullable else ContractSeverity.WARNING,
             explanation=f"Parameter '{p_name}' {'is optional' if nullable else 'must not be null'}.",
         )
         conf = 0.8 if nullable else 0.6
@@ -204,7 +205,7 @@ class OwnershipClauseGenerator:
             ownership_mode=mode,
             allocation_responsibility=a_resp,
             deallocation_responsibility=d_resp,
-            severity=Severity.ERROR,
+            severity=ContractSeverity.ERROR,
             explanation=f"Return value ownership is {mode}.",
         )
         conf = 0.8 if is_alloc else (0.7 if is_borrow else 0.5)
@@ -229,7 +230,7 @@ class RelationalClauseGenerator:
             relation_kind="buffer_length",
             primary_reference=pair[0],
             secondary_reference=pair[1],
-            severity=Severity.ERROR,
+            severity=ContractSeverity.ERROR,
             explanation=f"Buffer '{pair[0]}' capacity is controlled by '{pair[1]}'.",
         )
         return GeneratedClause(

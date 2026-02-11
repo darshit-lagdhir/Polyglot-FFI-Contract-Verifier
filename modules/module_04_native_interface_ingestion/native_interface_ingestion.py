@@ -123,9 +123,17 @@ class SourceLocation:
     Captures file, line, column, and location context.
     """
 
-    file_path: str
-    line: int
-    column: int
+    file_path: str = ""
+    line: int = 0
+    column: int = 0
+
+    @property
+    def file(self) -> str:
+        return self.file_path
+
+    @file.setter
+    def file(self, value: str):
+        self.file_path = value
 
     # Location type
     is_spelling: bool = True  # True for spelling, False for expansion
@@ -243,9 +251,21 @@ class Diagnostic:
     location: Optional[SourceLocation] = None
 
     # Additional context
-    analysis: Optional[str] = None
+    code: Optional[str] = None
+    title: Optional[str] = None
+    explanation: Optional[str] = None
     impact: Optional[str] = None
     suggestion: Optional[str] = None
+
+    # Extra fields for compatibility with Module 05
+    category: Optional[str] = None
+    stage: Optional[str] = None
+    entity_id: Optional[str] = None
+    causes: List[str] = field(default_factory=list)
+    solutions: List[str] = field(default_factory=list)
+    technical_details: Dict[str, Any] = field(default_factory=dict)
+    stack_trace: Optional[str] = None
+    documentation_url: Optional[str] = None
 
     # Related information
     related_locations: List[SourceLocation] = field(default_factory=list)
@@ -260,7 +280,7 @@ class Diagnostic:
         if self.location:
             data["location"] = self.location.to_dict()
 
-        if self.analysis:
+        if self.explanation:
             data["explanation"] = self.explanation
 
         if self.impact:
@@ -297,7 +317,7 @@ class Diagnostic:
             )
 
         # Explanation
-        if self.analysis:
+        if self.explanation:
             lines.append(f"  Explanation: {self.explanation}")
 
         # Impact
@@ -1091,7 +1111,7 @@ class GlobalVariableExtractor:
 
         self.type_extractor = type_extractor
 
-    def extract_global_variable(self, var_cursor: "CXIDE") -> GlobalVariableInfo:
+    def extract_global_variable(self, var_cursor: "CXCursor") -> GlobalVariableInfo:
         """
         Extract complete global variable information.
 
@@ -1102,7 +1122,7 @@ class GlobalVariableExtractor:
             Complete GlobalVariableInfo
         """
         # Get variable type
-        var_type = libclang.clang_getIDEType(var_cursor)
+        var_type = libclang.clang_getCursorType(var_cursor)
         type_spelling = self.type_extractor._get_type_spelling(var_type)
 
         # Get size and alignment
@@ -1121,11 +1141,11 @@ class GlobalVariableExtractor:
         visibility = self._get_visibility(var_cursor)
 
         # Check if definition
-        if hasattr(libclang, "clang_isIDEDefinition"):
-            is_definition = bool(libclang.clang_isIDEDefinition(var_cursor))
+        if hasattr(libclang, "clang_isCursorDefinition"):
+            is_definition = bool(libclang.clang_isCursorDefinition(var_cursor))
         else:
             # Fallback: check spelling equality with logical name which is weak
-            # Better fallback: use clang_getIDEDefinition and compare cursors
+            # Better fallback: use clang_getCursorDefinition and compare cursors
             is_definition = False  # Default
 
         # Create variable info
@@ -1149,7 +1169,7 @@ class GlobalVariableExtractor:
 
         return var_info
 
-    def _detect_thread_local(self, cursor: "CXIDE") -> bool:
+    def _detect_thread_local(self, cursor: "CXCursor") -> bool:
         """
         Detect if variable is thread-local.
 
@@ -1160,7 +1180,7 @@ class GlobalVariableExtractor:
             True if thread-local
         """
         # Check display name for thread-local keywords
-        display_name_cxstr = libclang.clang_getIDEDisplayName(cursor)
+        display_name_cxstr = libclang.clang_getCursorDisplayName(cursor)
         display_name = clang_string_to_python(display_name_cxstr)
 
         # Look for TLS keywords
@@ -1176,7 +1196,7 @@ class GlobalVariableExtractor:
 
         return False
 
-    def _get_visibility(self, cursor: "CXIDE") -> str:
+    def _get_visibility(self, cursor: "CXCursor") -> str:
         """
         Get symbol visibility.
 
@@ -1186,10 +1206,10 @@ class GlobalVariableExtractor:
         Returns:
             Visibility string
         """
-        if not hasattr(libclang, "clang_getIDEVisibility"):
+        if not hasattr(libclang, "clang_getCursorVisibility"):
             return "unknown"
 
-        visibility = libclang.clang_getIDEVisibility(cursor)
+        visibility = libclang.clang_getCursorVisibility(cursor)
 
         visibility_map = {
             CXVisibilityKind.DEFAULT: "default",
@@ -1226,7 +1246,7 @@ class FunctionSignatureExtractor:
 
         self.type_extractor = type_extractor
 
-    def extract_function_signature(self, function_cursor: "CXIDE") -> FunctionSignature:
+    def extract_function_signature(self, function_cursor: "CXCursor") -> FunctionSignature:
         """
         Extract complete function signature.
 
@@ -1237,7 +1257,7 @@ class FunctionSignatureExtractor:
             Complete FunctionSignature
         """
         # Get function type
-        func_type = libclang.clang_getIDEType(function_cursor)
+        func_type = libclang.clang_getCursorType(function_cursor)
 
         # Extract return type
         return_type_cx = libclang.clang_getResultType(func_type)
@@ -1273,7 +1293,7 @@ class FunctionSignatureExtractor:
         return signature
 
     def _extract_parameters(
-        self, function_cursor: "CXIDE", func_type: "CXType"
+        self, function_cursor: "CXCursor", func_type: "CXType"
     ) -> List[ParameterInfo]:
         """
         Extract all parameters from a function.
@@ -1292,7 +1312,7 @@ class FunctionSignatureExtractor:
         def param_visitor(child_cursor, parent_cursor, client_data):
             nonlocal param_index
 
-            if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.PARM_DECL:
+            if libclang.clang_getCursorKind(child_cursor) != CXCursorKind.PARM_DECL:
                 return CXChildVisitResult.CONTINUE
 
             try:
@@ -1304,12 +1324,12 @@ class FunctionSignatureExtractor:
 
             return CXChildVisitResult.CONTINUE
 
-        visitor_func = CXIDEVisitor(param_visitor)
+        visitor_func = CXCursorVisitor(param_visitor)
         libclang.clang_visitChildren(function_cursor, visitor_func, None)
 
         return parameters
 
-    def _extract_parameter(self, param_cursor: "CXIDE", index: int) -> ParameterInfo:
+    def _extract_parameter(self, param_cursor: "CXCursor", index: int) -> ParameterInfo:
         """
         Extract a single parameter.
 
@@ -1321,7 +1341,7 @@ class FunctionSignatureExtractor:
             ParameterInfo
         """
         # Get parameter name
-        name_cxstr = libclang.clang_getIDESpelling(param_cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(param_cursor)
         name = clang_string_to_python(name_cxstr)
 
         # Generate synthetic name if missing
@@ -1331,7 +1351,7 @@ class FunctionSignatureExtractor:
             is_synthetic = True
 
         # Get parameter type
-        param_type = libclang.clang_getIDEType(param_cursor)
+        param_type = libclang.clang_getCursorType(param_cursor)
         type_spelling = self.type_extractor._get_type_spelling(param_type)
 
         # Detect qualifiers
@@ -1385,7 +1405,7 @@ class FunctionSignatureExtractor:
 
         return conv_map.get(calling_conv, "unknown")
 
-    def _get_language_linkage(self, cursor: "CXIDE") -> str:
+    def _get_language_linkage(self, cursor: "CXCursor") -> str:
         """
         Determine language linkage (C vs C++).
 
@@ -1395,7 +1415,7 @@ class FunctionSignatureExtractor:
         Returns:
             'C' or 'C++'
         """
-        language = libclang.clang_getIDELanguage(cursor)
+        language = libclang.clang_getCursorLanguage(cursor)
 
         if language == CXLanguageKind.C:
             return "C"
@@ -1430,7 +1450,7 @@ class EnumExtractor:
 
         self.type_extractor = type_extractor
 
-    def extract_enum_info(self, enum_cursor: "CXIDE", enum_type: "CXType") -> Dict[str, Any]:
+    def extract_enum_info(self, enum_cursor: "CXCursor", enum_type: "CXType") -> Dict[str, Any]:
         """
         Extract complete enum information.
 
@@ -1480,7 +1500,7 @@ class EnumExtractor:
             "is_sequential": is_sequential,
         }
 
-    def _extract_enumerators(self, enum_cursor: "CXIDE") -> List[EnumeratorInfo]:
+    def _extract_enumerators(self, enum_cursor: "CXCursor") -> List[EnumeratorInfo]:
         """
         Extract all enumerators from an enum.
 
@@ -1494,7 +1514,7 @@ class EnumExtractor:
 
         # Visitor to collect enum constants
         def enumerator_visitor(child_cursor, parent_cursor, client_data):
-            if libclang.clang_getIDEKind(child_cursor) != CXIDEKind.ENUM_CONSTANT_DECL:
+            if libclang.clang_getCursorKind(child_cursor) != CXCursorKind.ENUM_CONSTANT_DECL:
                 return CXChildVisitResult.CONTINUE
 
             try:
@@ -1505,12 +1525,12 @@ class EnumExtractor:
 
             return CXChildVisitResult.CONTINUE
 
-        visitor_func = CXIDEVisitor(enumerator_visitor)
+        visitor_func = CXCursorVisitor(enumerator_visitor)
         libclang.clang_visitChildren(enum_cursor, visitor_func, None)
 
         return enumerators
 
-    def _extract_enumerator(self, constant_cursor: "CXIDE") -> EnumeratorInfo:
+    def _extract_enumerator(self, constant_cursor: "CXCursor") -> EnumeratorInfo:
         """
         Extract a single enumerator.
 
@@ -1521,7 +1541,7 @@ class EnumExtractor:
             EnumeratorInfo
         """
         # Get enumerator name
-        name_cxstr = libclang.clang_getIDESpelling(constant_cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(constant_cursor)
         name = clang_string_to_python(name_cxstr)
 
         # Get signed value
@@ -1635,7 +1655,7 @@ class RecordLayoutExtractor:
 
         self.type_extractor = type_extractor
 
-    def extract_record_layout(self, cursor: "CXIDE", record_type: "CXType") -> RecordLayout:
+    def extract_record_layout(self, cursor: "CXCursor", record_type: "CXType") -> RecordLayout:
         """
         Extract complete layout of a structure or union.
 
@@ -1647,15 +1667,15 @@ class RecordLayoutExtractor:
             Complete RecordLayout
         """
         # Get record name
-        name_cxstr = libclang.clang_getIDESpelling(cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(cursor)
         name = clang_string_to_python(name_cxstr)
 
         # Detect if anonymous
         is_anonymous = not name or name.startswith("(anonymous")
 
         # Get cursor kind to determine struct vs union
-        cursor_kind = libclang.clang_getIDEKind(cursor)
-        kind = "union" if cursor_kind == CXIDEKind.UNION_DECL else "struct"
+        cursor_kind = libclang.clang_getCursorKind(cursor)
+        kind = "union" if cursor_kind == CXCursorKind.UNION_DECL else "struct"
 
         # Get size and alignment
         size = libclang.clang_Type_getSizeOf(record_type)
@@ -1678,7 +1698,7 @@ class RecordLayoutExtractor:
 
         return layout
 
-    def _extract_fields(self, cursor: "CXIDE", record_type: "CXType", layout: RecordLayout):
+    def _extract_fields(self, cursor: "CXCursor", record_type: "CXType", layout: RecordLayout):
         """
         Extract all fields from a record.
 
@@ -1691,8 +1711,8 @@ class RecordLayoutExtractor:
 
         # Visitor to collect field cursors
         def field_visitor(child_cursor, parent_cursor, client_data):
-            # Only process field declarations (CXIDE_FieldDecl = 9)
-            if libclang.clang_getIDEKind(child_cursor) != 9:
+            # Only process field declarations (CXCursor_FieldDecl = 9)
+            if libclang.clang_getCursorKind(child_cursor) != 9:
                 return CXChildVisitResult.CONTINUE
 
             try:
@@ -1703,12 +1723,12 @@ class RecordLayoutExtractor:
 
             return CXChildVisitResult.CONTINUE
 
-        visitor_func = CXIDEVisitor(field_visitor)
+        visitor_func = CXCursorVisitor(field_visitor)
         libclang.clang_visitChildren(cursor, visitor_func, None)
 
         layout.fields = fields
 
-    def _extract_field(self, field_cursor: "CXIDE") -> FieldInfo:
+    def _extract_field(self, field_cursor: "CXCursor") -> FieldInfo:
         """
         Extract information for a single field.
 
@@ -1719,22 +1739,22 @@ class RecordLayoutExtractor:
             FieldInfo
         """
         # Get field name
-        name_cxstr = libclang.clang_getIDESpelling(field_cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(field_cursor)
         name = clang_string_to_python(name_cxstr)
 
         # Get field type
-        field_type = libclang.clang_getIDEType(field_cursor)
+        field_type = libclang.clang_getCursorType(field_cursor)
         type_spelling = self.type_extractor._get_type_spelling(field_type)
 
         # Get field offset (in bits, convert to bytes)
-        offset_bits = libclang.clang_IDE_getOffsetOfField(field_cursor)
+        offset_bits = libclang.clang_Cursor_getOffsetOfField(field_cursor)
         offset_bytes = offset_bits // 8 if offset_bits >= 0 else 0
 
         # Get field size and alignment
         size = libclang.clang_Type_getSizeOf(field_type)
         alignment = libclang.clang_Type_getAlignOf(field_type)
 
-        is_bitfield = bool(libclang.clang_IDE_isBitField(field_cursor))
+        is_bitfield = bool(libclang.clang_Cursor_isBitField(field_cursor))
         bit_width = None
         if is_bitfield:
             bit_width = libclang.clang_getFieldDeclBitWidth(field_cursor)
@@ -1862,7 +1882,7 @@ class TypedefResolver:
 
             # Get underlying type via declaration
             decl = libclang.clang_getTypeDeclaration(current_type)
-            if decl.kind == CXIDEKind.NO_DECL_FOUND:
+            if decl.kind == CXCursorKind.NO_DECL_FOUND:
                 break
 
             current_type = libclang.clang_getTypedefDeclUnderlyingType(decl)
@@ -1877,7 +1897,7 @@ class TypedefResolver:
 
         return chain
 
-    def extract_typedef_info(self, typedef_cursor: "CXIDE") -> "TypedefInfo":
+    def extract_typedef_info(self, typedef_cursor: "CXCursor") -> "TypedefInfo":
         """
         Extract complete typedef information from typedef declaration.
 
@@ -1888,7 +1908,7 @@ class TypedefResolver:
             TypedefInfo with complete chain
         """
         # Get typedef name
-        name_cxstr = libclang.clang_getIDESpelling(typedef_cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(typedef_cursor)
         typedef_name = clang_string_to_python(name_cxstr)
 
         # Check cache
@@ -1905,7 +1925,7 @@ class TypedefResolver:
 
         # Resolve complete chain
         try:
-            typedef_chain = self.resolve_typedef_chain(libclang.clang_getIDEType(typedef_cursor))
+            typedef_chain = self.resolve_typedef_chain(libclang.clang_getCursorType(typedef_cursor))
         except CircularTypedefError:
             typedef_chain = [typedef_name, "<circular>"]
 
@@ -1977,7 +1997,7 @@ class MacroExtractor:
             "__clang__",
         }
 
-    def extract_macro(self, macro_cursor: "CXIDE") -> MacroInfo:
+    def extract_macro(self, macro_cursor: "CXCursor") -> MacroInfo:
         """
         Extract complete macro information.
 
@@ -1988,17 +2008,17 @@ class MacroExtractor:
             Complete MacroInfo
         """
         # Get macro name
-        name_cxstr = libclang.clang_getIDESpelling(macro_cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(macro_cursor)
         macro_name = clang_string_to_python(name_cxstr)
 
         # Check if function-like
-        is_function_like = bool(libclang.clang_IDE_isMacroFunctionLike(macro_cursor))
+        is_function_like = bool(libclang.clang_Cursor_isMacroFunctionLike(macro_cursor))
 
         # Check if builtin/predefined
-        is_builtin = bool(libclang.clang_IDE_isMacroBuiltin(macro_cursor))
+        is_builtin = bool(libclang.clang_Cursor_isMacroBuiltin(macro_cursor))
 
         # Get source location
-        location = libclang.clang_getIDELocation(macro_cursor)
+        location = libclang.clang_getCursorLocation(macro_cursor)
         source_file = None
         line_number = None
 
@@ -2090,18 +2110,18 @@ class LocationExtractor:
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
 
-    def extract_location(self, cursor: "CXIDE") -> SourceLocation:
+    def extract_location(self, cursor: "CXCursor") -> SourceLocation:
         """
         Extract source location from cursor.
 
         Args:
-            cursor: IDE to extract location from
+            cursor: Cursor to extract location from
 
         Returns:
             SourceLocation
         """
         # Get cursor location
-        location = libclang.clang_getIDELocation(cursor)
+        location = libclang.clang_getCursorLocation(cursor)
 
         # Extract spelling location
         file_ptr = ctypes.POINTER(CXFile)()
@@ -2135,18 +2155,18 @@ class LocationExtractor:
             offset=offset.value,
         )
 
-    def extract_range(self, cursor: "CXIDE") -> SourceRange:
+    def extract_range(self, cursor: "CXCursor") -> SourceRange:
         """
         Extract source range from cursor.
 
         Args:
-            cursor: IDE to extract range from
+            cursor: Cursor to extract range from
 
         Returns:
             SourceRange
         """
         # Get cursor extent
-        extent = libclang.clang_getIDEExtent(cursor)
+        extent = libclang.clang_getCursorExtent(cursor)
 
         # Get start and end locations
         start_loc = libclang.clang_getRangeStart(extent)
@@ -2206,12 +2226,12 @@ class LocationExtractor:
 
         return SourceRange(start=start_location, end=end_location)
 
-    def extract_provenance(self, cursor: "CXIDE") -> ProvenanceInfo:
+    def extract_provenance(self, cursor: "CXCursor") -> ProvenanceInfo:
         """
         Extract complete provenance information.
 
         Args:
-            cursor: IDE to extract provenance from
+            cursor: Cursor to extract provenance from
 
         Returns:
             ProvenanceInfo
@@ -2273,7 +2293,7 @@ class AttributeExtractor:
             "default",
         }
 
-    def extract_attributes(self, cursor: "CXIDE") -> List[AttributeInfo]:
+    def extract_attributes(self, cursor: "CXCursor") -> List[AttributeInfo]:
         """
         Extract all attributes from a cursor.
 
@@ -2286,7 +2306,7 @@ class AttributeExtractor:
         attributes = []
 
         # Check if cursor has attributes
-        if not libclang.clang_IDE_hasAttrs(cursor):
+        if not libclang.clang_Cursor_hasAttributes(cursor):
             return attributes
 
         # Important: Full attribute extraction requires traversing cursor children
@@ -2298,12 +2318,12 @@ class AttributeExtractor:
 
         return attributes
 
-    def _detect_alignment_attributes(self, cursor: "CXIDE") -> List[AttributeInfo]:
+    def _detect_alignment_attributes(self, cursor: "CXCursor") -> List[AttributeInfo]:
         """
         Detect alignment attributes.
 
         Args:
-            cursor: IDE to analyze
+            cursor: Cursor to analyze
 
         Returns:
             List of alignment AttributeInfo
@@ -2311,7 +2331,7 @@ class AttributeExtractor:
         attributes = []
 
         # Get cursor type
-        cursor_type = libclang.clang_getIDEType(cursor)
+        cursor_type = libclang.clang_getCursorType(cursor)
 
         # Get alignment
         alignment = libclang.clang_Type_getAlignOf(cursor_type)
@@ -2331,12 +2351,12 @@ class AttributeExtractor:
 
         return attributes
 
-    def _detect_deprecated_attributes(self, cursor: "CXIDE") -> List[AttributeInfo]:
+    def _detect_deprecated_attributes(self, cursor: "CXCursor") -> List[AttributeInfo]:
         """
         Detect deprecated attributes.
 
         Args:
-            cursor: IDE to analyze
+            cursor: Cursor to analyze
 
         Returns:
             List of deprecated AttributeInfo
@@ -2382,23 +2402,23 @@ class CppExtractor:
         if not LIBCLANG_AVAILABLE:
             raise ToolchainError("libclang not available")
 
-    def extract_namespaces(self, cursor: "CXIDE") -> List[str]:
+    def extract_namespaces(self, cursor: "CXCursor") -> List[str]:
         """
         Extract namespace hierarchy for a cursor.
 
         Args:
-            cursor: IDE to analyze
+            cursor: Cursor to analyze
 
         Returns:
             List of namespace names (outer to inner)
         """
         namespaces = []
-        parent = libclang.clang_getIDESemanticParent(cursor)
+        parent = libclang.clang_getCursorSemanticParent(cursor)
 
-        while parent and libclang.clang_getIDEKind(parent) != CXIDEKind.TRANSLATION_UNIT:
-            kind = libclang.clang_getIDEKind(parent)
-            if kind == CXIDEKind.NAMESPACE:
-                name_cx = libclang.clang_getIDESpelling(parent)
+        while parent and libclang.clang_getCursorKind(parent) != CXCursorKind.TRANSLATION_UNIT:
+            kind = libclang.clang_getCursorKind(parent)
+            if kind == CXCursorKind.NAMESPACE:
+                name_cx = libclang.clang_getCursorSpelling(parent)
                 name = clang_string_to_python(name_cx)
                 if name:
                     namespaces.insert(0, name)  # Prepend to keep outer-to-inner order
@@ -2406,18 +2426,18 @@ class CppExtractor:
                     namespaces.insert(0, "(anonymous)")
 
             # Continue traversal up
-            parent = libclang.clang_getIDESemanticParent(parent)
+            parent = libclang.clang_getCursorSemanticParent(parent)
 
         return namespaces
 
     def extract_template_info(
-        self, cursor: "CXIDE", type_info: Optional[TypeInfo] = None
+        self, cursor: "CXCursor", type_info: Optional[TypeInfo] = None
     ) -> Dict[str, Any]:
         """
         Extract template instantiation information.
 
         Args:
-            cursor: IDE to analyze
+            cursor: Cursor to analyze
             type_info: Optional TypeInfo to update directly
 
         Returns:
@@ -2425,38 +2445,38 @@ class CppExtractor:
         """
         info = {}
 
-        kind = libclang.clang_getIDEKind(cursor)
+        kind = libclang.clang_getCursorKind(cursor)
         is_template = False
         template_kind = None
 
         # Check if it's a template instantiation or specialization
         if kind in [
-            CXIDEKind.CLASS_TEMPLATE,
-            CXIDEKind.FUNCTION_TEMPLATE,
-            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
-            CXIDEKind.TYPE_ALIAS_TEMPLATE_DECL,
+            CXCursorKind.CLASS_TEMPLATE,
+            CXCursorKind.FUNCTION_TEMPLATE,
+            CXCursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
+            CXCursorKind.TYPE_ALIAS_TEMPLATE_DECL,
         ]:
             # These are definitions, not instantiations (though they use template syntax)
             # Typically dealing with instantiations found in code use
             pass
 
         # Get number of template arguments
-        num_args = libclang.clang_IDE_getNumTemplateArguments(cursor)
+        num_args = libclang.clang_Cursor_getNumTemplateArguments(cursor)
 
         if num_args > 0:
             is_template = True
             args = []
 
             for i in range(num_args):
-                arg_kind = libclang.clang_IDE_getTemplateArgumentKind(cursor, i)
+                arg_kind = libclang.clang_Cursor_getTemplateArgumentKind(cursor, i)
 
                 # Check different argument kinds
                 if arg_kind == CXTemplateArgumentKind.TYPE:
-                    arg_type = libclang.clang_IDE_getTemplateArgumentType(cursor, i)
+                    arg_type = libclang.clang_Cursor_getTemplateArgumentType(cursor, i)
                     type_spelling_cx = libclang.clang_getTypeSpelling(arg_type)
                     args.append(clang_string_to_python(type_spelling_cx))
                 elif arg_kind == CXTemplateArgumentKind.INTEGRAL:
-                    val = libclang.clang_IDE_getTemplateArgumentValue(cursor, i)
+                    val = libclang.clang_Cursor_getTemplateArgumentValue(cursor, i)
                     args.append(str(val))
                 else:
                     args.append("")  # Placeholder for complex args
@@ -2466,17 +2486,17 @@ class CppExtractor:
         if is_template:
             info["is_template"] = True
 
-            if kind == CXIDEKind.ClassDecl or kind == CXIDEKind.StructDecl:
+            if kind == CXCursorKind.ClassDecl or kind == CXCursorKind.StructDecl:
                 info["kind"] = "class"
-            elif kind == CXIDEKind.FunctionDecl:
+            elif kind == CXCursorKind.FunctionDecl:
                 info["kind"] = "function"
 
         return info
 
-    def get_mangled_name(self, cursor: "CXIDE") -> Optional[str]:
+    def get_mangled_name(self, cursor: "CXCursor") -> Optional[str]:
         """Get mangled name if available."""
-        if hasattr(libclang, "clang_IDE_getMangling"):
-            cxstr = libclang.clang_IDE_getMangling(cursor)
+        if hasattr(libclang, "clang_Cursor_getMangling"):
+            cxstr = libclang.clang_Cursor_getMangling(cursor)
             return clang_string_to_python(cxstr)
         return None
 
@@ -2600,8 +2620,8 @@ class TypeExtractor:
                 # If we have a cursor for this typedef, we can extract more info
                 decl_cursor = libclang.clang_getTypeDeclaration(cxtype)
                 if decl_cursor.kind in [
-                    CXIDEKind.TYPEDEF_DECL,
-                    CXIDEKind.TYPE_ALIAS_DECL,
+                    CXCursorKind.TYPEDEF_DECL,
+                    CXCursorKind.TYPE_ALIAS_DECL,
                 ]:
                     type_info.typedef_info = self._typedef_resolver.extract_typedef_info(
                         decl_cursor
@@ -3141,7 +3161,7 @@ class CXTranslationUnit(ctypes.Structure):
     pass
 
 
-class CXIDE(ctypes.Structure):
+class CXCursor(ctypes.Structure):
     _fields_ = [
         ("kind", ctypes.c_int),
         ("xdata", ctypes.c_int),
@@ -3215,7 +3235,7 @@ class CXCallingConv(IntEnum):
     WIN64 = 9
 
 
-class CXIDEKind(IntEnum):
+class CXCursorKind(IntEnum):
     UNEXPOSED_DECL = 1
     STRUCT_DECL = 2
     UNION_DECL = 3
@@ -3322,22 +3342,22 @@ if LIBCLANG_AVAILABLE:
     bind("clang_disposeTranslationUnit", [ctypes.POINTER(CXTranslationUnit)], None)
 
     # IDE operations
-    bind("clang_getTranslationUnitIDE", [ctypes.POINTER(CXTranslationUnit)], CXIDE)
-    bind("clang_getIDEKind", [CXIDE], ctypes.c_int)
-    bind("clang_getIDESpelling", [CXIDE], CXString)
-    bind("clang_getIDELinkage", [CXIDE], ctypes.c_int)
-    bind("clang_getIDELanguage", [CXIDE], ctypes.c_int)
-    bind("clang_getIDEDisplayName", [CXIDE], CXString)
-    bind("clang_getIDEVisibility", [CXIDE], ctypes.c_int)
-    bind("clang_isIDEDefinition", [CXIDE], ctypes.c_int)
-    bind("clang_IDE_hasAttrs", [CXIDE], ctypes.c_int)
+    bind("clang_getTranslationUnitCursor", [ctypes.POINTER(CXTranslationUnit)], CXCursor)
+    bind("clang_getCursorKind", [CXCursor], ctypes.c_int)
+    bind("clang_getCursorSpelling", [CXCursor], CXString)
+    bind("clang_getCursorLinkage", [CXCursor], ctypes.c_int)
+    bind("clang_getCursorLanguage", [CXCursor], ctypes.c_int)
+    bind("clang_getCursorDisplayName", [CXCursor], CXString)
+    bind("clang_getCursorVisibility", [CXCursor], ctypes.c_int)
+    bind("clang_isCursorDefinition", [CXCursor], ctypes.c_int)
+    bind("clang_Cursor_hasAttributes", [CXCursor], ctypes.c_int)
 
     # String operations
     bind("clang_getCString", [CXString], ctypes.c_char_p)
     bind("clang_disposeString", [CXString], None)
 
     # Location operations
-    bind("clang_getIDELocation", [CXIDE], CXSourceLocation)
+    bind("clang_getCursorLocation", [CXCursor], CXSourceLocation)
     bind(
         "clang_getSpellingLocation",
         [
@@ -3352,11 +3372,11 @@ if LIBCLANG_AVAILABLE:
     bind("clang_getFileName", [ctypes.c_void_p], CXString)
 
     # Visitor
-    CXIDEVisitor = ctypes.CFUNCTYPE(ctypes.c_int, CXIDE, CXIDE, ctypes.c_void_p)
+    CXCursorVisitor = ctypes.CFUNCTYPE(ctypes.c_int, CXCursor, CXCursor, ctypes.c_void_p)
 
-    bind("clang_visitChildren", [CXIDE, CXIDEVisitor, ctypes.c_void_p], ctypes.c_uint)
+    bind("clang_visitChildren", [CXCursor, CXCursorVisitor, ctypes.c_void_p], ctypes.c_uint)
 
-    bind("clang_getIDEType", [CXIDE], CXType)
+    bind("clang_getCursorType", [CXCursor], CXType)
     bind("clang_getCanonicalType", [CXType], CXType)
     bind("clang_getTypeSpelling", [CXType], CXString)
     bind("clang_Type_getSizeOf", [CXType], ctypes.c_longlong)
@@ -3373,23 +3393,23 @@ if LIBCLANG_AVAILABLE:
     bind("clang_getNumArgTypes", [CXType], ctypes.c_int)
     bind("clang_getArgType", [CXType, ctypes.c_uint], CXType)
 
-    bind("clang_IDE_getOffsetOfField", [CXIDE], ctypes.c_longlong)
+    bind("clang_Cursor_getOffsetOfField", [CXCursor], ctypes.c_longlong)
     bind("clang_Type_getNumFields", [CXType], ctypes.c_int)
-    bind("clang_IDE_isBitField", [CXIDE], ctypes.c_uint)
-    bind("clang_getFieldDeclBitWidth", [CXIDE], ctypes.c_int)
+    bind("clang_Cursor_isBitField", [CXCursor], ctypes.c_uint)
+    bind("clang_getFieldDeclBitWidth", [CXCursor], ctypes.c_int)
 
-    bind("clang_getEnumDeclIntegerType", [CXIDE], CXType)
-    bind("clang_getEnumConstantDeclValue", [CXIDE], ctypes.c_longlong)
-    bind("clang_getEnumConstantDeclUnsignedValue", [CXIDE], ctypes.c_ulonglong)
+    bind("clang_getEnumDeclIntegerType", [CXCursor], CXType)
+    bind("clang_getEnumConstantDeclValue", [CXCursor], ctypes.c_longlong)
+    bind("clang_getEnumConstantDeclUnsignedValue", [CXCursor], ctypes.c_ulonglong)
 
-    bind("clang_getTypeDeclaration", [CXType], CXIDE)
-    bind("clang_getTypedefDeclUnderlyingType", [CXIDE], CXType)
+    bind("clang_getTypeDeclaration", [CXType], CXCursor)
+    bind("clang_getTypedefDeclUnderlyingType", [CXCursor], CXType)
     bind("clang_getTypedefName", [CXType], CXString)
 
-    bind("clang_IDE_isMacroFunctionLike", [CXIDE], ctypes.c_int)
-    bind("clang_IDE_isMacroBuiltin", [CXIDE], ctypes.c_int)
+    bind("clang_Cursor_isMacroFunctionLike", [CXCursor], ctypes.c_int)
+    bind("clang_Cursor_isMacroBuiltin", [CXCursor], ctypes.c_int)
 
-    bind("clang_getIDEExtent", [CXIDE], CXSourceRange)
+    bind("clang_getCursorExtent", [CXCursor], CXSourceRange)
     bind("clang_getFileName", [ctypes.c_void_p], CXString)
     bind("clang_getRangeStart", [CXSourceRange], CXSourceLocation)
     bind("clang_getRangeEnd", [CXSourceRange], CXSourceLocation)
@@ -3405,21 +3425,21 @@ if LIBCLANG_AVAILABLE:
     bind("clang_getDiagnosticSpelling", [ctypes.c_void_p], CXString)
     bind("clang_disposeDiagnostic", [ctypes.c_void_p], None)
 
-    bind("clang_getIDESemanticParent", [CXIDE], CXIDE)
-    bind("clang_getIDELexicalParent", [CXIDE], CXIDE)
-    bind("clang_IDE_getNumTemplateArguments", [CXIDE], ctypes.c_int)
-    bind("clang_IDE_getTemplateArgumentKind", [CXIDE, ctypes.c_uint], ctypes.c_int)
-    bind("clang_IDE_getTemplateArgumentType", [CXIDE, ctypes.c_uint], CXType)
-    bind("clang_IDE_getTemplateArgumentValue", [CXIDE, ctypes.c_uint], ctypes.c_longlong)
+    bind("clang_getCursorSemanticParent", [CXCursor], CXCursor)
+    bind("clang_getCursorLexicalParent", [CXCursor], CXCursor)
+    bind("clang_Cursor_getNumTemplateArguments", [CXCursor], ctypes.c_int)
+    bind("clang_Cursor_getTemplateArgumentKind", [CXCursor, ctypes.c_uint], ctypes.c_int)
+    bind("clang_Cursor_getTemplateArgumentType", [CXCursor, ctypes.c_uint], CXType)
+    bind("clang_Cursor_getTemplateArgumentValue", [CXCursor, ctypes.c_uint], ctypes.c_longlong)
     bind(
-        "clang_IDE_getTemplateArgumentUnsignedValue",
-        [CXIDE, ctypes.c_uint],
+        "clang_Cursor_getTemplateArgumentUnsignedValue",
+        [CXCursor, ctypes.c_uint],
         ctypes.c_ulonglong,
     )
     # Mangling might not be available in all liblclang versions, wrap in try/except if needed,
     # but here we use simple bind. If symbol missing, it will be None/fail at runtime if called.
     # We will check availability before calling.
-    bind("clang_IDE_getMangling", [CXIDE], CXString)
+    bind("clang_Cursor_getMangling", [CXCursor], CXString)
 
 
 # Helper functions
@@ -3932,25 +3952,49 @@ class DiagnosticCollector:
         """Initialize diagnostic collector."""
         self.report = IngestionReport()
 
-    def add_fatal(self, message: str, location: Optional[SourceLocation] = None, **kwargs):
+    def add_fatal(self, message: str = "", location: Optional[SourceLocation] = None, **kwargs):
         """Add fatal error diagnostic."""
-        diag = Diagnostic(severity="fatal", message=message, location=location, **kwargs)
+        desc = kwargs.pop("description", None)
+        msg = message or desc or "Fatal Error"
+        if desc and "explanation" not in kwargs:
+            kwargs["explanation"] = desc
+        diag = Diagnostic(severity="fatal", message=msg, location=location, **kwargs)
         self.report.add_diagnostic(diag)
 
-    def add_error(self, message: str, location: Optional[SourceLocation] = None, **kwargs):
+    def add_error(self, message: str = "", location: Optional[SourceLocation] = None, **kwargs):
         """Add error diagnostic."""
-        diag = Diagnostic(severity="error", message=message, location=location, **kwargs)
+        desc = kwargs.pop("description", None)
+        msg = message or desc or kwargs.get("title", "Error")
+        if desc and "explanation" not in kwargs:
+            kwargs["explanation"] = desc
+        diag = Diagnostic(severity="error", message=msg, location=location, **kwargs)
         self.report.add_diagnostic(diag)
 
-    def add_warning(self, message: str, location: Optional[SourceLocation] = None, **kwargs):
+    def add_warning(self, message: str = "", location: Optional[SourceLocation] = None, **kwargs):
         """Add warning diagnostic."""
-        diag = Diagnostic(severity="warning", message=message, location=location, **kwargs)
+        desc = kwargs.pop("description", None)
+        msg = message or desc or kwargs.get("title", "Warning")
+        if desc and "explanation" not in kwargs:
+            kwargs["explanation"] = desc
+        diag = Diagnostic(severity="warning", message=msg, location=location, **kwargs)
         self.report.add_diagnostic(diag)
 
-    def add_info(self, message: str, location: Optional[SourceLocation] = None, **kwargs):
+    def add_info(self, message: str = "", location: Optional[SourceLocation] = None, **kwargs):
         """Add info diagnostic."""
-        diag = Diagnostic(severity="info", message=message, location=location, **kwargs)
+        desc = kwargs.pop("description", None)
+        msg = message or desc or kwargs.get("title", "Info")
+        if desc and "explanation" not in kwargs:
+            kwargs["explanation"] = desc
+        diag = Diagnostic(severity="info", message=msg, location=location, **kwargs)
         self.report.add_diagnostic(diag)
+
+    def has_errors(self) -> bool:
+        """Check if any errors collected."""
+        return self.report.error_count > 0 or self.report.fatal_count > 0
+
+    def get_errors(self) -> List[Diagnostic]:
+        """Get all error messages."""
+        return [d for d in self.report.diagnostics if d.severity in ("error", "fatal")]
 
     def collect_clang_diagnostics(self, translation_unit: ctypes.POINTER(CXTranslationUnit)):
         """Collect diagnostics from Clang translation unit."""
@@ -4163,7 +4207,7 @@ class ClangFrontend(CompilerFrontend):
         symbols = []
 
         # Get root cursor
-        cursor = libclang.clang_getTranslationUnitIDE(unit.translation_unit)
+        cursor = libclang.clang_getTranslationUnitCursor(unit.translation_unit)
 
         # Visitor callback
         def visitor(child_cursor, parent_cursor, client_data):
@@ -4178,7 +4222,7 @@ class ClangFrontend(CompilerFrontend):
             return CXChildVisitResult.RECURSE
 
         # Create CFUNCTYPE callback
-        visitor_func = CXIDEVisitor(visitor)
+        visitor_func = CXCursorVisitor(visitor)
 
         # Traverse AST
         libclang.clang_visitChildren(cursor, visitor_func, None)
@@ -4199,16 +4243,16 @@ class ClangFrontend(CompilerFrontend):
         # Full implementation in later prompts
         return None
 
-    def _process_cursor(self, cursor: CXIDE) -> Optional[ExternalSymbol]:
+    def _process_cursor(self, cursor: CXCursor) -> Optional[ExternalSymbol]:
         """
         Process a cursor and extract symbol information if external.
 
         Enhanced in 0 to extract macros.
         """
         # Get cursor kind
-        kind = libclang.clang_getIDEKind(cursor)
+        kind = libclang.clang_getCursorKind(cursor)
 
-        if kind == CXIDEKind.MACRO_DEFINITION:
+        if kind == CXCursorKind.MACRO_DEFINITION:
             try:
                 macro_info = self._macro_extractor.extract_macro(cursor)
 
@@ -4232,14 +4276,14 @@ class ClangFrontend(CompilerFrontend):
                 return None
 
         # Get cursor name
-        name_cxstr = libclang.clang_getIDESpelling(cursor)
+        name_cxstr = libclang.clang_getCursorSpelling(cursor)
         name = clang_string_to_python(name_cxstr)
 
         if not name:
             return None
 
         # Get cursor type
-        cursor_type = libclang.clang_getIDEType(cursor)
+        cursor_type = libclang.clang_getCursorType(cursor)
         type_spelling_cxstr = libclang.clang_getTypeSpelling(cursor_type)
         type_spelling = clang_string_to_python(type_spelling_cxstr)
 
@@ -4253,37 +4297,37 @@ class ClangFrontend(CompilerFrontend):
 
         # Only process declarations
         if kind not in [
-            CXIDEKind.FUNCTION_DECL,
-            CXIDEKind.VAR_DECL,
-            CXIDEKind.STRUCT_DECL,
-            CXIDEKind.UNION_DECL,
-            CXIDEKind.ENUM_DECL,
-            CXIDEKind.TYPEDEF_DECL,
-            CXIDEKind.TYPE_ALIAS_DECL,
-            CXIDEKind.CLASS_DECL,  # C++
-            CXIDEKind.CLASS_TEMPLATE,  # C++
-            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,  # C++
-            CXIDEKind.FUNCTION_TEMPLATE,  # C++
-            CXIDEKind.NAMESPACE,  # C++
+            CXCursorKind.FUNCTION_DECL,
+            CXCursorKind.VAR_DECL,
+            CXCursorKind.STRUCT_DECL,
+            CXCursorKind.UNION_DECL,
+            CXCursorKind.ENUM_DECL,
+            CXCursorKind.TYPEDEF_DECL,
+            CXCursorKind.TYPE_ALIAS_DECL,
+            CXCursorKind.CLASS_DECL,  # C++
+            CXCursorKind.CLASS_TEMPLATE,  # C++
+            CXCursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,  # C++
+            CXCursorKind.FUNCTION_TEMPLATE,  # C++
+            CXCursorKind.NAMESPACE,  # C++
         ]:
             return None
 
         # Check linkage
-        linkage_kind = libclang.clang_getIDELinkage(cursor)
+        linkage_kind = libclang.clang_getCursorLinkage(cursor)
         # Linkage can be external or none (for types/macros)
         is_external = linkage_kind == CXLinkageKind.EXTERNAL
         is_type_decl = kind in [
-            CXIDEKind.STRUCT_DECL,
-            CXIDEKind.UNION_DECL,
-            CXIDEKind.ENUM_DECL,
-            CXIDEKind.TYPEDEF_DECL,
-            CXIDEKind.TYPE_ALIAS_DECL,
-            CXIDEKind.CLASS_DECL,  # C++
-            CXIDEKind.CLASS_TEMPLATE,  # C++
-            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,  # C++
+            CXCursorKind.STRUCT_DECL,
+            CXCursorKind.UNION_DECL,
+            CXCursorKind.ENUM_DECL,
+            CXCursorKind.TYPEDEF_DECL,
+            CXCursorKind.TYPE_ALIAS_DECL,
+            CXCursorKind.CLASS_DECL,  # C++
+            CXCursorKind.CLASS_TEMPLATE,  # C++
+            CXCursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,  # C++
         ]
 
-        if not is_external and not is_type_decl and kind != CXIDEKind.NAMESPACE:
+        if not is_external and not is_type_decl and kind != CXCursorKind.NAMESPACE:
             return None
 
         linkage_map = {
@@ -4302,18 +4346,18 @@ class ClangFrontend(CompilerFrontend):
 
         # Map cursor kind to symbol kind
         kind_map = {
-            CXIDEKind.FUNCTION_DECL: "function",
-            CXIDEKind.VAR_DECL: "variable",
-            CXIDEKind.STRUCT_DECL: "struct",
-            CXIDEKind.UNION_DECL: "union",
-            CXIDEKind.ENUM_DECL: "enum",
-            CXIDEKind.TYPEDEF_DECL: "typedef",
-            CXIDEKind.TYPE_ALIAS_DECL: "typedef",
-            CXIDEKind.CLASS_DECL: "class",  # C++
-            CXIDEKind.CLASS_TEMPLATE: "class_template",  # C++
-            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION: "class_template_partial_specialization",  # C++
-            CXIDEKind.FUNCTION_TEMPLATE: "function_template",  # C++
-            CXIDEKind.NAMESPACE: "namespace",  # C++
+            CXCursorKind.FUNCTION_DECL: "function",
+            CXCursorKind.VAR_DECL: "variable",
+            CXCursorKind.STRUCT_DECL: "struct",
+            CXCursorKind.UNION_DECL: "union",
+            CXCursorKind.ENUM_DECL: "enum",
+            CXCursorKind.TYPEDEF_DECL: "typedef",
+            CXCursorKind.TYPE_ALIAS_DECL: "typedef",
+            CXCursorKind.CLASS_DECL: "class",  # C++
+            CXCursorKind.CLASS_TEMPLATE: "class_template",  # C++
+            CXCursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION: "class_template_partial_specialization",  # C++
+            CXCursorKind.FUNCTION_TEMPLATE: "function_template",  # C++
+            CXCursorKind.NAMESPACE: "namespace",  # C++
         }
 
         symbol_kind = kind_map.get(kind, "unknown")
@@ -4350,11 +4394,11 @@ class ClangFrontend(CompilerFrontend):
         symbol = create_symbol(symbol_kind)
 
         if kind in [
-            CXIDEKind.STRUCT_DECL,
-            CXIDEKind.UNION_DECL,
-            CXIDEKind.CLASS_DECL,
-            CXIDEKind.CLASS_TEMPLATE,
-            CXIDEKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
+            CXCursorKind.STRUCT_DECL,
+            CXCursorKind.UNION_DECL,
+            CXCursorKind.CLASS_DECL,
+            CXCursorKind.CLASS_TEMPLATE,
+            CXCursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
         ]:
             try:
                 # Extract basic type info first
@@ -4366,7 +4410,7 @@ class ClangFrontend(CompilerFrontend):
             except Exception:
                 pass
 
-        if kind == CXIDEKind.ENUM_DECL:
+        if kind == CXCursorKind.ENUM_DECL:
             try:
                 # Extract basic type info first
                 symbol_type_info = self._type_extractor.extract_type(cursor_type)
@@ -4399,7 +4443,7 @@ class ClangFrontend(CompilerFrontend):
             except Exception:
                 pass
 
-        if kind in [CXIDEKind.TYPEDEF_DECL, CXIDEKind.TYPE_ALIAS_DECL]:
+        if kind in [CXCursorKind.TYPEDEF_DECL, CXCursorKind.TYPE_ALIAS_DECL]:
             try:
                 # Use resolver to get complete info
                 typedef_info = self._typedef_resolver.extract_typedef_info(cursor)
@@ -4928,6 +4972,29 @@ class ProfileSection:
 
 class Profiler:
     """Performance profiler for ingestion."""
+
+    def profile_stage(self, name: str, func, *args, **kwargs) -> Any:
+        """Compatibility method for tests."""
+        with self.section(name):
+            return func(*args, **kwargs)
+
+    @property
+    def stage_profiles(self) -> Dict[str, Dict[str, Any]]:
+        """Compatibility property for tests."""
+        return {
+            name: {
+                "wall_time": s.duration,
+                "call_count": getattr(s, "call_count", 1),
+            }
+            for name, s in self.sections.items()
+        }
+
+    def generate_report(self) -> str:
+        """Generate performance report string."""
+        lines = ["Performance Profile", "=" * 40]
+        for name, s in self.sections.items():
+            lines.append(f"{name}: {s.duration:.4f}s")
+        return "\n".join(lines)
 
     def __init__(self, enabled: bool = True):
         """

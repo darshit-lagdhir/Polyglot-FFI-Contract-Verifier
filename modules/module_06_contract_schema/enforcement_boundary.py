@@ -13,7 +13,7 @@ from datetime import datetime
 import time
 import logging
 
-from .contract_entities import ContractDocument, ContractClause, ClauseType, Severity
+from .contract_entities import ContractDocument, ContractClause, ClauseType, ContractSeverity as Severity
 
 # ============================================================================
 # ENFORCEMENT ENUMS

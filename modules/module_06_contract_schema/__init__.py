@@ -67,7 +67,7 @@ from .contract_entities import (
     # Enumerations
     SchemaVersion,
     GenerationMode,
-    Severity,
+    ContractSeverity as Severity,
     ClauseType,
     SubjectKind,
 )
@@ -139,7 +139,7 @@ from .contract_serialization import (
     # Errors
     SerializationError,
     DeserializationError,
-    IntegrityError,
+    ContractIntegrityError as IntegrityError,
 )
 
 # Generation (Prompt 6)

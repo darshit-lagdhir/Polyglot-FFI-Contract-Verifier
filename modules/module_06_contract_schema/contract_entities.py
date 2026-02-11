@@ -32,13 +32,15 @@ class GenerationMode(Enum):
     HYBRID = "hybrid"  # Auto-generated with manual refinement
 
 
-class Severity(Enum):
+class ContractSeverity(Enum):
     """Clause violation severity."""
 
     FATAL = "fatal"
     ERROR = "error"  # Incorrect usage, block in strict mode
     WARNING = "warning"  # Potential issue, continue
     ADVISORY = "advisory"  # Informational only
+    INFO = "info"
+    DEBUG = "debug"
 
 
 class ClauseType(Enum):
@@ -348,7 +350,7 @@ class ContractClause:
     clause_type: ClauseType
     subject_reference: SubjectReference
     constraint_parameters: List[ConstraintParameter] = field(default_factory=list)
-    severity: Severity = Severity.ERROR
+    severity: ContractSeverity = ContractSeverity.ERROR
 
     # Optional fields
     explanation: Optional[str] = None
@@ -420,7 +422,7 @@ class ContractClause:
             constraint_parameters=[
                 ConstraintParameter.from_dict(p) for p in data.get("constraint_parameters", [])
             ],
-            severity=Severity(data.get("severity", "error")),
+            severity=ContractSeverity(data.get("severity", "error")),
             explanation=data.get("explanation"),
             rationale=data.get("rationale"),
             remediation=data.get("remediation"),
@@ -510,7 +512,7 @@ __all__ = [
     # Enums
     "SchemaVersion",
     "GenerationMode",
-    "Severity",
+    "ContractSeverity",
     "ClauseType",
     "SubjectKind",
     # Entities
@@ -521,3 +523,7 @@ __all__ = [
     "ContractClause",
     "ContractDocument",
 ]
+
+
+# Compatibility Alias
+Severity = ContractSeverity
