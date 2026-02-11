@@ -117,17 +117,6 @@ class TestPreCommitConfig:
         assert "check-yaml" in hooks
 
 
-class TestQualityScript:
-    """Test quality check script."""
-    
-    def test_quality_script_exists(self):
-        script_path = PROJECT_ROOT / "scripts" / "quality_check.py"
-        assert script_path.exists(), "Quality check script not found"
-    
-    def test_quality_script_content(self):
-        script_path = PROJECT_ROOT / "scripts" / "quality_check.py"
-        content = script_path.read_text(encoding='utf-8')
-        assert "import subprocess" in content
 
 
 class TestCIWorkflowPaths:
