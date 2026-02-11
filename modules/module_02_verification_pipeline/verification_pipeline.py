@@ -4768,20 +4768,20 @@ class VerificationExecutionStage(PipelineStage):
                 status = "✓" if result["validation_result"] == "PASS" else "✗"
                 print(f"  [{i}/{len(test_cases)}] {status} {test_case['test_id']}")
 
-        except Exception as e:
-            # Catch unexpected errors
-            print(f"  [{i}/{len(test_cases)}] ✗ {test_case['test_id']} (ERROR)")
-            test_results.append({
-                "test_id": test_case["test_id"],
-                "validation_result": "ERROR",
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            })
+            except Exception as e:
+                # Catch unexpected errors
+                print(f"  [{i}/{len(test_cases)}] ✗ {test_case['test_id']} (ERROR)")
+                test_results.append({
+                    "test_id": test_case["test_id"],
+                    "validation_result": "ERROR",
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                })
 
         # Generate summary
         summary = ExecutionSummarizer.summarize(test_results)
 
-                failures = [r for r in test_results if r["validation_result"] == "FAIL"]
+        failures = [r for r in test_results if r["validation_result"] == "FAIL"]
 
         # Build execution log
         provenance = self.create_provenance([test_plan_path, adapter_metadata_path])
