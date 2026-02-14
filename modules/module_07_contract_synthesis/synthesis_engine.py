@@ -24,13 +24,16 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from module_05_ir_normalization.ir_entities import (
-    IRInterfaceUnit,
-    IRType,
-    IRFunction,
-    IRParameter,
-    TypeKind,
-    ScalarWidth,
-    Signedness
+    InterfaceUnit,
+    TypeEntity,
+    FunctionSymbol,
+    ParameterEntity,
+    EntityKind,
+    StructureType,
+    UnionType,
+    PointerType,
+    FieldEntity,
+    ScalarType
 )
 
 # Import from Module 06 (Contract Schema)
@@ -43,7 +46,8 @@ from module_06_contract_schema.contract_entities import (
     ClauseType,
     SubjectKind,
     Severity,
-    GenerationMetadata
+    GenerationMetadata,
+    GenerationMode
 )
 from module_06_contract_schema.clause_types import (
     LayoutClause,
@@ -204,24 +208,24 @@ class LayoutClauseGenerator:
 
     def generate_structure_layout(
         self,
-        ir_type: IRType
+        ir_type: StructureType
     ) -> Optional[ContractClause]:
         """
         Generate layout clause for structure type.
         
         Args:
-            ir_type: IR type entity (must be structure)
+            ir_type: IR structure type entity
             
         Returns:
             LayoutClause encoding structural invariants
         """
-        if ir_type.kind != TypeKind.STRUCTURE:
+        if ir_type.kind != EntityKind.STRUCTURE_TYPE:
             return None
         
         # Create subject reference
         subject = SubjectReference(
-            kind=SubjectKind.STRUCTURE,
-            entity_id=ir_type.type_id
+            subject_kind=SubjectKind.STRUCTURE,
+            entity_id=ir_type.entity_id
         )
         
         # Build constraint parameters
@@ -233,7 +237,7 @@ class LayoutClauseGenerator:
             ),
             ConstraintParameter(
                 "expected_alignment",
-                ir_type.alignment,
+                ir_type.alignment_bytes,
                 "integer"
             )
         ]
@@ -241,8 +245,9 @@ class LayoutClauseGenerator:
         # Add field offsets
         if ir_type.fields:
             field_offsets = {
-                field.name: field.offset_bytes
+                field.field_name: field.byte_offset
                 for field in ir_type.fields
+                if field.field_name is not None
             }
             params.append(
                 ConstraintParameter(
@@ -254,7 +259,7 @@ class LayoutClauseGenerator:
         
         # Create clause
         clause = ContractClause(
-            clause_id=f"layout_{ir_type.type_id}",
+            clause_id=f"layout_{ir_type.entity_id}",
             clause_type=ClauseType.LAYOUT,
             subject_reference=subject,
             constraint_parameters=params,
@@ -263,17 +268,17 @@ class LayoutClauseGenerator:
         
         # Add provenance
         provenance = ClauseProvenance(
-            ir_entity_id=ir_type.type_id,
+            ir_entity_id=ir_type.entity_id,
             ir_entity_type="structure",
             rule_id="layout_structural_projection",
             rule_version=self.config.synthesis_version,
             triggering_properties={
                 "size_bytes": ir_type.size_bytes,
-                "alignment": ir_type.alignment,
+                "alignment": ir_type.alignment_bytes,
                 "field_count": len(ir_type.fields) if ir_type.fields else 0
             },
             confidence=1.0,
-            explanation=f"Layout clause generated from structural IR definition of {ir_type.type_id}"
+            explanation=f"Layout clause generated from structural IR definition of {ir_type.entity_id}"
         )
         
         # Attach provenance to clause metadata
@@ -283,26 +288,26 @@ class LayoutClauseGenerator:
 
     def generate_union_layout(
         self,
-        ir_type: IRType
+        ir_type: UnionType
     ) -> Optional[ContractClause]:
         """Generate layout clause for union type."""
-        if ir_type.kind != TypeKind.UNION:
+        if ir_type.kind != EntityKind.UNION_TYPE:
             return None
         
         # Similar to structure but with union semantics
         subject = SubjectReference(
-            kind=SubjectKind.STRUCTURE,  # Unions use structure subject
-            entity_id=ir_type.type_id
+            subject_kind=SubjectKind.STRUCTURE,  # Unions use structure subject in schema
+            entity_id=ir_type.entity_id
         )
         
         params = [
             ConstraintParameter("expected_size", ir_type.size_bytes, "integer"),
-            ConstraintParameter("expected_alignment", ir_type.alignment, "integer"),
+            ConstraintParameter("expected_alignment", ir_type.alignment_bytes, "integer"),
             ConstraintParameter("is_union", True, "boolean")
         ]
         
         clause = ContractClause(
-            clause_id=f"layout_{ir_type.type_id}",
+            clause_id=f"layout_{ir_type.entity_id}",
             clause_type=ClauseType.LAYOUT,
             subject_reference=subject,
             constraint_parameters=params,
@@ -310,16 +315,16 @@ class LayoutClauseGenerator:
         )
         
         provenance = ClauseProvenance(
-            ir_entity_id=ir_type.type_id,
+            ir_entity_id=ir_type.entity_id,
             ir_entity_type="union",
             rule_id="union_layout_projection",
             rule_version=self.config.synthesis_version,
             triggering_properties={
                 "size_bytes": ir_type.size_bytes,
-                "alignment": ir_type.alignment
+                "alignment": ir_type.alignment_bytes
             },
             confidence=1.0,
-            explanation=f"Union layout clause for {ir_type.type_id}"
+            explanation=f"Union layout clause for {ir_type.entity_id}"
         )
         
         clause.metadata["provenance"] = provenance.to_dict()
@@ -345,21 +350,25 @@ class NullabilityClauseGenerator:
 
     def generate_parameter_nullability(
         self,
-        function: IRFunction,
-        parameter: IRParameter
+        function: FunctionSymbol,
+        parameter: ParameterEntity,
+        type_map: Dict[str, TypeEntity]
     ) -> Optional[ContractClause]:
         """
         Generate nullability clause for pointer parameter.
         
         Args:
             function: Function containing parameter
-            parameter: Parameter entity (must be pointer)
+            parameter: Parameter entity
+            type_map: Map of type IDs to entities
             
         Returns:
             NullabilityClause or None if not applicable
         """
-        # Check if parameter is pointer
-        if not parameter.param_type.is_pointer():
+        # Resolve type
+        param_type = type_map.get(parameter.type_reference)
+        # We need to handle potential None if type_map lookup fails, though normalized IR should be consistent.
+        if not param_type or not isinstance(param_type, PointerType):
             return None
         
         # Apply conservative default: non-null
@@ -371,8 +380,8 @@ class NullabilityClauseGenerator:
         
         # Create subject reference
         subject = SubjectReference(
-            kind=SubjectKind.PARAMETER,
-            entity_id=f"{function.function_id}::{parameter.param_name}"
+            subject_kind=SubjectKind.PARAMETER,
+            entity_id=f"{function.entity_id}::{parameter.parameter_name}"
         )
         
         # Create clause
@@ -381,7 +390,7 @@ class NullabilityClauseGenerator:
         ]
         
         clause = ContractClause(
-            clause_id=f"null_{function.function_id}_{parameter.param_name}",
+            clause_id=f"null_{function.entity_id}_{parameter.parameter_name}",
             clause_type=ClauseType.NULLABILITY,
             subject_reference=subject,
             constraint_parameters=params,
@@ -390,31 +399,33 @@ class NullabilityClauseGenerator:
         
         # Provenance
         provenance = ClauseProvenance(
-            ir_entity_id=f"{function.function_id}::{parameter.param_name}",
+            ir_entity_id=f"{function.entity_id}::{parameter.parameter_name}",
             ir_entity_type="parameter",
             rule_id="pointer_nullability_default",
             rule_version=self.config.synthesis_version,
             triggering_properties={
-                "pointer_depth": parameter.param_type.pointer_depth,
+                "pointer_depth": param_type.pointer_depth,
                 "has_nullable_signals": self._has_nullable_signals(parameter)
             },
             confidence=1.0 if not nullable else 0.8,
-            explanation=f"Conservative nullability default for pointer parameter {parameter.param_name}"
+            explanation=f"Conservative nullability default for pointer parameter {parameter.parameter_name}"
         )
         
         clause.metadata["provenance"] = provenance.to_dict()
         
         return clause
 
-    def _has_nullable_signals(self, parameter: IRParameter) -> bool:
+    def _has_nullable_signals(self, parameter: ParameterEntity) -> bool:
         """
         Detect signals indicating nullable pointer.
         
         Checks:
         - Parameter name contains "optional", "maybe", "nullable"
-        - Documented as optional in metadata
         """
-        name_lower = parameter.param_name.lower()
+        if not parameter.parameter_name:
+            return False
+            
+        name_lower = parameter.parameter_name.lower()
         
         nullable_keywords = ["optional", "maybe", "nullable", "opt"]
         
@@ -443,19 +454,25 @@ class OwnershipClauseGenerator:
 
     def generate_return_ownership(
         self,
-        function: IRFunction
+        function: FunctionSymbol,
+        type_map: Dict[str, TypeEntity]
     ) -> Optional[ContractClause]:
         """
         Generate ownership clause for function return value.
         
         Args:
             function: Function entity
+            type_map: Map of type IDs to entities
             
         Returns:
             OwnershipClause or None if not applicable
         """
-        # Check if returns pointer
-        if not function.return_type or not function.return_type.is_pointer():
+        if not function.return_entity:
+            return None
+            
+        # Resolve return type
+        return_type = type_map.get(function.return_entity.type_reference)
+        if not return_type or not isinstance(return_type, PointerType):
             return None
         
         # Default: caller-owned
@@ -463,8 +480,8 @@ class OwnershipClauseGenerator:
         
         # Create subject reference
         subject = SubjectReference(
-            kind=SubjectKind.FUNCTION,
-            entity_id=function.function_id
+            subject_kind=SubjectKind.FUNCTION,
+            entity_id=function.entity_id
         )
         
         # Create clause
@@ -474,7 +491,7 @@ class OwnershipClauseGenerator:
         ]
         
         clause = ContractClause(
-            clause_id=f"own_{function.function_id}_return",
+            clause_id=f"own_{function.entity_id}_return",
             clause_type=ClauseType.OWNERSHIP,
             subject_reference=subject,
             constraint_parameters=params,
@@ -483,7 +500,7 @@ class OwnershipClauseGenerator:
         
         # Provenance
         provenance = ClauseProvenance(
-            ir_entity_id=function.function_id,
+            ir_entity_id=function.entity_id,
             ir_entity_type="function_return",
             rule_id="return_ownership_default",
             rule_version=self.config.synthesis_version,
@@ -491,7 +508,7 @@ class OwnershipClauseGenerator:
                 "return_pointer": True
             },
             confidence=0.6,  # Advisory level confidence
-            explanation=f"Default ownership assumption for {function.function_id} return value"
+            explanation=f"Default ownership assumption for {function.entity_id} return value"
         )
         
         clause.metadata["provenance"] = provenance.to_dict()
@@ -529,7 +546,7 @@ class SynthesisEngine:
 
     def synthesize(
         self,
-        ir_unit: IRInterfaceUnit,
+        ir_unit: InterfaceUnit,
         target_interface_id: str
     ) -> SynthesisResult:
         """
@@ -561,18 +578,21 @@ class SynthesisEngine:
             
             # Add synthesis metadata
             header.generation_metadata = GenerationMetadata(
-                synthesis_version=self.config.synthesis_version,
-                generation_mode="deterministic_conservative"
+                tool_version=self.config.synthesis_version,
+                generation_mode=GenerationMode.AUTO
             )
             
             contract = ContractDocument(header=header)
+            
+            # Build type map for efficient lookup
+            type_map = {t.entity_id: t for t in ir_unit.types}
             
             # Phase 1: Structural Invariant Projection
             self._generate_layout_clauses(ir_unit, contract, result)
             
             # Phase 2: Pointer Assumption Projection
-            self._generate_nullability_clauses(ir_unit, contract, result)
-            self._generate_ownership_clauses(ir_unit, contract, result)
+            self._generate_nullability_clauses(ir_unit, type_map, contract, result)
+            self._generate_ownership_clauses(ir_unit, type_map, contract, result)
             
             # Set result
             result.contract = contract
@@ -591,7 +611,7 @@ class SynthesisEngine:
 
     def _generate_layout_clauses(
         self,
-        ir_unit: IRInterfaceUnit,
+        ir_unit: InterfaceUnit,
         contract: ContractDocument,
         result: SynthesisResult
     ):
@@ -604,9 +624,9 @@ class SynthesisEngine:
         for ir_type in ir_unit.types:
             clause = None
             
-            if ir_type.kind == TypeKind.STRUCTURE:
+            if isinstance(ir_type, StructureType):
                 clause = self.layout_generator.generate_structure_layout(ir_type)
-            elif ir_type.kind == TypeKind.UNION:
+            elif isinstance(ir_type, UnionType):
                 clause = self.layout_generator.generate_union_layout(ir_type)
             
             if clause:
@@ -631,7 +651,8 @@ class SynthesisEngine:
 
     def _generate_nullability_clauses(
         self,
-        ir_unit: IRInterfaceUnit,
+        ir_unit: InterfaceUnit,
+        type_map: Dict[str, TypeEntity],
         contract: ContractDocument,
         result: SynthesisResult
     ):
@@ -641,15 +662,53 @@ class SynthesisEngine:
         
         self.logger.debug("Generating nullability clauses...")
         
-        for function in ir_unit.functions:
-            for param in function.parameters:
-                clause = self.nullability_generator.generate_parameter_nullability(
-                    function, param
-                )
+        for symbol in ir_unit.symbols:
+            if isinstance(symbol, FunctionSymbol):
+                for param in symbol.parameters:
+                    clause = self.nullability_generator.generate_parameter_nullability(
+                        symbol, param, type_map
+                    )
+                    
+                    if clause:
+                        contract.add_clause(clause)
+                        result.nullability_clauses += 1
+                        
+                        # Record provenance
+                        if "provenance" in clause.metadata:
+                            prov_dict = clause.metadata["provenance"]
+                            provenance = ClauseProvenance(
+                                ir_entity_id=prov_dict["ir_entity"]["id"],
+                                ir_entity_type=prov_dict["ir_entity"]["type"],
+                                rule_id=prov_dict["rule"]["id"],
+                                rule_version=prov_dict["rule"]["version"],
+                                triggering_properties=prov_dict["properties"],
+                                confidence=prov_dict["confidence"],
+                                explanation=prov_dict["explanation"]
+                            )
+                            result.record_clause(clause.clause_id, provenance)
+        
+        self.logger.debug(f"Generated {result.nullability_clauses} nullability clauses")
+
+    def _generate_ownership_clauses(
+        self,
+        ir_unit: InterfaceUnit,
+        type_map: Dict[str, TypeEntity],
+        contract: ContractDocument,
+        result: SynthesisResult
+    ):
+        """Generate ownership clauses for return values."""
+        if not self.config.enable_ownership_generation:
+            return
+        
+        self.logger.debug("Generating ownership clauses...")
+        
+        for symbol in ir_unit.symbols:
+            if isinstance(symbol, FunctionSymbol):
+                clause = self.ownership_generator.generate_return_ownership(symbol, type_map)
                 
                 if clause:
                     contract.add_clause(clause)
-                    result.nullability_clauses += 1
+                    result.ownership_clauses += 1
                     
                     # Record provenance
                     if "provenance" in clause.metadata:
@@ -664,40 +723,5 @@ class SynthesisEngine:
                             explanation=prov_dict["explanation"]
                         )
                         result.record_clause(clause.clause_id, provenance)
-        
-        self.logger.debug(f"Generated {result.nullability_clauses} nullability clauses")
-
-    def _generate_ownership_clauses(
-        self,
-        ir_unit: IRInterfaceUnit,
-        contract: ContractDocument,
-        result: SynthesisResult
-    ):
-        """Generate ownership clauses for return values."""
-        if not self.config.enable_ownership_generation:
-            return
-        
-        self.logger.debug("Generating ownership clauses...")
-        
-        for function in ir_unit.functions:
-            clause = self.ownership_generator.generate_return_ownership(function)
-            
-            if clause:
-                contract.add_clause(clause)
-                result.ownership_clauses += 1
-                
-                # Record provenance
-                if "provenance" in clause.metadata:
-                    prov_dict = clause.metadata["provenance"]
-                    provenance = ClauseProvenance(
-                        ir_entity_id=prov_dict["ir_entity"]["id"],
-                        ir_entity_type=prov_dict["ir_entity"]["type"],
-                        rule_id=prov_dict["rule"]["id"],
-                        rule_version=prov_dict["rule"]["version"],
-                        triggering_properties=prov_dict["properties"],
-                        confidence=prov_dict["confidence"],
-                        explanation=prov_dict["explanation"]
-                    )
-                    result.record_clause(clause.clause_id, provenance)
         
         self.logger.debug(f"Generated {result.ownership_clauses} ownership clauses")

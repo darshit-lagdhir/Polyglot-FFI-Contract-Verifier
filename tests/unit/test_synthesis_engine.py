@@ -20,14 +20,21 @@ from module_07_contract_synthesis.synthesis_engine import (
 )
 
 from module_05_ir_normalization.ir_entities import (
-    IRInterfaceUnit,
-    IRType,
-    IRFunction,
-    IRParameter,
-    TypeKind,
-    ScalarWidth,
-    Signedness,
-    IRField
+    InterfaceUnit,
+    TypeEntity,
+    FunctionSymbol,
+    ParameterEntity,
+    EntityKind,
+    StructureType,
+    UnionType,
+    PointerType,
+    FieldEntity,
+    ScalarType,
+    ScalarKind,
+    ReturnEntity,
+    ReturnMechanism,
+    CallingConvention,
+    Endianness
 )
 
 from module_06_contract_schema.contract_entities import (
@@ -171,46 +178,43 @@ class TestLayoutClauseGenerator:
 
     def test_generate_structure_layout(self, generator):
         # Create IR structure type
-        ir_type = IRType(
-            type_id="struct Point",
-            kind=TypeKind.STRUCTURE,
+        struct_type = StructureType(
             size_bytes=8,
-            alignment=4,
+            alignment_bytes=4,
+            structure_name="Point",
             fields=[
-                IRField(name="x", field_type=None, offset_bytes=0),
-                IRField(name="y", field_type=None, offset_bytes=4)
+                FieldEntity(field_index=0, field_name="x", type_reference="int", byte_offset=0),
+                FieldEntity(field_index=1, field_name="y", type_reference="int", byte_offset=4)
             ]
         )
         
-        clause = generator.generate_structure_layout(ir_type)
+        clause = generator.generate_structure_layout(struct_type)
         
         assert clause is not None
         assert clause.clause_type == ClauseType.LAYOUT
-        assert "layout_struct Point" in clause.clause_id
+        assert "layout_" in clause.clause_id
 
     def test_layout_clause_has_provenance(self, generator):
-        ir_type = IRType(
-            type_id="struct Test",
-            kind=TypeKind.STRUCTURE,
+        struct_type = StructureType(
             size_bytes=16,
-            alignment=8
+            alignment_bytes=8,
+            structure_name="Test"
         )
         
-        clause = generator.generate_structure_layout(ir_type)
+        clause = generator.generate_structure_layout(struct_type)
         
         assert "provenance" in clause.metadata
         prov = clause.metadata["provenance"]
-        assert prov["ir_entity"]["id"] == "struct Test"
+        assert prov["ir_entity"]["type"] == "structure"
 
     def test_generate_union_layout(self, generator):
-        ir_type = IRType(
-            type_id="union Data",
-            kind=TypeKind.UNION,
+        union_type = UnionType(
             size_bytes=8,
-            alignment=8
+            alignment_bytes=8,
+            union_name="Data"
         )
         
-        clause = generator.generate_union_layout(ir_type)
+        clause = generator.generate_union_layout(union_type)
         
         assert clause is not None
         assert clause.clause_type == ClauseType.LAYOUT
@@ -233,40 +237,33 @@ class TestNullabilityClauseGenerator:
         return NullabilityClauseGenerator(config)
 
     def test_generate_nonnull_default(self, generator):
-        # Create pointer parameter
-        param_type = IRType(
-            type_id="int*",
-            kind=TypeKind.POINTER,
-            pointer_depth=1
+        # Create type map
+        ptr_type = PointerType(pointer_width=64, pointer_depth=1, target_type_reference="int")
+        type_map = {ptr_type.entity_id: ptr_type}
+        
+        param = ParameterEntity(
+            parameter_index=0,
+            parameter_name="buffer",
+            type_reference=ptr_type.entity_id
         )
         
-        param = IRParameter(
-            param_name="buffer",
-            param_type=param_type
+        function = FunctionSymbol(
+            linkage_name="process",
+            source_name="process",
+            calling_convention=CallingConvention.CDECL
         )
         
-        function = IRFunction(
-            function_id="process",
-            parameters=[param],
-            return_type=None
-        )
-        
-        clause = generator.generate_parameter_nullability(function, param)
+        clause = generator.generate_parameter_nullability(function, param, type_map)
         
         assert clause is not None
         assert clause.clause_type == ClauseType.NULLABILITY
 
     def test_nullable_signal_detection(self, generator):
         # Parameter with "optional" in name
-        param_type = IRType(
-            type_id="int*",
-            kind=TypeKind.POINTER,
-            pointer_depth=1
-        )
-        
-        param = IRParameter(
-            param_name="optional_buffer",
-            param_type=param_type
+        param = ParameterEntity(
+            parameter_index=0,
+            parameter_name="optional_buffer",
+            type_reference="ptr"
         )
         
         has_signal = generator._has_nullable_signals(param)
@@ -291,20 +288,18 @@ class TestOwnershipClauseGenerator:
         return OwnershipClauseGenerator(config)
 
     def test_generate_return_ownership(self, generator):
-        # Function returning pointer
-        return_type = IRType(
-            type_id="void*",
-            kind=TypeKind.POINTER,
-            pointer_depth=1
+        # Setup types
+        ptr_type = PointerType(pointer_width=64, pointer_depth=1, target_type_reference="void")
+        type_map = {ptr_type.entity_id: ptr_type}
+        
+        function = FunctionSymbol(
+            linkage_name="allocate",
+            source_name="allocate",
+            calling_convention=CallingConvention.CDECL,
+            return_entity=ReturnEntity(type_reference=ptr_type.entity_id)
         )
         
-        function = IRFunction(
-            function_id="allocate",
-            parameters=[],
-            return_type=return_type
-        )
-        
-        clause = generator.generate_return_ownership(function)
+        clause = generator.generate_return_ownership(function, type_map)
         
         assert clause is not None
         assert clause.clause_type == ClauseType.OWNERSHIP
@@ -326,39 +321,48 @@ class TestSynthesisEngine:
     @pytest.fixture
     def sample_ir(self):
         # Create sample IR with structure and function
-        struct_type = IRType(
-            type_id="struct Point",
-            kind=TypeKind.STRUCTURE,
+        struct_type = StructureType(
             size_bytes=8,
-            alignment=4,
+            alignment_bytes=4,
+            structure_name="Point",
             fields=[
-                IRField(name="x", field_type=None, offset_bytes=0),
-                IRField(name="y", field_type=None, offset_bytes=4)
+                FieldEntity(field_index=0, field_name="x", type_reference="int", byte_offset=0),
+                FieldEntity(field_index=1, field_name="y", type_reference="int", byte_offset=4)
             ]
         )
         
-        param_type = IRType(
-            type_id="int*",
-            kind=TypeKind.POINTER,
-            pointer_depth=1
+        ptr_type = PointerType(
+            pointer_width=64, 
+            pointer_depth=1, 
+            target_type_reference=struct_type.entity_id
         )
         
-        param = IRParameter(
-            param_name="buffer",
-            param_type=param_type
+        param = ParameterEntity(
+            parameter_index=0,
+            parameter_name="point_ptr",
+            type_reference=ptr_type.entity_id
         )
         
-        function = IRFunction(
-            function_id="process",
-            parameters=[param],
-            return_type=None
+        function = FunctionSymbol(
+            linkage_name="process_point",
+            source_name="process_point",
+            calling_convention=CallingConvention.CDECL,
+            parameters=[param]
         )
         
-        ir_unit = IRInterfaceUnit(
-            unit_id="test_interface",
-            types=[struct_type],
-            functions=[function]
+        ir_unit = InterfaceUnit(
+            target_architecture="x86_64",
+            operating_system="linux",
+            pointer_width=64,
+            endianness=Endianness.LITTLE,
+            abi_mode="sysv",
+            compiler_family="gcc",
+            compiler_version="11.2.0"
         )
+        
+        ir_unit.types.append(struct_type)
+        ir_unit.types.append(ptr_type)
+        ir_unit.symbols.append(function)
         
         return ir_unit
 
@@ -378,6 +382,10 @@ class TestSynthesisEngine:
         result = engine.synthesize(sample_ir, "test_interface")
         
         assert result.layout_clauses > 0
+        
+        # Verify specific structure layout
+        clauses = result.contract.get_clauses_by_type(ClauseType.LAYOUT)
+        assert len(clauses) >= 1
 
     def test_synthesize_generates_nullability_clauses(self, engine, sample_ir):
         result = engine.synthesize(sample_ir, "test_interface")

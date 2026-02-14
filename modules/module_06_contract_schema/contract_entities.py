@@ -356,6 +356,7 @@ class ContractClause:
     explanation: Optional[str] = None
     rationale: Optional[str] = None
     remediation: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def validate_structure(self) -> List[str]:
         """
@@ -409,6 +410,8 @@ class ContractClause:
             result["rationale"] = self.rationale
         if self.remediation:
             result["remediation"] = self.remediation
+        if self.metadata:
+            result["metadata"] = self.metadata
 
         return result
 
@@ -426,6 +429,7 @@ class ContractClause:
             explanation=data.get("explanation"),
             rationale=data.get("rationale"),
             remediation=data.get("remediation"),
+            metadata=data.get("metadata", {}),
         )
 
 
