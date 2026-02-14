@@ -331,6 +331,92 @@ class LayoutClauseGenerator:
         
         return clause
 
+    def generate_scalar_constraints(
+        self,
+        ir_type: ScalarType
+    ) -> List[ContractClause]:
+        """
+        Generate constraints for scalar type (size and alignment).
+        
+        Args:
+            ir_type: IR scalar type entity
+            
+        Returns:
+            List of generated clauses (SizeClause, AlignmentClause)
+        """
+        if ir_type.kind != EntityKind.SCALAR_TYPE:
+            return []
+        
+        clauses = []
+        
+        # Subject reference
+        subject = SubjectReference(
+            subject_kind=SubjectKind.TYPE,
+            entity_id=ir_type.entity_id
+        )
+        
+        # 1. Size Clause
+        size_params = [
+            ConstraintParameter("size_kind", "exact", "string"),
+            ConstraintParameter("size_value", ir_type.size_bytes, "integer"),
+            ConstraintParameter("multiplier", 1, "integer")
+        ]
+        
+        size_clause = ContractClause(
+            clause_id=f"size_{ir_type.entity_id}",
+            clause_type=ClauseType.SIZE,
+            subject_reference=subject,
+            constraint_parameters=size_params,
+            severity=self.config.default_layout_severity
+        )
+        
+        # Provenance for size
+        size_provenance = ClauseProvenance(
+            ir_entity_id=ir_type.entity_id,
+            ir_entity_type="scalar",
+            rule_id="scalar_size_projection",
+            rule_version=self.config.synthesis_version,
+            triggering_properties={
+                "size_bytes": ir_type.size_bytes,
+                "scalar_kind": ir_type.scalar_kind.value if hasattr(ir_type.scalar_kind, 'value') else str(ir_type.scalar_kind)
+            },
+            confidence=1.0,
+            explanation=f"Size constraint for scalar {ir_type.entity_id}"
+        )
+        size_clause.metadata["provenance"] = size_provenance.to_dict()
+        clauses.append(size_clause)
+        
+        # 2. Alignment Clause
+        align_params = [
+            ConstraintParameter("required_alignment", ir_type.alignment_bytes, "integer"),
+            ConstraintParameter("context", "field", "string") # Defaulting to field context
+        ]
+        
+        align_clause = ContractClause(
+            clause_id=f"align_{ir_type.entity_id}",
+            clause_type=ClauseType.ALIGNMENT,
+            subject_reference=subject,
+            constraint_parameters=align_params,
+            severity=self.config.default_layout_severity
+        )
+        
+        # Provenance for alignment
+        align_provenance = ClauseProvenance(
+            ir_entity_id=ir_type.entity_id,
+            ir_entity_type="scalar",
+            rule_id="scalar_alignment_projection",
+            rule_version=self.config.synthesis_version,
+            triggering_properties={
+                "alignment_bytes": ir_type.alignment_bytes
+            },
+            confidence=1.0,
+            explanation=f"Alignment constraint for scalar {ir_type.entity_id}"
+        )
+        align_clause.metadata["provenance"] = align_provenance.to_dict()
+        clauses.append(align_clause)
+        
+        return clauses
+
 
 # ============================================================================
 # NULLABILITY CLAUSE GENERATOR
@@ -626,13 +712,40 @@ class SynthesisEngine:
             
             if isinstance(ir_type, StructureType):
                 clause = self.layout_generator.generate_structure_layout(ir_type)
+                if clause:
+                    contract.add_clause(clause)
+                    result.layout_clauses += 1
+                    # Provenance recording handled below
+                    
             elif isinstance(ir_type, UnionType):
                 clause = self.layout_generator.generate_union_layout(ir_type)
-            
+                if clause:
+                    contract.add_clause(clause)
+                    result.layout_clauses += 1
+                    # Provenance recording handled below
+
+            elif isinstance(ir_type, ScalarType):
+                scalar_clauses = self.layout_generator.generate_scalar_constraints(ir_type)
+                for clause in scalar_clauses:
+                    contract.add_clause(clause)
+                    result.layout_clauses += 1
+                    # Record provenance
+                    if "provenance" in clause.metadata:
+                        prov_dict = clause.metadata["provenance"]
+                        provenance = ClauseProvenance(
+                            ir_entity_id=prov_dict["ir_entity"]["id"],
+                            ir_entity_type=prov_dict["ir_entity"]["type"],
+                            rule_id=prov_dict["rule"]["id"],
+                            rule_version=prov_dict["rule"]["version"],
+                            triggering_properties=prov_dict["properties"],
+                            confidence=prov_dict["confidence"],
+                            explanation=prov_dict["explanation"]
+                        )
+                        result.record_clause(clause.clause_id, provenance)
+                continue # Provenance already handled for scalar clauses
+
+            # Refactored provenance recording for single clause return types
             if clause:
-                contract.add_clause(clause)
-                result.layout_clauses += 1
-                
                 # Record provenance
                 if "provenance" in clause.metadata:
                     prov_dict = clause.metadata["provenance"]

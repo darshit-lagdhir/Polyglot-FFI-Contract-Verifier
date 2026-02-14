@@ -219,6 +219,29 @@ class TestLayoutClauseGenerator:
         assert clause is not None
         assert clause.clause_type == ClauseType.LAYOUT
 
+    def test_generate_scalar_constraints(self, generator):
+        scalar_type = ScalarType(
+            size_bytes=4,
+            alignment_bytes=4,
+            scalar_kind=ScalarKind.SIGNED_INTEGER,
+            bit_width=32,
+            is_signed=True
+        )
+        
+        clauses = generator.generate_scalar_constraints(scalar_type)
+        
+        assert len(clauses) == 2
+        
+        # Verify SizeClause
+        size_clause = next((c for c in clauses if c.clause_type == ClauseType.SIZE), None)
+        assert size_clause is not None
+        assert "provenance" in size_clause.metadata
+        
+        # Verify AlignmentClause
+        align_clause = next((c for c in clauses if c.clause_type == ClauseType.ALIGNMENT), None)
+        assert align_clause is not None
+        assert "provenance" in align_clause.metadata
+
 
 # ============================================================================
 # TEST NULLABILITY CLAUSE GENERATOR
@@ -361,6 +384,17 @@ class TestSynthesisEngine:
         )
         
         ir_unit.types.append(struct_type)
+        
+        # Add scalar type
+        scalar_type = ScalarType(
+            size_bytes=4,
+            alignment_bytes=4,
+            scalar_kind=ScalarKind.SIGNED_INTEGER,
+            bit_width=32,
+            is_signed=True
+        )
+        ir_unit.types.append(scalar_type)
+        
         ir_unit.types.append(ptr_type)
         ir_unit.symbols.append(function)
         
