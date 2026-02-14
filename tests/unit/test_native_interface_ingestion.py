@@ -2094,20 +2094,20 @@ class TestCppSupport:
         args = [b"-x", b"c++", b"-std=c++14"]
 
         tu = libclang.clang_parseTranslationUnit(
-            index, str(src).encode("utf-8"), (ctypes.c_char_p * len(args))(*args), len(args), 0, 0
+            index, str(src).encode("utf-8"), (ctypes.c_char_p * len(args))(*args), len(args), None, 0, 0
         )
 
         assert tu is not None, "Failed to parse C++"
 
         # Traverse to find meaningful cursors
-        cursor = libclang.clang_getTranslationUnitIDE(tu)
+        cursor = libclang.clang_getTranslationUnitCursor(tu)
         extractor = CppExtractor()
 
         # Helper to find node
         def find_node(node, kind, spelling=None):
             if node.kind == kind:
                 if spelling:
-                    name = clang_string_to_python(libclang.clang_getIDESpelling(node))
+                    name = clang_string_to_python(libclang.clang_getCursorSpelling(node))
                     if name == spelling:
                         return node
                 else:

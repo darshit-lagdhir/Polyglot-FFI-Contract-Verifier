@@ -8,6 +8,7 @@ from verification_pipeline import (
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.abspath("modules/module_02_verification_pipeline"))
 
