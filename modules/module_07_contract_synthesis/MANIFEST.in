@@ -1,0 +1,13 @@
+# Include documentation and metadata files
+include README.md
+include LICENSE
+include SYNTHESIS_ENGINE.md
+include py.typed
+
+# Include test fixtures if any
+recursive-include tests/fixtures *
+
+# Exclude compiled files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so

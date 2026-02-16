@@ -285,3 +285,81 @@ Verify synthesis produces identical output:
 1.  Run synthesis multiple times on same input.
 2.  Compare output fingerprints.
 3.  Ensure all fingerprints match identically.
+
+## Installation & Usage (Prompt 7/15)
+
+### Installation
+
+Install from PyPI:
+```bash
+pip install module-07-contract-synthesis
+```
+
+Install with development dependencies:
+```bash
+pip install module-07-contract-synthesis[dev]
+```
+
+### Quick Start
+
+#### As Library
+```python
+from module_07_contract_synthesis import synthesize_from_ir
+
+# Simple synthesis
+contract = synthesize_from_ir('interface.json')
+print(f"Generated {len(contract.clauses)} clauses")
+
+# With custom configuration
+from module_07_contract_synthesis import SynthesisConfig
+
+config = SynthesisConfig(
+    synthesis_version='1.0.0',
+    strict_mode=True
+)
+contract = synthesize_from_ir('interface.json', config=config)
+```
+
+#### As CLI
+```bash
+# Synthesize contract
+pfcv-synth synthesize input.json -o contract.json
+
+# Validate contract
+pfcv-synth validate contract.json
+
+# Batch processing
+pfcv-synth batch "interfaces/*.json" --output-dir contracts/
+
+# Check determinism
+pfcv-synth verify-determinism input.json
+```
+
+### Public API
+
+Core classes:
+- **SynthesisEngine**: Main synthesis orchestrator.
+- **SynthesisConfig**: Configuration management.
+- **SynthesisResult**: Synthesis operation result.
+
+Convenience functions:
+- `synthesize_from_ir(ir_path, config=None)`: Synthesize from file.
+- `synthesize_from_file(ir_path, output_path, format)`: Synthesize and write.
+- `validate_contract(contract_path)`: Validate contract.
+
+Versioning:
+- **RuleRegistry**: Rule tracking.
+- `version_compare(v1, op, v2)`: Version comparison.
+- **DeterminismVerifier**: Determinism checking.
+
+### Type Hints
+
+Full type hint support:
+```python
+from module_07_contract_synthesis import SynthesisEngine, SynthesisConfig
+from module_05_ir_normalization.ir_entities import InterfaceUnit
+
+config: SynthesisConfig = SynthesisConfig()
+engine: SynthesisEngine = SynthesisEngine(config)
+# result = engine.synthesize(ir_unit, "interface")
+```
