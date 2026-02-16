@@ -21,6 +21,9 @@ from pathlib import Path
 import logging
 import sys
 
+from .ir_bridge import IRBridge, IRBridgeError
+from .contract_bridge import ContractBridge, ContractBridgeError
+
 # Import from Module 05 (IR Normalization)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -1635,6 +1638,10 @@ class SynthesisEngine:
         self.config = config or SynthesisConfig()
         self.logger = logging.getLogger(__name__)
         
+        # Bridge layers (NEW)
+        self.ir_bridge = IRBridge()
+        self.contract_bridge = ContractBridge(self.config.synthesis_version)
+        
         # Initialize generators
         self.layout_generator = LayoutClauseGenerator(self.config)
         self.nullability_generator = NullabilityClauseGenerator(self.config)
@@ -1677,57 +1684,62 @@ class SynthesisEngine:
         )
         
         try:
-            # NEW: Phase 0 - Contextual Analysis
-            analysis = self.contextual_analyzer.analyze_interface(ir_unit)
-            result.metadata = {"contextual_analysis": analysis}
-
-            # Create contract document
-            header = ContractHeader(
-                contract_version="1.0.0",
-                target_interface_id=target_interface_id
-            )
+            # NEW: Phase -1 - IR Validation via Bridge
+            try:
+                validated_ir = self.ir_bridge.consume_ir(ir_unit, strict=True)
+            except IRBridgeError as e:
+                result.add_error(f"IR validation failed: {str(e)}")
+                return result
             
-            # Add synthesis metadata
-            header.generation_metadata = GenerationMetadata(
-                tool_version=self.config.synthesis_version,
-                generation_mode=GenerationMode.AUTO
-            )
-            # Update mode description if possible, but GenerationMode is Enum.
-            # We keep AUTO but add config detail or update manually if schema allows string description.
-            # Schema: generation_mode: GenerationMode
-
-            contract = ContractDocument(header=header)
+            # Phase 0: Contextual Analysis
+            analysis = self.contextual_analyzer.analyze_interface(validated_ir)
+            result.metadata = {"contextual_analysis": analysis}
+            
+            # Collect all clauses
+            all_clauses = []
             
             # Build type map for efficient lookup
-            type_map = {t.entity_id: t for t in ir_unit.types}
+            type_map = {t.entity_id: t for t in validated_ir.types}
             
             # Phase 1: Structural Invariant Projection
-            self._generate_layout_clauses(ir_unit, contract, result)
+            self._generate_layout_clauses(validated_ir, all_clauses, result)
             
             # Phase 2: Pointer Assumption Projection
-            self._generate_nullability_clauses(ir_unit, type_map, contract, result)
-            self._generate_ownership_clauses(ir_unit, type_map, contract, result)
+            self._generate_nullability_clauses(validated_ir, type_map, all_clauses, result)
+            self._generate_ownership_clauses(validated_ir, type_map, all_clauses, result)
             
             # Phase 3: Relational Constraint Derivation
-            self._generate_relational_clauses(ir_unit, type_map, contract, result)
+            self._generate_relational_clauses(validated_ir, type_map, all_clauses, result)
             
-            # NEW: Phase 3b - Conditional Refinement
-            self._generate_conditional_clauses(ir_unit, contract, result, analysis)
+            # Phase 3b: Conditional Refinement
+            self._generate_conditional_clauses(validated_ir, all_clauses, result, analysis)
 
             # Phase 4: Calling Convention Constraints
-            self._generate_calling_convention_clauses(ir_unit, contract, result)
+            self._generate_calling_convention_clauses(validated_ir, all_clauses, result)
             
             # Phase 5: ABI Compatibility Constraints
-            self._generate_abi_clauses(ir_unit, contract, result)
-
-            # NEW: Phase 6 - Severity Escalation
-            contract.clauses = self.severity_escalator.escalate_clauses(
-                contract.clauses,
+            self._generate_abi_clauses(validated_ir, all_clauses, result)
+            
+            # Phase 6: Severity Escalation
+            all_clauses = self.severity_escalator.escalate_clauses(
+                all_clauses,
                 analysis
             )
-
-            # NEW: Phase 7 - Advisory Generation
-            self._generate_advisory_clauses(ir_unit, contract, result, analysis)
+            
+            # Phase 7: Advisory Generation
+            self._generate_advisory_clauses(validated_ir, all_clauses, result, analysis)
+            
+            # NEW: Phase 8 - Contract Assembly via Bridge
+            try:
+                contract = self.contract_bridge.produce_contract(
+                    all_clauses,
+                    target_interface_id,
+                    result.metadata,
+                    strict=True
+                )
+            except ContractBridgeError as e:
+                result.add_error(f"Contract assembly failed: {str(e)}")
+                return result
             
             # Set result
             result.contract = contract
@@ -1747,7 +1759,7 @@ class SynthesisEngine:
     def _generate_layout_clauses(
         self,
         ir_unit: InterfaceUnit,
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate layout clauses for all types in IR."""
@@ -1762,21 +1774,21 @@ class SynthesisEngine:
             if isinstance(ir_type, StructureType):
                 clause = self.layout_generator.generate_structure_layout(ir_type)
                 if clause:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     result.layout_clauses += 1
                     # Provenance recording handled below
                     
             elif isinstance(ir_type, UnionType):
                 clause = self.layout_generator.generate_union_layout(ir_type)
                 if clause:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     result.layout_clauses += 1
                     # Provenance recording handled below
 
             elif isinstance(ir_type, ScalarType):
                 scalar_clauses = self.layout_generator.generate_scalar_constraints(ir_type)
                 for clause in scalar_clauses:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     result.layout_clauses += 1
                     # Record provenance
                     if "provenance" in clause.metadata:
@@ -1815,7 +1827,7 @@ class SynthesisEngine:
         self,
         ir_unit: InterfaceUnit,
         type_map: Dict[str, TypeEntity],
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate nullability clauses for pointer parameters."""
@@ -1832,7 +1844,7 @@ class SynthesisEngine:
                     )
                     
                     if clause:
-                        contract.add_clause(clause)
+                        clauses.append(clause)
                         result.nullability_clauses += 1
                         
                         # Record provenance
@@ -1855,7 +1867,7 @@ class SynthesisEngine:
         self,
         ir_unit: InterfaceUnit,
         type_map: Dict[str, TypeEntity],
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate relational constraint clauses."""
@@ -1868,7 +1880,7 @@ class SynthesisEngine:
                 clauses = self.relational_generator.generate_relational_clauses(symbol, type_map)
                 
                 for clause in clauses:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     relational_count += 1
                     
                     # Record provenance
@@ -1891,7 +1903,7 @@ class SynthesisEngine:
     def _generate_calling_convention_clauses(
         self,
         ir_unit: InterfaceUnit,
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate calling convention clauses."""
@@ -1904,7 +1916,7 @@ class SynthesisEngine:
                 clause = self.calling_convention_generator.generate_calling_convention_clause(symbol)
                 
                 if clause:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     cc_count += 1
                     
                     # Record provenance
@@ -1926,7 +1938,7 @@ class SynthesisEngine:
     def _generate_abi_clauses(
         self,
         ir_unit: InterfaceUnit,
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate ABI compatibility clauses."""
@@ -1935,7 +1947,7 @@ class SynthesisEngine:
         clause = self.abi_generator.generate_abi_clause(ir_unit)
         
         if clause:
-            contract.add_clause(clause)
+            clauses.append(clause)
             
             # Record provenance
             if "provenance" in clause.metadata:
@@ -1956,7 +1968,7 @@ class SynthesisEngine:
     def _generate_conditional_clauses(
         self,
         ir_unit: InterfaceUnit,
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult,
         analysis: Dict[str, Any]
     ):
@@ -1979,7 +1991,7 @@ class SynthesisEngine:
                         )
                         
                         if clause:
-                            contract.add_clause(clause)
+                            clauses.append(clause)
                             conditional_count += 1
         
         # Store metadata safely
@@ -2004,7 +2016,7 @@ class SynthesisEngine:
     def _generate_advisory_clauses(
         self,
         ir_unit: InterfaceUnit,
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult,
         analysis: Dict[str, Any]
     ):
@@ -2016,7 +2028,7 @@ class SynthesisEngine:
         # Generate advisories for detected anomalies
         for anomaly in analysis.get("anomalies", []):
             clause = self.advisory_generator.generate_anomaly_advisory(anomaly)
-            contract.add_clause(clause)
+            clauses.append(clause)
             advisory_count += 1
         
         # result.metadata["advisory_clauses"] = advisory_count
@@ -2028,7 +2040,7 @@ class SynthesisEngine:
         self,
         ir_unit: InterfaceUnit,
         type_map: Dict[str, TypeEntity],
-        contract: ContractDocument,
+        clauses: List[ContractClause],
         result: SynthesisResult
     ):
         """Generate ownership clauses for return values."""
@@ -2042,7 +2054,7 @@ class SynthesisEngine:
                 clause = self.ownership_generator.generate_return_ownership(symbol, type_map)
                 
                 if clause:
-                    contract.add_clause(clause)
+                    clauses.append(clause)
                     result.ownership_clauses += 1
                     
                     # Record provenance

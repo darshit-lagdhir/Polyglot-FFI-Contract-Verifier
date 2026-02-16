@@ -191,3 +191,53 @@ Non-fatal clauses for ambiguous situations:
 - Ownership uncertainty (unclear transfer semantics)
 
 **Purpose:** Guide manual refinement and document uncertainties
+
+## Bridge Integration (Prompt 4/15)
+
+The synthesis engine now utilizes explicit bridge layers to ensure robust integration with Module 05 (IR) and Module 06 (Contract Schema).
+
+### Architecture
+
+The integration follows a 3-layer architecture:
+
+1.  **IR Bridge (Module 05 -> Module 07)**:
+    -   Consumes strictly typed `IRInterfaceUnit` artifacts.
+    -   Performs rigorous validation of IR completeness, type consistency, and coherence.
+    -   Normalizes input for the synthesis core.
+    -   Supports strict (fail-fast) and loose (warn-only) validation modes.
+
+2.  **Synthesis Core (Module 07)**:
+    -   The central logic engine (unchanged in purpose, but now isolated).
+    -   Operating on validated IR entities.
+    -   Generating raw `ContractClause` objects in memory.
+
+3.  **Contract Bridge (Module 07 -> Module 06)**:
+    -   Consumes raw generated clauses.
+    -   Validates each clause against Module 06 schema definitions.
+    -   Assembles the final `ContractDocument` with deterministic ordering.
+    -   Injects synthesis metadata and provenance information.
+
+### Validations
+
+**IR Validation Rules (`IRValidator`):**
+-   **Type Completeness**: All referenced types must be defined.
+-   **Signature Coherence**: Function signatures must have valid return types and parameters.
+-   **ABI Metadata**: Target architecture and pointer width must be specified.
+
+**Contract Validation Rules (`ContractSchemaValidator`):**
+-   **Structure**: Clauses must have IDs, types, and subject references.
+-   **Schema Compliance**: Must satisfiy Module 06 validation logic (e.g., valid fields).
+-   **Determinism**: Output clause order is stable (sorted by type and ID).
+
+### Expanded Workflow
+
+The `synthesize` method now orchestrates the following pipeline:
+
+1.  **Phase -1**: IR consumption and validation via `IRBridge`.
+2.  **Phase 0**: Contextual Analysis.
+3.  **Phase 1-5**: Clause Generation (Layout, Nullability, Ownership, Relational, CLI, ABI).
+4.  **Phase 6**: Severity Escalation.
+5.  **Phase 7**: Advisory Generation.
+6.  **Phase 8**: Contract Assembly and final validation via `ContractBridge`.
+
+This architecture ensures that the synthesis engine is resilient to malformed inputs and guarantees that its outputs are always schema-compliant contracts ready for enforcement.
