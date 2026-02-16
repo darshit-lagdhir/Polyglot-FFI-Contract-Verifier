@@ -215,12 +215,13 @@ def diff(ctx, contract_a, contract_b):
         pfcv-synth diff old_contract.json new_contract.json
     """
     try:
-        from module_06_contract_schema.contract_serialization import ContractSerializer
+        from module_06_contract_schema.contract_serialization import ContractSerializer, ContractDeserializer
         serializer = ContractSerializer()
+        deserializer = ContractDeserializer()
 
         # Load contracts
-        cA = serializer.deserialize(contract_a.read_text(encoding='utf-8'))
-        cB = serializer.deserialize(contract_b.read_text(encoding='utf-8'))
+        cA = deserializer.deserialize(contract_a.read_text(encoding='utf-8'))
+        cB = deserializer.deserialize(contract_b.read_text(encoding='utf-8'))
 
         console.print(f"[blue]Comparing contracts:[/blue]")
         console.print(f"  A: {contract_a}")
@@ -276,8 +277,10 @@ def diff(ctx, contract_a, contract_b):
             cA_clause = next(c for c in cA.clauses if c.clause_id == cid)
             cB_clause = next(c for c in cB.clauses if c.clause_id == cid)
             
-            # Use serializer to compare JSON representation
-            if serializer.serialize_clause(cA_clause) != serializer.serialize_clause(cB_clause):
+            # Compare JSON representation
+            a_json = json.dumps(cA_clause.to_dict(), sort_keys=True)
+            b_json = json.dumps(cB_clause.to_dict(), sort_keys=True)
+            if a_json != b_json:
                 changed += 1
 
         if changed:
