@@ -1,0 +1,46 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.7, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\Trojan\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: C:\H dir\My Projects\Polyglot Ffi Contract Verifier
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: benchmark-5.2.3, cov-7.0.0, timeout-2.4.0
+collecting ... collected 1 item
+
+tests/test_stress.py::TestPathologicalPatterns::test_all_functions_identical_signature FAILED [100%]
+
+================================== FAILURES ===================================
+_______ TestPathologicalPatterns.test_all_functions_identical_signature _______
+
+self = <tests.test_stress.TestPathologicalPatterns object at 0x0000024E0A581450>
+
+    def test_all_functions_identical_signature(self):
+        """Test when all functions have identical signatures."""
+>       int32 = ScalarType(ScalarKind.SIGNED_INTEGER, 32, 4, 4)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_stress.py:410: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+<string>:9: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <[AttributeError("'ScalarType' object has no attribute 'entity_id'") raised in repr()] ScalarType object at 0x24e0a1a2660>
+
+    def __post_init__(self) -> None:
+        self.kind = EntityKind.SCALAR_TYPE
+        if self.size_bytes == 0 and self.bit_width > 0:
+            self.size_bytes = (self.bit_width + 7) // 8
+        if self.alignment_bytes == 0:
+            self.alignment_bytes = max(1, self.size_bytes)
+    
+        self.entity_id = self.generate_id(
+>           EntityKind.SCALAR_TYPE, self.scalar_kind.value, str(self.bit_width), str(self.is_signed)
+                                    ^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: 'int' object has no attribute 'value'
+
+modules\module_05_ir_normalization\ir_entities.py:413: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/test_stress.py::TestPathologicalPatterns::test_all_functions_identical_signature - AttributeError: 'int' object has no attribute 'value'
+============================== 1 failed in 0.13s ==============================
