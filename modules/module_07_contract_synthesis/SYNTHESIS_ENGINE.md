@@ -241,3 +241,47 @@ The `synthesize` method now orchestrates the following pipeline:
 6.  **Phase 8**: Contract Assembly and final validation via `ContractBridge`.
 
 This architecture ensures that the synthesis engine is resilient to malformed inputs and guarantees that its outputs are always schema-compliant contracts ready for enforcement.
+
+## Synthesis Versioning (Prompt 5/15)
+
+### Version Management
+
+Synthesis versions follow semantic versioning:
+
+-   **MAJOR**: Breaking changes to rule semantics (requires contract regeneration)
+-   **MINOR**: New rules added (backward compatible)
+-   **PATCH**: Bug fixes, no semantic changes
+
+### Rule Registry
+
+All synthesis rules are registered with immutable IDs.
+
+Rule Properties:
+-   `rule_id`: Immutable identifier
+-   `rule_version`: Semantic version
+-   `category`: Rule category (e.g., layout, nullability)
+-   `introduced_in_synthesis`: When rule was added
+-   `deprecated_in_synthesis`: When rule was deprecated (if applicable)
+
+### Fingerprinting
+
+Synthesis operations generate cryptographic fingerprints for:
+-   **IR Fingerprint**: Input correctness
+-   **Ruleset Fingerprint**: Active rule configuration
+-   **Config Fingerprint**: Synthesis settings
+-   **Output Fingerprint**: Generated contract content
+-   **Composite Hash**: Overall operation signature
+
+### Regression Detection
+
+Baseline fingerprints enable automatic regression detection:
+1.  Record baseline for reference IR artifacts.
+2.  On subsequent synthesis, compare fingerprints.
+3.  Detect version changes (INFO) or determinism violations (ERROR).
+
+### Determinism Verification
+
+Verify synthesis produces identical output:
+1.  Run synthesis multiple times on same input.
+2.  Compare output fingerprints.
+3.  Ensure all fingerprints match identically.
