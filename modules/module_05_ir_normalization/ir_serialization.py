@@ -720,5 +720,50 @@ __all__ = [
 ]
 
 
+
+class IRSerializer:
+    """Helper for serializing/deserializing IR units."""
+
+    def serialize(self, unit: InterfaceUnit) -> str:
+        """Serialize InterfaceUnit to JSON string."""
+        # Wrap in artifact for completeness, or just unit?
+        # CLI expects unit in, unit out usually means artifact.
+        # But for simple IR files, often just the dict of unit.
+        # Let's support both or just unit.
+        # If unit, use to_dict.
+        return serialize_deterministically(unit.to_dict())
+
+    def deserialize(self, content: str) -> InterfaceUnit:
+        """Deserialize InterfaceUnit from JSON string."""
+        data = json.loads(content)
+        # Check if it is artifact or unit
+        if "interface_unit" in data:
+            return IREntityFactory.interface_unit_from_dict(data["interface_unit"])
+        elif "kind" in data and data["kind"] == "interface_unit":
+            return IREntityFactory.interface_unit_from_dict(data)
+        elif "unit_id" in data: # Heuristic for InterfaceUnit dict
+             # It might be a raw dict without 'kind' if manually created
+             # But IREntityFactory expects 'kind' usually? 
+             # factory.interface_unit_from_dict expects dict keys like 'target_architecture'.
+             return IREntityFactory.interface_unit_from_dict(data)
+        
+        raise ValueError("Unknown IR format")
+
+__all__ = [
+    "IRArtifact",
+    "IRManifest",
+    "IRArtifactManager",
+    "IRIntegrityError",
+    "serialize_deterministically",
+    "compute_artifact_hash",
+    "verify_artifact_integrity",
+    "serialize_compressed",
+    "deserialize_compressed",
+    "validate_loaded_artifact",
+    "IREntityFactory",
+    "IRSerializer",
+]
+
+
 # Compatibility Alias
 IntegrityError = IRIntegrityError
