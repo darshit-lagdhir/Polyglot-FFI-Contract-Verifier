@@ -363,3 +363,72 @@ config: SynthesisConfig = SynthesisConfig()
 engine: SynthesisEngine = SynthesisEngine(config)
 # result = engine.synthesize(ir_unit, "interface")
 ```
+
+## Performance Optimization (Prompt 8/15)
+
+### Caching System
+
+Multi-level caching for synthesis operations:
+
+- **L1**: Complete synthesis results (keyed by IR fingerprint)
+- **L2**: Contextual analysis results
+- **L3**: Per-rule execution results (keyed by rule ID and entity fingerprint)
+
+Usage:
+```python
+from module_07_contract_synthesis.performance import SynthesisCache
+
+cache = SynthesisCache(max_size=100)
+
+# Check cache
+result = cache.get_synthesis_result(ir_fingerprint, synthesis_version)
+if result:
+    return result  # Cache hit!
+
+# Cache miss, perform synthesis
+result = engine.synthesize(ir_unit, interface_id)
+
+# Store in cache
+cache.put_synthesis_result(ir_fingerprint, synthesis_version, result)
+```
+
+### Profiling Tools
+
+Profile synthesis performance at phase and rule levels:
+
+```python
+from module_07_contract_synthesis.performance import PhaseProfiler, RuleProfiler
+
+# Phase-level profiling
+p_profiler = PhaseProfiler()
+with p_profiler.profile_phase('layout_generation'):
+    generate_layout_clauses()
+
+print(p_profiler.get_report())
+
+# Rule-level profiling
+r_profiler = RuleProfiler()
+r_profiler.record_execution('nullability_rule', 0.045)
+print(r_profiler.get_report())
+```
+
+### Benchmarking
+
+Run performance benchmarks across different interface sizes:
+
+```python
+from module_07_contract_synthesis.performance import SynthesisBenchmark
+
+benchmark = SynthesisBenchmark(engine)
+result = benchmark.run_benchmark('medium', iterations=10)
+
+print(f"Avg time: {result.avg_time_ms:.2f}ms")
+print(f"Passed: {result.passed}")
+```
+
+### Performance Targets
+
+- **Tiny** (5 functions): < 50ms
+- **Small** (20 functions): < 100ms
+- **Medium** (100 functions): < 500ms
+- **Large** (500 functions): < 2000ms

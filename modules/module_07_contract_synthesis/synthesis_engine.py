@@ -186,6 +186,9 @@ class SynthesisResult:
     # Provenance
     provenance_map: Dict[str, ClauseProvenance] = field(default_factory=dict)
 
+    # Metadata (NEW)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
     def add_warning(self, message: str):
         """Add synthesis warning."""
         self.warnings.append(message)
@@ -1877,9 +1880,9 @@ class SynthesisEngine:
         
         for symbol in ir_unit.symbols:
             if isinstance(symbol, FunctionSymbol):
-                clauses = self.relational_generator.generate_relational_clauses(symbol, type_map)
+                gen_clauses = self.relational_generator.generate_relational_clauses(symbol, type_map)
                 
-                for clause in clauses:
+                for clause in gen_clauses:
                     clauses.append(clause)
                     relational_count += 1
                     
@@ -2072,20 +2075,6 @@ class SynthesisEngine:
                         result.record_clause(clause.clause_id, provenance)
         
         self.logger.debug(f"Generated {result.ownership_clauses} ownership clauses")
-
-__all__ = [
-    'SynthesisConfig',
-    'ClauseProvenance',
-    'SynthesisResult',
-    'LayoutClauseGenerator',
-    'NullabilityClauseGenerator',
-    'OwnershipClauseGenerator',
-    'RelationalConstraintDetector',
-    'RelationalClauseGenerator',
-    'CallingConventionClauseGenerator',
-    'ABICompatibilityClauseGenerator',
-    'SynthesisEngine',
-]
 
 __all__ = [
     'SynthesisConfig',
