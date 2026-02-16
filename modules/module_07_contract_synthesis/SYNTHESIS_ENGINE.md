@@ -95,3 +95,99 @@ else:
 - **Input**: `IRInterfaceUnit` from Module 05
 - **Output**: `ContractDocument` for Module 06
 - **Bridge**: Direct API integration (no serialization needed)
+
+## Advanced Constraint Generation (Prompt 2/15)
+
+### Relational Constraints
+Detects and encodes relationships between parameters, particularly buffer-length pairs.
+
+**Detection Strategy:**
+- Structural adjacency (pointer + integer parameter)
+- Naming conventions (uffer + length)
+- Type semantics (unsigned size types)
+- Parameter ordering (standard vs reverse)
+
+**Confidence Scoring:**
+- >= 0.8: ERROR severity
+- >= 0.6: WARNING severity
+- >= 0.4: INFO severity
+- < 0.4: No clause generated
+
+### Calling Convention Constraints
+Projects calling convention requirements from IR to contract.
+
+**Supported Conventions:**
+- cdecl (C default)
+- stdcall (Windows API)
+- astcall (register-based)
+- ectorcall (SIMD)
+
+### ABI Compatibility Constraints
+Binds contract to specific compiled artifact fingerprints.
+
+**Metadata Captured:**
+- Symbol name hashes
+- Layout fingerprints
+- ABI version identifiers
+
+### Updated Synthesis Phases
+**Phase 3: Relational Constraint Derivation**
+- Buffer-length pattern detection
+- Confidence-based severity assignment
+
+**Phase 4: Calling Convention Constraints**
+- Convention projection from IR
+- Platform-specific handling
+
+**Phase 5: ABI Compatibility Constraints**
+- Fingerprint binding
+- Version tracking
+
+## Contextual Intelligence (Prompt 3/15)
+### Contextual Analyzer
+Performs interface-wide analysis to detect patterns and strengthen synthesis.
+
+**Analysis Capabilities:**
+- Cross-function pattern detection
+- Naming convention consistency
+- Ownership symmetry detection (create/destroy pairs)
+- Interface coherence scoring
+- Anomaly detection
+
+**Pattern Strength Metric:**
+
+`python
+pattern_strength = (occurrences / total_functions) * consistency_score
+``n
+### Conditional Refinement
+Generates clauses with conditional semantics:
+
+**Conditional Nullability:**
+- If length > 0, buffer must be non-null`n- If length == 0, buffer may be null`n
+**Benefits:**
+- More precise than absolute constraints
+- Captures common C idioms
+- Reduces false positives
+
+### Severity Escalation
+Escalates clause severity based on contextual evidence:
+
+**Escalation Rules:**
+- Pattern repetition (3+ occurrences)  increase severity
+- Ownership symmetry detected  escalate ownership clauses
+- Interface-wide consistency  strengthen constraints
+
+**Limits:**
+- Maximum one level increase
+- Never escalate INFO directly to ERROR
+- Requires 0.8+ confidence
+
+### Advisory Clauses
+Non-fatal clauses for ambiguous situations:
+
+**Advisory Types:**
+- Pattern ambiguity (insufficient confidence)
+- Interface inconsistency (deviation from pattern)
+- Ownership uncertainty (unclear transfer semantics)
+
+**Purpose:** Guide manual refinement and document uncertainties

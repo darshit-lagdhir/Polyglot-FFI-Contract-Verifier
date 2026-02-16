@@ -58,6 +58,7 @@ class ClauseType(Enum):
     INITIALIZATION = "initialization"  # Memory initialization
     MUTABILITY = "mutability"
     THREAD_SAFETY = "thread_safety"  # Concurrency assumptions
+    ADVISORY = "advisory"  # Non-fatal documentation
 
 
 class SubjectKind(Enum):
