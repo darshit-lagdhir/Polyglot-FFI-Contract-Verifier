@@ -1,85 +1,71 @@
 # Contributing to Polyglot FFI Contract Verifier
 
-Thank you for your interest in contributing to PFCV! We are excited to build the future of FFI safety together.
-
-This project is organized into 7 specialized modules. Whether you're interested in type normalization, compiler technology, or high-performance synthesis, there's a place for you.
+Thank you for your interest in contributing to the **Polyglot FFI Contract Verifier (PFCV)**! We are building a high-assurance bridge for the multi-language ecosystem, and we welcome your expertise.
 
 ---
 
-## Code of Conduct
-This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+## 🧭 Project Navigation
+PFCV is organized as a monorepo with 7 core modules:
+- `modules/module_01_ffi_verifier`: System Architecture
+- `modules/module_02_verification_pipeline`: Orchestration
+- `modules/module_03_build_process`: Build Systems
+- `modules/module_04_native_interface_ingestion`: Ingestion
+- `modules/module_05_ir_normalization`: IR / Types
+- `modules/module_06_contract_schema`: Schema / Enforcement
+- `modules/module_07_contract_synthesis`: Synthesis Engine
 
 ---
 
-## Getting Started
+## 🛠️ Development Setup
 
-### 1. Setting Up Your Development Environment
+### 1. Prerequisites
+- Python 3.8+ (3.11+ recommended)
+- `pip` and `venv`
+- (Optional) `libclang` for Module 04 development
 
+### 2. Environment Setup
 ```bash
 # Clone the repository
 git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
 cd Polyglot-FFI-Contract-Verifier
 
-# Create a virtual environment
+# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install the project in editable mode with development dependencies
+# Install in development mode with all dependencies
 pip install -e ".[dev]"
 ```
 
-### 2. Module Development
-PFCV is a multi-module project. When working on a specific module, we recommend installing its specific dev dependencies:
+---
 
-- **Module 05 (IR)**: `pip install -e "modules/module_05_ir_normalization[dev]"`
-- **Module 06 (Schema)**: `pip install -e "modules/module_06_contract_schema[dev]"`
-- **Module 07 (Synthesis)**: `pip install -e "modules/module_07_contract_synthesis[dev]"`
+## 🧪 Testing Standards
+We maintain a massive test suite (>2,200 tests) to ensure FFI safety.
+- **Run all tests**: `pytest tests/`
+- **Coverage Requirement**: New features must aim for **> 85% coverage**.
+- **Style**: We use **Black** for formatting and **Mypy** for type checking.
 
 ---
 
-## Development Workflow
-
-### Running Tests
-We use `pytest` for our massive test suite (2,220+ tests).
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run module-specific tests
-pytest tests/tests.py -k "module_07" -v
-```
-
-### Coding Standards
-- **Python Version**: 3.11+
-- **Style**: [Black](https://github.com/psf/black) formatted.
-- **Typing**: Performance-critical paths must include [Type Hints](https://docs.python.org/3/library/typing.html).
-- **Documentation**: Google-style docstrings for all public APIs.
-- **Coverage**: All new features must aim for > 85% test coverage.
-
-### Pull Request Process
-1.  **Branching**: Create a feature branch from `main` (e.g., `feat/custom-generator`).
-2.  **Tests**: Ensure all existing tests pass and add new tests for your changes.
-3.  **Linting**: Run `black .` and `ruff check .` before committing.
-4.  **Changelog**: Add a brief entry to `CHANGELOG.md` under `[Unreleased]`.
-5.  **Description**: Provide a clear PR description explaining *what* changed and *why*.
+## 📬 Pull Request Process
+1.  **Issue First**: Please open an issue to discuss significant changes before starting work.
+2.  **Branching**: Use `feat/` or `fix/` prefixes for your branches.
+3.  **Tests**: Your code must pass all existing tests and add new ones for the fix/feature.
+4.  **Documentation**: Update the relevant `.md` files in `docs/` or the module directory.
+5.  **Review**: At least one maintainer must approve your PR before merging.
 
 ---
 
-## Commit Message Format
-We follow a structured commit format: `type(module): description`
-
-- `feat(module_07): Add support for SIMD vector types`
-- `fix(module_05): Correct alignment for nested unions`
-- `docs(module_06): Improve contract schema examples`
-- `test(module_07): Add stress tests for deep nesting`
+## 📜 Commit Message Format
+We follow the conventional commits format: `type(module): description`
+- `feat(module_07): add buffer-size pattern detection`
+- `fix(module_05): correct alignment for nested unions`
+- `docs(root): improve installation instructions`
 
 ---
 
-## Questions & Help
-- **Issues**: Report bugs or request features on our [GitHub Issues](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/issues).
-- **Discussions**: Ask questions and share ideas in [GitHub Discussions](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/discussions).
-- **Contact**: For sensitive matters, email `team@pfcv.dev`.
+## ⚖️ Code of Conduct
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
-Thank you for making FFI safety a reality! 🚀
+Thank you for contributing to the future of safe FFI! 🚀

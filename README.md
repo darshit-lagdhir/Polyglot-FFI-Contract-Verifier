@@ -1,127 +1,80 @@
 # Polyglot FFI Contract Verifier (PFCV)
 
-**High-assurance automated verification for cross-language foreign function interfaces.**
+**The industry-standard high-assurance automated verification pipeline for cross-language foreign function interfaces.**
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Project License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](RELEASE_NOTES.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/actions)
 [![Test Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](tests/)
 
 ---
 
-## What is PFCV?
+## 🚀 Mission
+PFCV eliminates the "guesswork" in FFI development. By automating the extraction, normalization, and verification of native interfaces, we ensure that the boundary between high-level logic (Python, Rust, Java) and low-level implementations (C, C++, Rust) is type-safe, memory-safe, and ABI-compliant.
 
-Foreign Function Interface (FFI) safety is notoriously difficult. Modern software systems often combine high-level languages (Python, Java, Go) with performance-critical native code (C, Rust, C++). Discrepancies in memory layout, calling conventions, or pointer nullability between these layers lead to catastrophic crashes, memory corruption, and security vulnerabilities.
+## 🏗️ The 7-Module Pipeline
+PFCV is built as a modular, 7-stage pipeline where each component performs a specialized task in the verification chain:
 
-**Polyglot FFI Contract Verifier (PFCV)** is a comprehensive system designed to eliminate FFI mismatches through automated contract synthesis and validation. It provides a formal, verifiable bridge between high-level language expectations and low-level native implementations.
-
-### How it Works
-PFCV implements a rigorous 7-module pipeline that extracts semantics from native code, normalizes them into a language-agnostic Intermediate Representation (IR), synthesizes enforceable contracts, and validates them against target implementations.
-
-```text
-[Native Header/Library] 
-          ↓
-[Module 04: Ingestion] ➔ [Module 05: Normalization]
-          ↓
-[Intermediate Representation (IR)]
-          ↓
-[Module 07: Synthesis] ➔ [Module 06: Contract Schema]
-          ↓
-[FFI Contracts (.json/.yaml)]
-          ↓
-[Module 02: Pipeline] ➔ [Module 01: Architecture]
-          ↓
-[FFI Verification Report]
-```
+| Module | Name | Status | Purpose |
+| :--- | :--- | :--- | :--- |
+| **01** | [Architecture](modules/module_01_ffi_verifier/) | ✅ 1.0.0 | Formal system design and architectural constraints. |
+| **02** | [Pipeline](modules/module_02_verification_pipeline/) | ✅ 1.0.0 | Orchestration of the end-to-end verification workflow. |
+| **03** | [Build Process](modules/module_03_build_process/) | ✅ 1.0.0 | Native build system integration (CMake/Make/Cargo). |
+| **04** | [Ingestion](modules/module_04_native_interface_ingestion/) | ✅ 1.0.0 | Clang-based metadata extraction from native source. |
+| **05** | [IR Normalization](modules/module_05_ir_normalization/) | ✅ 1.0.0 | Universal IR projection (scalar, pointer, struct). |
+| **06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ 1.0.0 | Formal schema for FFI safety contracts. |
+| **07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ 1.0.0 | Contextual pattern detection & contract generation. |
 
 ---
 
-## Complete Module Overview
-
-| Component | Status | Purpose |
-| :--- | :--- | :--- |
-| **Module 01: System Architecture** | ✅ Complete | Formal system design and architectural constraints mapping. |
-| **Module 02: Verification Pipeline** | ✅ Complete | Orchestration of the end-to-end verification workflow. |
-| **Module 03: Build Process** | ✅ Complete | Integration with native build systems (Make, CMake, Cargo). |
-| **Module 04: Native Interface Ingestion** | ✅ Complete | Extraction of symbols and types from C/C++/Rust. |
-| **Module 05: IR Normalization** | ✅ Complete | Normalization into a unified, language-agnostic type system. |
-| **Module 06: Contract Schema** | ✅ Complete | Formal schema for FFI safety contracts and enforcement. |
-| **Module 07: Contract Synthesis** | ✅ Complete | Deterministic generation of contracts from IR analysis. |
+## ✨ Key Features
+- 🛡️ **Full-Spectrum Safety**: Covers nullability, ownership, relational constraints, and ABI compatibility.
+- 🎯 **Contextual Intelligence**: Detects complex patterns like buffer-size relationships and symmetrical ownership (create/destroy).
+- 🧩 **Multi-Language Support**: Seamlessly handles C headers, C++ binaries, and Rust crates.
+- 🏎️ **Enterprise Performance**: Synthesis of 1,000+ functions in < 60s with multi-level LRU caching.
+- 🚔 **Runtime Enforcement**: Standard Python adapters for real-time contract enforcement.
+- � **Visual Reporting**: Generates high-fidelity HTML verification reports with actionable fixes.
 
 ---
 
-## Features
-
-- 🌐 **Multi-Language Support**: Extract interfaces from C headers, C++ binaries, and Rust crates.
-- 🎯 **Deterministic Synthesis**: 100% reproducible contract generation using versioned rules.
-- 🔍 **Contextual Intelligence**: Interface-wide pattern detection for nullability, ownership, and array-length relationships.
-- 🚀 **High Performance**: Synthesize contracts for 1000+ functions in under 60 seconds.
-- ✅ **Rigorous Validation**: Schema-based validation ensures contracts are well-formed and consistent.
-- 🛠️ **Developer Friendly**: 16 CLI commands for granular control over the entire verification pipeline.
-- 🏗️ **Production Ready**: Full support for CI/CD integration, regression detection, and monitoring.
-
----
-
-## Quick Start (5 Minutes)
+## 🛠️ Quick Start
 
 ### 1. Installation
-
 ```bash
-# Clone the repository
-git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
-cd Polyglot-FFI-Contract-Verifier
-
-# Install core dependencies
-pip install -e .
+pip install polyglot-ffi-contract-verifier
 ```
 
-### 2. Complete Workflow Example
-
+### 2. Basic Workflow
 ```bash
-# 1. Extract IR from a C library header
-pfcv-ir extract include/mylibrary.h -o ir/
+# Extract IR from your native header
+pfcv-ir extract include/my_lib.h -o ir/
 
-# 2. Synthesize an FFI contract from the IR
-pfcv-synth synthesize ir/mylibrary.json -o contract.json
+# Synthesize a contract from the IR
+pfcv-synth synthesize ir/my_lib.json -o my_contract.json
 
-# 3. Validate the generated contract
-pfcv-synth validate contract.json
-
-# 4. Run the full verification pipeline
-python -m verification_pipeline --contract contract.json --lib lib/mylibrary.so
+# Validate and Run Pipeline
+python -m verification_pipeline --contract my_contract.json --lib lib/my_lib.so
 ```
 
 ---
 
-## Documentation Map
-
-- 📘 **User Guide**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - Deep dive into project usage.
-- 📖 **API Reference**: Detailed references for [Module 05](docs/module_05/api-reference.md), [Module 06](docs/API_REFERENCE.md), and [Module 07](modules/module_07_contract_synthesis/SYNTHESIS_ENGINE.md).
-- 🚀 **Deployment Guide**: [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) - How to run at scale.
-- 🔧 **Troubleshooting**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and fixes.
-- 🏛️ **Architecture**: [docs/ARCHITECTURE_DEEP_DIVE.md](docs/ARCHITECTURE_DEEP_DIVE.md) - The math and logic behind PFCV.
+## 📖 Documentation
+- **Getting Started**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- **Technical Specifications**: [Architecture Deep Dive](docs/ARCHITECTURE_DEEP_DIVE.md)
+- **Production Setup**: [Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md)
+- **Problem Solving**: [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ---
 
-## Project Status
-
-- **Current Version**: 1.0.0 (Production Stable)
-- **Total Tests**: 2,220+ passing
-- **Test Coverage**: > 95%
-- **Status**: Ready for production deployment in security-critical FFI environments.
+## 🤝 Community & Support
+- **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and standards.
+- **Reporting Issues**: Use our [GitHub Issue Tracker](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/issues).
+- **Security**: Please report vulnerabilities to `security@pfcv.dev` (see [SECURITY.md](SECURITY.md)).
 
 ---
 
-## Contributing
+## 📄 License
+PFCV is released under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on development setup, testing standards, and pull request processes.
-
----
-
-## License & Acknowledgments
-
-- **License**: Released under the [MIT License](LICENSE).
-- **Credits**: Developed by the PFCV Team. Special thanks to the open-source community for the robust foundations in `libclang`, `click`, and `rich`.
-
----
 © 2026 PFCV Team. All rights reserved.
