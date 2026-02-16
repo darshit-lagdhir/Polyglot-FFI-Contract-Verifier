@@ -229,6 +229,9 @@ def synthesize_from_file(ir_path: Union[str, Path], output_path: Optional[Union[
         
     Returns:
         ContractDocument instance
+        
+    Example:
+        >>> contract = synthesize_from_file('input.json', 'output.json')
     """
     from module_06_contract_schema.contract_serialization import ContractSerializer
     
@@ -269,6 +272,9 @@ def validate_contract(contract_path: Union[str, Path]) -> bool:
         
     Raises:
         RuntimeError: If contract is invalid
+        
+    Example:
+        >>> is_valid = validate_contract('contract.json')
     """
     from module_06_contract_schema.contract_serialization import ContractSerializer
     from module_06_contract_schema.contract_validation import ContractValidator

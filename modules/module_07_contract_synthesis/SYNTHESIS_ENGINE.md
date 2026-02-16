@@ -560,3 +560,46 @@ python examples/module_07/01_simple_synthesis.py
 ### Troubleshooting
 
 If you encounter issues during synthesis, consult the **[Troubleshooting Guide](../../docs/TROUBLESHOOTING.md)** for solutions to common validation and performance problems.
+
+## API Reference (Prompt 11/15)
+
+The synthesis module provides a stable, fully type-hinted public API. For full technical details, see the **[API Reference](../../docs/API_REFERENCE.md)**.
+
+### Quick Reference
+
+| Function | Description |
+| :--- | :--- |
+| `synthesize_from_ir(path, ...)` | High-level one-line synthesis from file. |
+| `SynthesisEngine.synthesize(ir, ...)` | Core orchestration for in-memory synthesis. |
+| `validate_contract(path)` | Verify existing contracts against schema. |
+
+## Production Deployment (Prompt 11/15)
+
+For large-scale deployments, we recommend integrating synthesis into your **CI/CD build pipeline** to ensure contracts are always in sync with native headers.
+
+- **[Production Deployment Guide](../../docs/PRODUCTION_DEPLOYMENT.md)**
+  - CI/CD Patterns (GitHub Actions, GitLab CI)
+  - Microservice Deployment (FastAPI, Docker)
+  - Monitoring & Observability (Prometheus, Structured Logging)
+
+## Migration Guide (Prompt 11/15)
+
+Moving to automated synthesis is designed to be incremental. We provide strategies for migrating from:
+- **Manual Contracts**: Comparison tools and refinement markers.
+- **Other FFI Tools**: Integration with C2Rust, SWIG, and PyBind11.
+
+See the **[Migration Section](../../docs/PRODUCTION_DEPLOYMENT.md#migration-guide)** for more details.
+
+## Advanced Customization (Prompt 11/15)
+
+Power users can extend the engine's reasoning logic:
+- **Custom Clause Generators**: Inject domain-specific logic into the synthesis pipeline.
+- **Plugin Architecture**: Hook into synthesis lifecycle events.
+
+Consult the **[Advanced Customization](../../docs/PRODUCTION_DEPLOYMENT.md#advanced-customization)** documentation.
+
+## Security (Prompt 11/15)
+
+- **Input Validation**: Always run in `strict_mode=True` for external IR.
+- **Contract Signing**: Use `metadata` to store cryptographic signatures of generated contracts.
+- **Dependency Sandboxing**: Run synthesis in isolated containers for multi-tenant environments.
