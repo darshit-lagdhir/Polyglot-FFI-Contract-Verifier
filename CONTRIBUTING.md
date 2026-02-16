@@ -1,253 +1,85 @@
-# Contributing to Module 07: Contract Synthesis Engine
+# Contributing to Polyglot FFI Contract Verifier
 
-Thank you for your interest in contributing! This document provides guidelines 
-for contributing to the project.
+Thank you for your interest in contributing to PFCV! We are excited to build the future of FFI safety together.
+
+This project is organized into 7 specialized modules. Whether you're interested in type normalization, compiler technology, or high-performance synthesis, there's a place for you.
 
 ---
 
 ## Code of Conduct
-
-This project adheres to a Code of Conduct. By participating, you agree to 
-uphold this code. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
----
-
-## How to Contribute
-
-### Types of Contributions
-
-We welcome:
-
-- 🐛 **Bug Reports**: Found a bug? Report it!
-- ✨ **Feature Requests**: Have an idea? Suggest it!
-- 📖 **Documentation**: Improve or add documentation
-- 🧪 **Tests**: Add test coverage
-- 💻 **Code**: Fix bugs or implement features
-- 🎨 **Examples**: Add usage examples
+This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
 
 ---
 
 ## Getting Started
 
-### 1. Fork and Clone
+### 1. Setting Up Your Development Environment
 
 ```bash
-# Fork on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/module-07-contract-synthesis.git
-cd module-07-contract-synthesis
-```
+# Clone the repository
+git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
+cd Polyglot-FFI-Contract-Verifier
 
-### 2. Set Up Development Environment
-```bash
-# Create virtual environment
+# Create a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install in development mode
+# Install the project in editable mode with development dependencies
 pip install -e ".[dev]"
 ```
 
-### 3. Create a Branch
-```bash
-git checkout -b feature/your-feature-name
-```
+### 2. Module Development
+PFCV is a multi-module project. When working on a specific module, we recommend installing its specific dev dependencies:
+
+- **Module 05 (IR)**: `pip install -e "modules/module_05_ir_normalization[dev]"`
+- **Module 06 (Schema)**: `pip install -e "modules/module_06_contract_schema[dev]"`
+- **Module 07 (Synthesis)**: `pip install -e "modules/module_07_contract_synthesis[dev]"`
 
 ---
 
 ## Development Workflow
 
 ### Running Tests
+We use `pytest` for our massive test suite (2,220+ tests).
+
 ```bash
-# All tests
+# Run all tests
 pytest tests/ -v
 
-# Specific test file
-pytest tests/tests.py -v
-
-# With coverage
-pytest tests/ --cov=module_07_contract_synthesis
+# Run module-specific tests
+pytest tests/tests.py -k "module_07" -v
 ```
 
-### Code Formatting
-```bash
-# Format code
-black modules/module_07_contract_synthesis/
+### Coding Standards
+- **Python Version**: 3.11+
+- **Style**: [Black](https://github.com/psf/black) formatted.
+- **Typing**: Performance-critical paths must include [Type Hints](https://docs.python.org/3/library/typing.html).
+- **Documentation**: Google-style docstrings for all public APIs.
+- **Coverage**: All new features must aim for > 85% test coverage.
 
-# Check formatting
-black --check modules/module_07_contract_synthesis/
-```
-
-### Type Checking
-```bash
-mypy modules/module_07_contract_synthesis/
-```
-
-### Linting
-```bash
-pylint modules/module_07_contract_synthesis/
-```
+### Pull Request Process
+1.  **Branching**: Create a feature branch from `main` (e.g., `feat/custom-generator`).
+2.  **Tests**: Ensure all existing tests pass and add new tests for your changes.
+3.  **Linting**: Run `black .` and `ruff check .` before committing.
+4.  **Changelog**: Add a brief entry to `CHANGELOG.md` under `[Unreleased]`.
+5.  **Description**: Provide a clear PR description explaining *what* changed and *why*.
 
 ---
 
-## Pull Request Process
+## Commit Message Format
+We follow a structured commit format: `type(module): description`
 
-### 1. Before Submitting
-- [ ] All tests pass
-- [ ] Code is formatted (black)
-- [ ] Type hints added
-- [ ] Documentation updated
-- [ ] Changelog updated (if applicable)
-
-### 2. Commit Messages
-Use clear, descriptive commit messages:
-
-- `feat: Add custom clause generator support`
-- `fix: Correct nullability inference for optional pointers`
-- `docs: Update API reference with new examples`
-- `test: Add stress tests for deep nesting`
-
-Format: `type: description`
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `test`: Tests
-- `refactor`: Code refactoring
-- `perf`: Performance improvement
-
-### 3. Submit Pull Request
-1. Create PR on GitHub
-2. Fill out PR template
-3. Link related issues
-4. Request review
-
-### 4. Review Process
-- Maintainers will review within 3-5 days
-- Address feedback
-- Once approved, PR will be merged
+- `feat(module_07): Add support for SIMD vector types`
+- `fix(module_05): Correct alignment for nested unions`
+- `docs(module_06): Improve contract schema examples`
+- `test(module_07): Add stress tests for deep nesting`
 
 ---
 
-## Coding Standards
-
-### Python Style
-- Follow PEP 8
-- Use type hints
-- Maximum line length: 100 characters
-- Use docstrings for public APIs
-
-Example:
-```python
-def synthesize_from_ir(
-    ir_path: Union[str, Path],
-    config: Optional[SynthesisConfig] = None
-) -> ContractDocument:
-    """
-    Synthesize contract from IR file.
-    
-    Args:
-        ir_path: Path to IR JSON file
-        config: Optional synthesis configuration
-        
-    Returns:
-        Generated contract document
-    """
-    ...
-```
-
-### Testing Standards
-- Write tests for new features
-- Maintain test coverage > 80%
-- Use descriptive test names
-- Follow AAA pattern (Arrange, Act, Assert)
-
-Example:
-```python
-def test_synthesize_with_custom_config():
-    # Arrange
-    config = SynthesisConfig(default_pointer_nonnull=False)
-    ir_unit = create_test_ir()
-    
-    # Act
-    result = engine.synthesize(ir_unit, 'test')
-    
-    # Assert
-    assert result.success
-    assert result.clauses_generated > 0
-```
+## Questions & Help
+- **Issues**: Report bugs or request features on our [GitHub Issues](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/issues).
+- **Discussions**: Ask questions and share ideas in [GitHub Discussions](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/discussions).
+- **Contact**: For sensitive matters, email `team@pfcv.dev`.
 
 ---
-
-## Documentation Standards
-
-### Docstrings
-Use Google-style docstrings:
-
-```python
-def function_name(param1: str, param2: int) -> bool:
-    """
-    Short description.
-    
-    Longer description if needed.
-    
-    Args:
-        param1: Description of param1
-        param2: Description of param2
-        
-    Returns:
-        Description of return value
-        
-    Raises:
-        ValueError: When param1 is empty
-        
-    Example:
-        >>> result = function_name("test", 42)
-        >>> print(result)
-        True
-    """
-```
-
-### Updating Documentation
-When adding features:
-1. Update API reference
-2. Add examples if applicable
-3. Update relevant guides
-4. Update `CHANGELOG.md`
-
----
-
-## Issue Guidelines
-
-### Bug Reports
-Include:
-- Description of the bug
-- Steps to reproduce
-- Expected behavior
-- Actual behavior
-- System information (Python version, OS)
-- Minimal reproducible example
-
-### Feature Requests
-Include:
-- Use case description
-- Proposed solution
-- Alternatives considered
-- Additional context
-
----
-
-## Questions?
-- Check existing issues
-- Ask in discussions
-- Read documentation
-
----
-
-## Recognition
-Contributors will be recognized in:
-- `CHANGELOG.md`
-- Release notes
-- Project acknowledgments
-
-Thank you for contributing! 🎉
+Thank you for making FFI safety a reality! 🚀

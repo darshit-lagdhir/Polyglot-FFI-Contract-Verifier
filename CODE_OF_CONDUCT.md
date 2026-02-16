@@ -45,7 +45,7 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project team at team@pfcv.dev. All complaints will be reviewed
+reported to the project team at conduct@pfcv.dev. All complaints will be reviewed
 and investigated promptly and fairly.
 
 All project maintainers are obligated to respect the privacy and security of the

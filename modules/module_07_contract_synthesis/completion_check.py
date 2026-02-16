@@ -53,7 +53,6 @@ class CompletenessValidator:
             self.project_root / "docs" / "PRODUCTION_DEPLOYMENT.md",
             self.project_root / "docs" / "TROUBLESHOOTING.md",
             self.project_root / "tests" / "tests.py",
-            self.project_root / "tests" / "test_stress.py",
         ]
 
         for file_path in required_files:

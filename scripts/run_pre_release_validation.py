@@ -53,7 +53,7 @@ class PreReleaseValidator:
         print("Running unit tests...")
         
         result = subprocess.run(
-            ['pytest', 'tests/tests.py', '-q', '--tb=short'],
+            ['pytest', 'tests/tests.py', '-q', '--tb=short', '-m', 'not stress'],
             capture_output=True,
             text=True
         )
@@ -70,7 +70,7 @@ class PreReleaseValidator:
         print("Running stress tests...")
         
         result = subprocess.run(
-            ['pytest', 'tests/test_stress.py', '-q', '--tb=short'],
+            ['pytest', 'tests/tests.py', '-q', '--tb=short', '-m', 'stress'],
             capture_output=True,
             text=True
         )
@@ -123,7 +123,13 @@ class PreReleaseValidator:
             'docs/API_REFERENCE.md',
             'docs/PRODUCTION_DEPLOYMENT.md',
             'docs/TROUBLESHOOTING.md',
-            'examples/module_07/README.md'
+            'examples/module_07/README.md',
+            'README.md',
+            'CHANGELOG.md',
+            'RELEASE_NOTES.md',
+            'CONTRIBUTING.md',
+            'CODE_OF_CONDUCT.md',
+            'SECURITY.md'
         ]
         
         missing = []
