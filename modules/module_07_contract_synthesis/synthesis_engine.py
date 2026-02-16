@@ -267,7 +267,7 @@ class LayoutClauseGenerator:
                 ConstraintParameter(
                     "field_offsets",
                     field_offsets,
-                    "map"
+                    "expression"
                 )
             )
         
