@@ -1,0 +1,270 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.7, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\Trojan\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: C:\H dir\My Projects\Polyglot ffi contract verifier
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: benchmark-5.2.3, cov-7.0.0, timeout-2.4.0
+collecting ... collected 1818 items / 1810 deselected / 8 selected
+
+tests/tests.py::TestExampleValidity::test_example_directory_exists PASSED [ 12%]
+tests/tests.py::TestExampleValidity::test_example_readme_exists PASSED   [ 25%]
+tests/tests.py::TestExampleValidity::test_simple_synthesis_example_exists PASSED [ 37%]
+tests/tests.py::TestExampleValidity::test_configuration_example_exists PASSED [ 50%]
+tests/tests.py::TestExampleValidity::test_performance_example_exists PASSED [ 62%]
+tests/tests.py::TestExampleValidity::test_example_execution[01_simple_synthesis.py] FAILED [ 75%]
+tests/tests.py::TestExampleValidity::test_example_execution[02_configuration.py] FAILED [ 87%]
+tests/tests.py::TestExampleValidity::test_example_execution[10_performance_optimization.py] FAILED [100%]
+
+================================== FAILURES ===================================
+_____ TestExampleValidity.test_example_execution[01_simple_synthesis.py] ______
+
+self = <tests.TestExampleValidity object at 0x00000203DB46D370>
+example_file = '01_simple_synthesis.py'
+
+    @pytest.mark.parametrize("example_file", [
+        "01_simple_synthesis.py",
+        "02_configuration.py",
+        "10_performance_optimization.py"
+    ])
+    def test_example_execution(self, example_file):
+        """Verify examples run without error."""
+        example_path = PROJECT_ROOT_DOC / "examples" / "module_07" / example_file
+        # Run example as a subprocess
+        result = subprocess.run(
+            [sys.executable, str(example_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT_DOC)
+        )
+>       assert result.returncode == 0, f"Example {example_file} failed with:\n{result.stderr}\n{result.stdout}"
+E       AssertionError: Example 01_simple_synthesis.py failed with:
+E         Synthesis error: IR validation failed: IR validation failed:
+E         Missing type definitions: struct Point*
+E         Traceback (most recent call last):
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 45, in main
+E             contract = synthesize_from_ir(str(ir_file))
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\modules\module_07_contract_synthesis\__init__.py", line 214, in synthesize_from_ir
+E             raise RuntimeError(f"Synthesis failed:\n{error_msg}")
+E         RuntimeError: Synthesis failed:
+E         IR validation failed: IR validation failed:
+E         Missing type definitions: struct Point*
+E         
+E         During handling of the above exception, another exception occurred:
+E         
+E         Traceback (most recent call last):
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 78, in <module>
+E             exit(main())
+E                  ~~~~^^
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 48, in main
+E             print(f"\u2717 Synthesis failed: {e}")
+E             ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+E             return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+E                    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 0: character maps to <undefined>
+E         
+E         ======================================================================
+E         Example 01: Simple Contract Synthesis
+E         ======================================================================
+E         
+E         Step 1: Loading IR from simple_interface.json
+E         ----------------------------------------------------------------------
+E         
+E         Step 2: Synthesizing contract...
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py'], returncode=1, stdout='======================================================================\nExample 01: Simple Contract Synthesis\n======================================================================\n\nStep 1: Loading IR from simple_interface.json\n----------------------------------------------------------------------\n\nStep 2: Synthesizing contract...\n', stderr='Synthesis error: IR validation failed: IR validation failed:\nMissing type definitions: struct Point*\nTraceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 45, in main\n    contract = synthesize_from_ir(str(ir_file))\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\modules\\module_07_contract_synthesis\\__init__.py", line 214, in synthesize_from_ir\n    raise RuntimeError(f"Synthesis failed:\\n{error_msg}")\nRuntimeError: Synthesis failed:\nIR validation failed: IR validation failed:\nMissing type definitions: struct Point*\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 78, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 48, in main\n    print(f"\\u2717 Synthesis failed: {e}")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2717\' in position 0: character maps to <undefined>\n').returncode
+
+tests\tests.py:9825: AssertionError
+_______ TestExampleValidity.test_example_execution[02_configuration.py] _______
+
+self = <tests.TestExampleValidity object at 0x00000203DB46D260>
+example_file = '02_configuration.py'
+
+    @pytest.mark.parametrize("example_file", [
+        "01_simple_synthesis.py",
+        "02_configuration.py",
+        "10_performance_optimization.py"
+    ])
+    def test_example_execution(self, example_file):
+        """Verify examples run without error."""
+        example_path = PROJECT_ROOT_DOC / "examples" / "module_07" / example_file
+        # Run example as a subprocess
+        result = subprocess.run(
+            [sys.executable, str(example_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT_DOC)
+        )
+>       assert result.returncode == 0, f"Example {example_file} failed with:\n{result.stderr}\n{result.stdout}"
+E       AssertionError: Example 02_configuration.py failed with:
+E         Traceback (most recent call last):
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 130, in <module>
+E             exit(main())
+E                  ~~~~^^
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 118, in main
+E             example_basic_config()
+E             ~~~~~~~~~~~~~~~~~~~~^^
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 46, in example_basic_config
+E             print("\u2713 Engine configured")
+E             ~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+E           File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+E             return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+E                    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+E         
+E         ======================================================================
+E         Example 02: Synthesis Configuration
+E         ======================================================================
+E         
+E         1. Basic Configuration
+E         ----------------------------------------------------------------------
+E         Synthesis version: 1.0.0
+E         Pointer nullability default: non-null
+E         Strict mode: enabled
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py'], returncode=1, stdout='======================================================================\nExample 02: Synthesis Configuration\n======================================================================\n\n1. Basic Configuration\n----------------------------------------------------------------------\nSynthesis version: 1.0.0\nPointer nullability default: non-null\nStrict mode: enabled\n', stderr='Traceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 130, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 118, in main\n    example_basic_config()\n    ~~~~~~~~~~~~~~~~~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 46, in example_basic_config\n    print("\\u2713 Engine configured")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2713\' in position 0: character maps to <undefined>\n').returncode
+
+tests\tests.py:9825: AssertionError
+_ TestExampleValidity.test_example_execution[10_performance_optimization.py] __
+
+self = <tests.TestExampleValidity object at 0x00000203DAECF150>
+example_file = '10_performance_optimization.py'
+
+    @pytest.mark.parametrize("example_file", [
+        "01_simple_synthesis.py",
+        "02_configuration.py",
+        "10_performance_optimization.py"
+    ])
+    def test_example_execution(self, example_file):
+        """Verify examples run without error."""
+        example_path = PROJECT_ROOT_DOC / "examples" / "module_07" / example_file
+        # Run example as a subprocess
+        result = subprocess.run(
+            [sys.executable, str(example_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT_DOC)
+        )
+>       assert result.returncode == 0, f"Example {example_file} failed with:\n{result.stderr}\n{result.stdout}"
+E       AssertionError: Example 10_performance_optimization.py failed with:
+E         Traceback (most recent call last):
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 123, in <module>
+E             exit(main())
+E                  ~~~~^^
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 112, in main
+E             example_caching()
+E             ~~~~~~~~~~~~~~~^^
+E           File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 47, in example_caching
+E             print(f"\u2713 Cache initialized with max_size={cache.synthesis_cache.max_size}")
+E             ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+E             return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+E                    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+E         
+E         ======================================================================
+E         Example 10: Performance Optimization
+E         ======================================================================
+E         
+E         1. Caching for Performance
+E         ----------------------------------------------------------------------
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py'], returncode=1, stdout='======================================================================\nExample 10: Performance Optimization\n======================================================================\n\n1. Caching for Performance\n----------------------------------------------------------------------\n', stderr='Traceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 123, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 112, in main\n    example_caching()\n    ~~~~~~~~~~~~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 47, in example_caching\n    print(f"\\u2713 Cache initialized with max_size={cache.synthesis_cache.max_size}")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2713\' in position 0: character maps to <undefined>\n').returncode
+
+tests\tests.py:9825: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/tests.py::TestExampleValidity::test_example_execution[01_simple_synthesis.py] - AssertionError: Example 01_simple_synthesis.py failed with:
+  Synthesis error: IR validation failed: IR validation failed:
+  Missing type definitions: struct Point*
+  Traceback (most recent call last):
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 45, in main
+      contract = synthesize_from_ir(str(ir_file))
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\modules\module_07_contract_synthesis\__init__.py", line 214, in synthesize_from_ir
+      raise RuntimeError(f"Synthesis failed:\n{error_msg}")
+  RuntimeError: Synthesis failed:
+  IR validation failed: IR validation failed:
+  Missing type definitions: struct Point*
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 78, in <module>
+      exit(main())
+           ~~~~^^
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\01_simple_synthesis.py", line 48, in main
+      print(f"\u2717 Synthesis failed: {e}")
+      ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+      return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 0: character maps to <undefined>
+  
+  ======================================================================
+  Example 01: Simple Contract Synthesis
+  ======================================================================
+  
+  Step 1: Loading IR from simple_interface.json
+  ----------------------------------------------------------------------
+  
+  Step 2: Synthesizing contract...
+  
+assert 1 == 0
+ +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py'], returncode=1, stdout='======================================================================\nExample 01: Simple Contract Synthesis\n======================================================================\n\nStep 1: Loading IR from simple_interface.json\n----------------------------------------------------------------------\n\nStep 2: Synthesizing contract...\n', stderr='Synthesis error: IR validation failed: IR validation failed:\nMissing type definitions: struct Point*\nTraceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 45, in main\n    contract = synthesize_from_ir(str(ir_file))\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\modules\\module_07_contract_synthesis\\__init__.py", line 214, in synthesize_from_ir\n    raise RuntimeError(f"Synthesis failed:\\n{error_msg}")\nRuntimeError: Synthesis failed:\nIR validation failed: IR validation failed:\nMissing type definitions: struct Point*\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 78, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\01_simple_synthesis.py", line 48, in main\n    print(f"\\u2717 Synthesis failed: {e}")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2717\' in position 0: character maps to <undefined>\n').returncode
+FAILED tests/tests.py::TestExampleValidity::test_example_execution[02_configuration.py] - AssertionError: Example 02_configuration.py failed with:
+  Traceback (most recent call last):
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 130, in <module>
+      exit(main())
+           ~~~~^^
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 118, in main
+      example_basic_config()
+      ~~~~~~~~~~~~~~~~~~~~^^
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\02_configuration.py", line 46, in example_basic_config
+      print("\u2713 Engine configured")
+      ~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+      return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+  
+  ======================================================================
+  Example 02: Synthesis Configuration
+  ======================================================================
+  
+  1. Basic Configuration
+  ----------------------------------------------------------------------
+  Synthesis version: 1.0.0
+  Pointer nullability default: non-null
+  Strict mode: enabled
+  
+assert 1 == 0
+ +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py'], returncode=1, stdout='======================================================================\nExample 02: Synthesis Configuration\n======================================================================\n\n1. Basic Configuration\n----------------------------------------------------------------------\nSynthesis version: 1.0.0\nPointer nullability default: non-null\nStrict mode: enabled\n', stderr='Traceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 130, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 118, in main\n    example_basic_config()\n    ~~~~~~~~~~~~~~~~~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\02_configuration.py", line 46, in example_basic_config\n    print("\\u2713 Engine configured")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2713\' in position 0: character maps to <undefined>\n').returncode
+FAILED tests/tests.py::TestExampleValidity::test_example_execution[10_performance_optimization.py] - AssertionError: Example 10_performance_optimization.py failed with:
+  Traceback (most recent call last):
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 123, in <module>
+      exit(main())
+           ~~~~^^
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 112, in main
+      example_caching()
+      ~~~~~~~~~~~~~~~^^
+    File "C:\H dir\My Projects\Polyglot ffi contract verifier\examples\module_07\10_performance_optimization.py", line 47, in example_caching
+      print(f"\u2713 Cache initialized with max_size={cache.synthesis_cache.max_size}")
+      ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Trojan\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+      return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+  
+  ======================================================================
+  Example 10: Performance Optimization
+  ======================================================================
+  
+  1. Caching for Performance
+  ----------------------------------------------------------------------
+  
+assert 1 == 0
+ +  where 1 = CompletedProcess(args=['C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\python.exe', 'C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py'], returncode=1, stdout='======================================================================\nExample 10: Performance Optimization\n======================================================================\n\n1. Caching for Performance\n----------------------------------------------------------------------\n', stderr='Traceback (most recent call last):\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 123, in <module>\n    exit(main())\n         ~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 112, in main\n    example_caching()\n    ~~~~~~~~~~~~~~~^^\n  File "C:\\H dir\\My Projects\\Polyglot ffi contract verifier\\examples\\module_07\\10_performance_optimization.py", line 47, in example_caching\n    print(f"\\u2713 Cache initialized with max_size={cache.synthesis_cache.max_size}")\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\Trojan\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: \'charmap\' codec can\'t encode character \'\\u2713\' in position 0: character maps to <undefined>\n').returncode
+================ 3 failed, 5 passed, 1810 deselected in 2.23s =================

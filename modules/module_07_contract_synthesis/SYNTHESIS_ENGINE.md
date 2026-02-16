@@ -511,3 +511,52 @@ Run integration tests:
 ```bash
 pytest tests/unit/test_synthesis_completion.py -v
 ```
+
+## Examples & Tutorials (Prompt 10/15)
+
+The synthesis module provides extensive learning resources to help you get started quickly and follow best practices.
+
+### Quick Start (5 Minutes)
+
+```python
+from module_07_contract_synthesis import synthesize_from_ir
+
+# Single function call to generate highly-detailed FFI contracts
+contract = synthesize_from_ir('my_interface.json')
+
+print(f"Generated {len(contract.clauses)} enforcement clauses!")
+```
+
+### Tutorial Series
+
+Follow our progressive tutorials to master the synthesis engine:
+
+1. **[Tutorial 01: Your First Contract Synthesis](../../docs/tutorials/module_07_tutorial_01.md)** (Beginner, 10 min)
+   - Setup, basic usage, and examining output.
+2. **Tutorial 02: Advanced Configuration** (Intermediate, 15 min)
+   - Customizing non-null signals, severity levels, and generators.
+3. **Tutorial 03: Understanding Traceability** (Intermediate, 20 min)
+   - Deep dive into Clause Provenance and Rule Registry.
+
+### Example Gallery
+
+Located in `examples/module_07/`:
+- `01_simple_synthesis.py`: Basic workflow guide.
+- `02_configuration.py`: Demonstration of various `SynthesisConfig` settings.
+- `10_performance_optimization.py`: Usage of `SynthesisCache` and `PhaseProfiler`.
+
+Run any example from the project root:
+```bash
+python examples/module_07/01_simple_synthesis.py
+```
+
+### Best Practices
+
+- **✓ Pin Synthesis Versions**: Use explicit versions in `SynthesisConfig` for production stability.
+- **✓ Monitor Performance**: Use the `PhaseProfiler` during development to identify interface complexity issues.
+- **✓ Always Check Results**: Synthesis can succeed partially; always check `result.errors` and `result.warnings`.
+- **✓ Leverage Provenance**: Use the generated metadata to explain *why* a constraint exists to end-users.
+
+### Troubleshooting
+
+If you encounter issues during synthesis, consult the **[Troubleshooting Guide](../../docs/TROUBLESHOOTING.md)** for solutions to common validation and performance problems.
