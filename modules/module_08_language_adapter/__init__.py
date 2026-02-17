@@ -95,6 +95,12 @@ from .language_adapter import (
     LazyEvaluator,
     PerformanceProfiler,
     OptimizationManager,
+    APIDocGenerator,
+    ContractDocGenerator,
+    TutorialGenerator,
+    HelpSystem,
+    ReportFormatter,
+    DocumentationManager,
     __version__,
 )
 
@@ -193,5 +199,11 @@ __all__ = [
     'LazyEvaluator',
     'PerformanceProfiler',
     'OptimizationManager',
+    'APIDocGenerator',
+    'ContractDocGenerator',
+    'TutorialGenerator',
+    'HelpSystem',
+    'ReportFormatter',
+    'DocumentationManager',
     '__version__',
 ]
