@@ -104,14 +104,23 @@ from .contract_validation import (
     ValidationLayer,
 )
 
-# Versioning (Prompt 1/20)
+# Versioning (Prompt 1 & 2/20)
 from .contract_versioning import (
-    # Identity (New)
+    # Identity (Prompt 1)
     ContractVersionMetadata,
     ContractFingerprintComputer,
     VersionIdentityManager,
     # Version types
     SemanticVersion,
+    # Schema Evolution (Prompt 2)
+    SchemaCompatibility,
+    SchemaVersionStatus,
+    SchemaVersionInfo,
+    SchemaEvolutionRegistry,
+    SchemaCompatibilityDetector,
+    SchemaMigrationPath,
+    SchemaMigrationRegistry,
+    SchemaUpgradeChecker,
     # Change tracking (Pending re-implementation in later prompts)
     # ChangeType,
     # CompatibilityImpact,
@@ -303,11 +312,19 @@ __all__ = [
     "ValidationError",
     "ValidationWarning",
     "ValidationLayer",
-    # Versioning
+    # Versioning (Prompt 1 & 2)
     "ContractVersionMetadata",
     "ContractFingerprintComputer",
     "VersionIdentityManager",
     "SemanticVersion",
+    "SchemaCompatibility",
+    "SchemaVersionStatus",
+    "SchemaVersionInfo",
+    "SchemaEvolutionRegistry",
+    "SchemaCompatibilityDetector",
+    "SchemaMigrationPath",
+    "SchemaMigrationRegistry",
+    "SchemaUpgradeChecker",
     # "ChangeType",
     # "CompatibilityImpact",
     # "ContractChange",

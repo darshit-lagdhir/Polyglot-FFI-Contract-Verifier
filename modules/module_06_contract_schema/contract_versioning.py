@@ -1,19 +1,20 @@
-""" Module 06: Contract Versioning System (Prompt 1/20)
+""" Module 06: Contract Versioning System (Prompt 2/20)
 
-Version identity model and cryptographic fingerprinting foundation.
+Version identity model, cryptographic fingerprinting, and schema evolution tracking.
 
-This module implements the three-version identity system:
-- schema_version: Structural format version
-- synthesis_version: Rule set version
-- contract_version: Interface evolution version
-
-Plus cryptographic fingerprinting for deterministic identity. """
+This module implements the following:
+- Three-version identity system (schema, synthesis, contract)
+- Cryptographic fingerprinting for deterministic identity
+- Schema compatibility detection & evolution registry
+- Schema migration path tracking & upgrade checking
+"""
 
 import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
@@ -48,7 +49,7 @@ class ContractVersionMetadata:
         pattern = r"^\d+\.\d+\.\d+$"
         if not re.match(pattern, version):
             raise ValueError(
-                f"{field_name} must be semantic version (MAJOR.MINOR.PATCH), " f"got: {version}"
+                f"{field_name} must be semantic version (MAJOR.MINOR.PATCH), got: {version}"
             )
 
     def _validate_fingerprint_format(self, fingerprint: str, field_name: str):
@@ -56,7 +57,7 @@ class ContractVersionMetadata:
         pattern = r"^[a-f0-9]{64}$"
         if not re.match(pattern, fingerprint.lower()):
             raise ValueError(
-                f"{field_name} must be 64-character hex SHA-256 digest, " f"got: {fingerprint}"
+                f"{field_name} must be 64-character hex SHA-256 digest, got: {fingerprint}"
             )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -85,21 +86,36 @@ class SemanticVersion:
         Args:
             version_string: Version in "MAJOR.MINOR.PATCH" format
         """
-        pattern = r"^(\d+)\.(\d+)\.(\d+)$"
-        match = re.match(pattern, version_string)
-        if not match:
-            raise ValueError(f"Invalid semantic version: {version_string}")
-
-        self.major = int(match.group(1))
-        self.minor = int(match.group(2))
-        self.patch = int(match.group(3))
+        parsed = self.parse(version_string)
+        self.major = parsed.major
+        self.minor = parsed.minor
+        self.patch = parsed.patch
         self.version_string = version_string
 
+    @staticmethod
+    def parse(version_str: str) -> "SemanticVersion":
+        """Parse version string into SemanticVersion object."""
+        pattern = r"^(\d+)\.(\d+)\.(\d+)$"
+        match = re.match(pattern, version_str)
+        if not match:
+            raise ValueError(f"Invalid semantic version: {version_str}")
+
+        # This is a bit recursive in the actual implementation to support both static and instance use
+        # but for internal use, we just return a temporary object for the __init__ to copy
+        class Temp:
+            pass
+
+        t = Temp()
+        t.major = int(match.group(1))
+        t.minor = int(match.group(2))
+        t.patch = int(match.group(3))
+        return t
+
     def __str__(self) -> str:
-        return self.version_string
+        return f"{self.major}.{self.minor}.{self.patch}"
 
     def __repr__(self) -> str:
-        return f"SemanticVersion('{self.version_string}')"
+        return f"SemanticVersion('{str(self)}')"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SemanticVersion):
@@ -123,7 +139,7 @@ class SemanticVersion:
         return self.major > other.major
 
     def is_minor_bump(self, other: "SemanticVersion") -> bool:
-        """Check if this version is a major bump from other or minor bump."""
+        """Check if this version is a minor bump from other."""
         return self.major == other.major and self.minor > other.minor
 
     def is_patch_bump(self, other: "SemanticVersion") -> bool:
@@ -201,13 +217,6 @@ class ContractFingerprintComputer:
     def _canonicalize_clauses(self, clauses: List[Any]) -> List[Dict]:
         """
         Canonicalize clause content for deterministic hashing.
-
-        Steps:
-        1. Convert clauses to dictionaries
-        2. Sort clauses by clause_id
-        3. Sort parameters within each clause
-        4. Sort metadata keys
-        5. Remove any non-deterministic fields (timestamps, etc.)
         """
         canonical_clauses = []
 
@@ -247,13 +256,7 @@ class ContractFingerprintComputer:
 # VERSION IDENTITY MANAGER
 # ============================================================================
 class VersionIdentityManager:
-    """Manages version identity for contract artifacts.
-
-    Provides high-level operations:
-    - Creating version metadata
-    - Computing fingerprints
-    - Validating version consistency
-    """
+    """Manages version identity for contract artifacts."""
 
     def __init__(self):
         self.fingerprint_computer = ContractFingerprintComputer()
@@ -269,17 +272,6 @@ class VersionIdentityManager:
     ) -> ContractVersionMetadata:
         """
         Create complete version metadata for a contract.
-
-        Args:
-            schema_version: Schema version (e.g., "1.0.0")
-            synthesis_version: Synthesis version (e.g., "1.0.0")
-            contract_version: Contract version (e.g., "1.0.0")
-            ir_fingerprint: IR fingerprint from Module 05
-            clauses: List of contract clauses
-            generator_tool_version: Optional tool version override
-
-        Returns:
-            ContractVersionMetadata with computed fingerprint
         """
         # Compute contract fingerprint
         contract_fingerprint = self.fingerprint_computer.compute_fingerprint(
@@ -306,13 +298,6 @@ class VersionIdentityManager:
     def verify_fingerprint(self, metadata: ContractVersionMetadata, clauses: List[Any]) -> bool:
         """
         Verify contract fingerprint matches content.
-
-        Args:
-            metadata: Contract version metadata
-            clauses: List of contract clauses
-
-        Returns:
-            True if fingerprint matches, False otherwise
         """
         computed_fingerprint = self.fingerprint_computer.compute_fingerprint(
             ir_fingerprint=metadata.ir_fingerprint,
@@ -326,15 +311,6 @@ class VersionIdentityManager:
     def compare_versions(self, version1: str, version2: str) -> int:
         """
         Compare two semantic versions.
-
-        Args:
-            version1: First version string
-            version2: Second version string
-
-        Returns:
-            -1 if version1 < version2
-             0 if version1 == version2
-             1 if version1 > version2
         """
         v1 = SemanticVersion(version1)
         v2 = SemanticVersion(version2)
@@ -348,11 +324,343 @@ class VersionIdentityManager:
 
 
 # ============================================================================
+# SCHEMA COMPATIBILITY STATES
+# ============================================================================
+class SchemaCompatibility(Enum):
+    """Schema version compatibility classifications."""
+
+    IDENTICAL = "identical"
+    BACKWARD_COMPATIBLE = "backward_compatible"
+    FORWARD_COMPATIBLE = "forward_compatible"
+    PATCH_DIFFERENCE = "patch_difference"
+    BREAKING_INCOMPATIBLE = "breaking_incompatible"
+    UNKNOWN_FUTURE = "unknown_future"
+    DEPRECATED_VERSION = "deprecated_version"
+
+
+class SchemaVersionStatus(Enum):
+    """Schema version lifecycle status."""
+
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+
+
+# ============================================================================
+# SCHEMA VERSION METADATA
+# ============================================================================
+@dataclass
+class SchemaVersionInfo:
+    """Metadata about a specific schema version."""
+
+    version: str
+    release_date: str
+    status: SchemaVersionStatus
+    breaking_changes: List[str] = field(default_factory=list)
+    new_features: List[str] = field(default_factory=list)
+    bug_fixes: List[str] = field(default_factory=list)
+    migration_available: bool = False
+    backward_compatible_with: List[str] = field(default_factory=list)
+    deprecation_date: Optional[str] = None
+    retirement_date: Optional[str] = None
+
+    def is_deprecated(self) -> bool:
+        """Check if this version is deprecated."""
+        return self.status == SchemaVersionStatus.DEPRECATED
+
+    def is_retired(self) -> bool:
+        """Check if this version is retired."""
+        return self.status == SchemaVersionStatus.RETIRED
+
+    def is_active(self) -> bool:
+        """Check if this version is active."""
+        return self.status == SchemaVersionStatus.ACTIVE
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "release_date": self.release_date,
+            "status": self.status.value,
+            "breaking_changes": self.breaking_changes,
+            "new_features": self.new_features,
+            "bug_fixes": self.bug_fixes,
+            "migration_available": self.migration_available,
+            "backward_compatible_with": self.backward_compatible_with,
+            "deprecation_date": self.deprecation_date,
+            "retirement_date": self.retirement_date,
+        }
+
+
+# ============================================================================
+# SCHEMA EVOLUTION REGISTRY
+# ============================================================================
+class SchemaEvolutionRegistry:
+    """Registry of all known schema versions and their metadata."""
+
+    def __init__(self):
+        self.versions: Dict[str, SchemaVersionInfo] = {}
+        self._initialize_builtin_versions()
+
+    def _initialize_builtin_versions(self):
+        """Initialize built-in schema versions."""
+        # Version 1.0.0: Initial release
+        self.register_version(
+            SchemaVersionInfo(
+                version="1.0.0",
+                release_date="2025-01-20",
+                status=SchemaVersionStatus.ACTIVE,
+                breaking_changes=[],
+                new_features=["Initial contract schema definition"],
+                backward_compatible_with=[],
+            )
+        )
+
+    def register_version(self, version_info: SchemaVersionInfo):
+        """Register a schema version in the registry."""
+        self.versions[version_info.version] = version_info
+
+    def get_version_info(self, version: str) -> Optional[SchemaVersionInfo]:
+        """Get metadata for a specific schema version."""
+        return self.versions.get(version)
+
+    def is_known_version(self, version: str) -> bool:
+        """Check if version is registered."""
+        return version in self.versions
+
+    def get_active_versions(self) -> List[SchemaVersionInfo]:
+        """Get all active schema versions."""
+        return [info for info in self.versions.values() if info.is_active()]
+
+    def get_deprecated_versions(self) -> List[SchemaVersionInfo]:
+        """Get all deprecated schema versions."""
+        return [info for info in self.versions.values() if info.is_deprecated()]
+
+    def get_latest_version(self) -> Optional[SchemaVersionInfo]:
+        """Get the latest active schema version."""
+        active_versions = self.get_active_versions()
+        if not active_versions:
+            return None
+
+        # Sort by semantic version
+        sorted_versions = sorted(
+            active_versions, key=lambda v: SemanticVersion(v.version), reverse=True
+        )
+
+        return sorted_versions[0]
+
+
+# ============================================================================
+# SCHEMA COMPATIBILITY DETECTOR
+# ============================================================================
+class SchemaCompatibilityDetector:
+    """Detects compatibility between schema versions."""
+
+    def __init__(self, registry: Optional[SchemaEvolutionRegistry] = None):
+        """Initialize detector."""
+        self.registry = registry or SchemaEvolutionRegistry()
+
+    def detect_compatibility(self, version1: str, version2: str) -> SchemaCompatibility:
+        """Detect compatibility between two schema versions."""
+        # Step 1: Parse versions
+        try:
+            v1 = SemanticVersion(version1)
+            v2 = SemanticVersion(version2)
+        except ValueError:
+            return SchemaCompatibility.UNKNOWN_FUTURE
+
+        # Step 2: Check if identical
+        if v1 == v2:
+            return SchemaCompatibility.IDENTICAL
+
+        # Step 3: Check registry for deprecation
+        v1_info = self.registry.get_version_info(version1)
+        v2_info = self.registry.get_version_info(version2)
+
+        if v1_info and v1_info.is_deprecated():
+            return SchemaCompatibility.DEPRECATED_VERSION
+
+        # Step 4: Compare MAJOR versions
+        if v1.major != v2.major:
+            return SchemaCompatibility.BREAKING_INCOMPATIBLE
+
+        # Step 5: Compare MINOR versions (MAJOR is same)
+        if v1.minor < v2.minor:
+            # v2 is newer minor version
+            return SchemaCompatibility.BACKWARD_COMPATIBLE
+
+        if v1.minor > v2.minor:
+            # v1 is newer minor version
+            return SchemaCompatibility.FORWARD_COMPATIBLE
+
+        # Step 6: Compare PATCH versions (MAJOR and MINOR are same)
+        if v1.patch != v2.patch:
+            return SchemaCompatibility.PATCH_DIFFERENCE
+
+        # Should not reach here if versions are equal
+        return SchemaCompatibility.IDENTICAL
+
+    def is_compatible(self, version1: str, version2: str) -> bool:
+        """Check if two versions are compatible (not breaking)."""
+        compatibility = self.detect_compatibility(version1, version2)
+
+        return compatibility not in [
+            SchemaCompatibility.BREAKING_INCOMPATIBLE,
+            SchemaCompatibility.UNKNOWN_FUTURE,
+        ]
+
+    def requires_migration(self, from_version: str, to_version: str) -> bool:
+        """Check if migration is required between versions."""
+        compatibility = self.detect_compatibility(from_version, to_version)
+
+        return compatibility == SchemaCompatibility.BREAKING_INCOMPATIBLE
+
+    def can_downgrade(self, from_version: str, to_version: str) -> bool:
+        """Check if downgrade from newer to older version is safe."""
+        compatibility = self.detect_compatibility(to_version, from_version)
+
+        # Downgrade safe if older version can read newer contracts
+        return compatibility == SchemaCompatibility.BACKWARD_COMPATIBLE
+
+
+# ============================================================================
+# SCHEMA MIGRATION FRAMEWORK
+# ============================================================================
+@dataclass
+class SchemaMigrationPath:
+    """Defines a migration path between schema versions."""
+
+    from_version: str
+    to_version: str
+    migration_steps: List[str] = field(default_factory=list)
+    reversible: bool = False
+    semantic_preserving: bool = True
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "migration_steps": self.migration_steps,
+            "reversible": self.reversible,
+            "semantic_preserving": self.semantic_preserving,
+            "description": self.description,
+        }
+
+
+class SchemaMigrationRegistry:
+    """Registry of available schema migration paths."""
+
+    def __init__(self):
+        self.migrations: Dict[tuple, SchemaMigrationPath] = {}
+
+    def register_migration(self, migration: SchemaMigrationPath):
+        """Register a migration path."""
+        key = (migration.from_version, migration.to_version)
+        self.migrations[key] = migration
+
+    def get_migration(self, from_version: str, to_version: str) -> Optional[SchemaMigrationPath]:
+        """Get migration path between versions."""
+        key = (from_version, to_version)
+        return self.migrations.get(key)
+
+    def has_migration(self, from_version: str, to_version: str) -> bool:
+        """Check if migration path exists."""
+        return (from_version, to_version) in self.migrations
+
+    def find_migration_chain(
+        self, from_version: str, to_version: str
+    ) -> Optional[List[SchemaMigrationPath]]:
+        """Find chain of migrations from source to target version."""
+        # Direct migration available?
+        direct = self.get_migration(from_version, to_version)
+        if direct:
+            return [direct]
+
+        return None
+
+
+# ============================================================================
+# VERSION UPGRADE CHECKER
+# ============================================================================
+class SchemaUpgradeChecker:
+    """Checks if schema upgrade is safe and provides upgrade recommendations."""
+
+    def __init__(
+        self,
+        compatibility_detector: Optional[SchemaCompatibilityDetector] = None,
+        migration_registry: Optional[SchemaMigrationRegistry] = None,
+    ):
+        self.detector = compatibility_detector or SchemaCompatibilityDetector()
+        self.migration_registry = migration_registry or SchemaMigrationRegistry()
+
+    def check_upgrade(self, current_version: str, target_version: str) -> Dict[str, Any]:
+        """Check if upgrade from current to target version is safe."""
+        compatibility = self.detector.detect_compatibility(current_version, target_version)
+
+        result = {
+            "current_version": current_version,
+            "target_version": target_version,
+            "compatibility": compatibility.value,
+            "safe_upgrade": False,
+            "migration_required": False,
+            "migration_available": False,
+            "warnings": [],
+            "recommendations": [],
+        }
+
+        # Analyze compatibility
+        if compatibility == SchemaCompatibility.IDENTICAL:
+            result["safe_upgrade"] = True
+            result["recommendations"].append("Already at target version")
+
+        elif compatibility == SchemaCompatibility.BACKWARD_COMPATIBLE:
+            result["safe_upgrade"] = True
+            result["recommendations"].append("Direct upgrade safe - backward compatible")
+
+        elif compatibility == SchemaCompatibility.PATCH_DIFFERENCE:
+            result["safe_upgrade"] = True
+            result["recommendations"].append("Patch version difference - safe to upgrade")
+
+        elif compatibility == SchemaCompatibility.BREAKING_INCOMPATIBLE:
+            result["migration_required"] = True
+            result["migration_available"] = self.migration_registry.has_migration(
+                current_version, target_version
+            )
+
+            if result["migration_available"]:
+                result["recommendations"].append("Migration tool available - use migration")
+            else:
+                result["warnings"].append("No migration tool available for this upgrade")
+
+        elif compatibility == SchemaCompatibility.DEPRECATED_VERSION:
+            result["warnings"].append(f"Current version {current_version} is deprecated")
+            result["recommendations"].append("Upgrade to active version recommended")
+
+        elif compatibility == SchemaCompatibility.UNKNOWN_FUTURE:
+            result["warnings"].append(f"Target version {target_version} is unknown")
+            result["recommendations"].append("Update tooling before upgrading")
+
+        return result
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
+    # From Prompt 1
     "ContractVersionMetadata",
     "SemanticVersion",
     "ContractFingerprintComputer",
     "VersionIdentityManager",
+    # From Prompt 2
+    "SchemaCompatibility",
+    "SchemaVersionStatus",
+    "SchemaVersionInfo",
+    "SchemaEvolutionRegistry",
+    "SchemaCompatibilityDetector",
+    "SchemaMigrationPath",
+    "SchemaMigrationRegistry",
+    "SchemaUpgradeChecker",
 ]
