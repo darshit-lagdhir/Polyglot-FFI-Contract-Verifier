@@ -1588,6 +1588,444 @@ class ContractVersionComparator:
 
 
 # ============================================================================
+# COMPATIBILITY RELATIONSHIPS
+# ============================================================================
+class CompatibilityRelationship(Enum):
+    """Compatibility relationships between version pairs.
+    Defines directional compatibility semantics.
+    """
+
+    IDENTICAL = "identical"
+    BACKWARD_COMPATIBLE = "backward_compatible"
+    FORWARD_COMPATIBLE = "forward_compatible"
+    BI_DIRECTIONAL = "bi_directional"
+    BREAKING_INCOMPATIBLE = "breaking_incompatible"
+    UPGRADE_WITH_MIGRATION = "upgrade_with_migration"
+
+
+# ============================================================================
+# VERSION RANGE SPECIFICATION
+# ============================================================================
+@dataclass
+class VersionConstraint:
+    """Single version constraint (e.g., >=1.2.0).
+    Represents one component of a version range specification.
+    """
+
+    operator: str  # "==", "!=", "<", "<=", ">", ">="
+    version: str
+
+    def satisfied_by(self, version: str) -> bool:
+        """
+        Check if a version satisfies this constraint.
+        Args:
+            version: Version to check
+        Returns:
+            True if constraint satisfied
+        """
+        try:
+            v = SemanticVersion(version)
+            constraint_v = SemanticVersion(self.version)
+        except ValueError:
+            return False
+
+        if self.operator == "==":
+            return v == constraint_v
+        elif self.operator == "!=":
+            return v != constraint_v
+        elif self.operator == "<":
+            return v < constraint_v
+        elif self.operator == "<=":
+            return v <= constraint_v
+        elif self.operator == ">":
+            return v > constraint_v
+        elif self.operator == ">=":
+            return v >= constraint_v
+        else:
+            return False
+
+
+class VersionRange:
+    """Version range specification parser and checker.
+    Supports npm-style range syntax (^, ~, *, ranges).
+    """
+
+    def __init__(self, range_spec: str):
+        """
+        Initialize version range.
+        Args:
+            range_spec: Range specification string
+                       (e.g., "^1.2.0", "~1.2.0", ">=1.0.0, <2.0.0")
+        """
+        self.range_spec = range_spec
+        self.constraints = self._parse_range(range_spec)
+
+    def _parse_range(self, spec: str) -> List[VersionConstraint]:
+        """Parse range specification into constraints."""
+        constraints = []
+        spec = spec.strip()
+
+        # Caret range: ^1.2.3 → >=1.2.3, <2.0.0
+        if spec.startswith("^"):
+            version = spec[1:]
+            v = SemanticVersion(version)
+            constraints.append(VersionConstraint(">=", version))
+            constraints.append(VersionConstraint("<", f"{v.major + 1}.0.0"))
+
+        # Tilde range: ~1.2.3 → >=1.2.3, <1.3.0
+        elif spec.startswith("~"):
+            version = spec[1:]
+            v = SemanticVersion(version)
+            constraints.append(VersionConstraint(">=", version))
+            constraints.append(VersionConstraint("<", f"{v.major}.{v.minor + 1}.0"))
+
+        # Wildcard: 1.2.* → >=1.2.0, <1.3.0
+        elif "*" in spec:
+            parts = spec.split(".")
+            if parts[-1] == "*":
+                if len(parts) == 3:
+                    # 1.2.* → >=1.2.0, <1.3.0
+                    major, minor = parts[0], parts[1]
+                    constraints.append(VersionConstraint(">=", f"{major}.{minor}.0"))
+                    constraints.append(VersionConstraint("<", f"{major}.{int(minor) + 1}.0"))
+                elif len(parts) == 2:
+                    # 1.* → >=1.0.0, <2.0.0
+                    major = parts[0]
+                    constraints.append(VersionConstraint(">=", f"{major}.0.0"))
+                    constraints.append(VersionConstraint("<", f"{int(major) + 1}.0.0"))
+
+        # Comma-separated constraints: >=1.0.0, <2.0.0
+        elif "," in spec:
+            for part in spec.split(","):
+                part = part.strip()
+                constraints.extend(self._parse_single_constraint(part))
+
+        # Single constraint: >=1.0.0
+        else:
+            constraints.extend(self._parse_single_constraint(spec))
+
+        return constraints
+
+    def _parse_single_constraint(self, spec: str) -> List[VersionConstraint]:
+        """Parse a single constraint like '>=1.0.0'."""
+        # Match operator and version
+        match = re.match(r"^\s*(==|!=|<=|>=|<|>)\s*(.+)$", spec)
+        if match:
+            operator, version = match.groups()
+            return [VersionConstraint(operator, version.strip())]
+
+        # No operator means exact match
+        return [VersionConstraint("==", spec.strip())]
+
+    def satisfied_by(self, version: str) -> bool:
+        """
+        Check if version satisfies this range.
+        Args:
+            version: Version to check
+        Returns:
+            True if all constraints satisfied
+        """
+        return all(c.satisfied_by(version) for c in self.constraints)
+
+    def __str__(self) -> str:
+        return self.range_spec
+
+
+# ============================================================================
+# COMPATIBILITY MATRIX
+# ============================================================================
+@dataclass
+class CompatibilityMatrixEntry:
+    """Single entry in compatibility matrix.
+    Records compatibility relationship between two versions.
+    """
+
+    from_version: str
+    to_version: str
+    relationship: CompatibilityRelationship
+    abi_compatibility: Optional[ABICompatibility] = None
+    migration_required: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "relationship": self.relationship.value,
+            "abi_compatibility": self.abi_compatibility.value if self.abi_compatibility else None,
+            "migration_required": self.migration_required,
+        }
+
+
+class CompatibilityMatrix:
+    """Matrix of compatibility relationships between all version pairs.
+    Provides O(1) lookup of compatibility between any two versions.
+    """
+
+    def __init__(self):
+        self.matrix: Dict[Tuple[str, str], CompatibilityMatrixEntry] = {}
+        self.versions: Set[str] = set()
+
+    def add_entry(self, entry: CompatibilityMatrixEntry):
+        """
+        Add a compatibility entry to matrix.
+        Args:
+            entry: Compatibility entry
+        """
+        key = (entry.from_version, entry.to_version)
+        self.matrix[key] = entry
+        self.versions.add(entry.from_version)
+        self.versions.add(entry.to_version)
+
+    def get_compatibility(self, from_version: str, to_version: str) -> Optional[CompatibilityMatrixEntry]:
+        """
+        Get compatibility between two versions.
+        Args:
+            from_version: Source version
+            to_version: Target version
+        Returns:
+            CompatibilityMatrixEntry if known, None otherwise
+        """
+        key = (from_version, to_version)
+        return self.matrix.get(key)
+
+    def is_compatible(self, from_version: str, to_version: str) -> bool:
+        """
+        Check if versions are compatible.
+        Args:
+            from_version: Source version
+            to_version: Target version
+        Returns:
+            True if compatible
+        """
+        entry = self.get_compatibility(from_version, to_version)
+        if not entry:
+            return False
+
+        return entry.relationship in [
+            CompatibilityRelationship.IDENTICAL,
+            CompatibilityRelationship.BACKWARD_COMPATIBLE,
+            CompatibilityRelationship.BI_DIRECTIONAL,
+        ]
+
+    def get_all_versions(self) -> List[str]:
+        """Get all versions in matrix."""
+        return sorted(list(self.versions), key=lambda v: SemanticVersion(v))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert matrix to dictionary."""
+        return {
+            "entries": [e.to_dict() for e in self.matrix.values()],
+            "versions": self.get_all_versions(),
+        }
+
+
+# ============================================================================
+# COMPATIBILITY MATRIX BUILDER
+# ============================================================================
+class CompatibilityMatrixBuilder:
+    """Builds compatibility matrix for a set of versions.
+    Computes pairwise compatibility and populates matrix.
+    """
+
+    def __init__(self, abi_detector: Optional[ABICompatibilityDetector] = None):
+        self.abi_detector = abi_detector or ABICompatibilityDetector()
+        self.cache: Dict[Tuple[str, str], CompatibilityMatrixEntry] = {}
+
+    def build_matrix(self, versions: List[str], contracts: Dict[str, Any]) -> CompatibilityMatrix:
+        """
+        Build compatibility matrix for given versions.
+        Args:
+            versions: List of version strings
+            contracts: Mapping of version → contract object
+        Returns:
+            Populated CompatibilityMatrix
+        """
+        matrix = CompatibilityMatrix()
+
+        for v1 in versions:
+            for v2 in versions:
+                entry = self._compute_compatibility(v1, v2, contracts)
+                matrix.add_entry(entry)
+
+        return matrix
+
+    def _compute_compatibility(
+        self, from_version: str, to_version: str, contracts: Dict[str, Any]
+    ) -> CompatibilityMatrixEntry:
+        """Compute compatibility between two versions."""
+        # Check cache
+        cache_key = (from_version, to_version)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # Identical versions
+        if from_version == to_version:
+            entry = CompatibilityMatrixEntry(
+                from_version=from_version,
+                to_version=to_version,
+                relationship=CompatibilityRelationship.IDENTICAL,
+                migration_required=False,
+            )
+            self.cache[cache_key] = entry
+            return entry
+
+        # Compare versions
+        try:
+            v1 = SemanticVersion(from_version)
+            v2 = SemanticVersion(to_version)
+        except ValueError:
+            # Unknown versions
+            entry = CompatibilityMatrixEntry(
+                from_version=from_version,
+                to_version=to_version,
+                relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
+                migration_required=True,
+            )
+            self.cache[cache_key] = entry
+            return entry
+
+        # Major version difference → breaking
+        if v1.major != v2.major:
+            entry = CompatibilityMatrixEntry(
+                from_version=from_version,
+                to_version=to_version,
+                relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
+                migration_required=True,
+            )
+
+        # Minor/patch version difference → backward compatible
+        elif v2 > v1:
+            entry = CompatibilityMatrixEntry(
+                from_version=from_version,
+                to_version=to_version,
+                relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
+                migration_required=False,
+            )
+
+        # Older version → forward compatible (rare)
+        else:
+            entry = CompatibilityMatrixEntry(
+                from_version=from_version,
+                to_version=to_version,
+                relationship=CompatibilityRelationship.FORWARD_COMPATIBLE,
+                migration_required=False,
+            )
+
+        self.cache[cache_key] = entry
+        return entry
+
+
+# ============================================================================
+# UPGRADE PATH FINDER
+# ============================================================================
+@dataclass
+class UpgradePath:
+    """Path from one version to another.
+    Represents a sequence of version transitions.
+    """
+
+    from_version: str
+    to_version: str
+    steps: List[str]
+    total_cost: int
+    migration_required: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "steps": self.steps,
+            "total_cost": self.total_cost,
+            "migration_required": self.migration_required,
+        }
+
+
+class UpgradePathFinder:
+    """Finds optimal upgrade paths between versions.
+    Uses graph search to find lowest-cost paths.
+    """
+
+    def __init__(self, compatibility_matrix: CompatibilityMatrix):
+        self.matrix = compatibility_matrix
+
+    def find_path(self, from_version: str, to_version: str) -> Optional[UpgradePath]:
+        """
+        Find upgrade path from source to target version.
+        Args:
+            from_version: Source version
+            to_version: Target version
+        Returns:
+            UpgradePath if path exists, None otherwise
+        """
+        # Simple implementation: direct path only
+        # Production would use Dijkstra's algorithm for multi-step paths
+
+        entry = self.matrix.get_compatibility(from_version, to_version)
+        if not entry:
+            return None
+
+        # Direct path
+        cost = self._compute_cost(entry.relationship)
+
+        return UpgradePath(
+            from_version=from_version,
+            to_version=to_version,
+            steps=[from_version, to_version],
+            total_cost=cost,
+            migration_required=entry.migration_required,
+        )
+
+    def _compute_cost(self, relationship: CompatibilityRelationship) -> int:
+        """Compute cost of a compatibility relationship."""
+        cost_map = {
+            CompatibilityRelationship.IDENTICAL: 0,
+            CompatibilityRelationship.BACKWARD_COMPATIBLE: 1,
+            CompatibilityRelationship.BI_DIRECTIONAL: 1,
+            CompatibilityRelationship.FORWARD_COMPATIBLE: 5,
+            CompatibilityRelationship.UPGRADE_WITH_MIGRATION: 10,
+            CompatibilityRelationship.BREAKING_INCOMPATIBLE: 100,
+        }
+        return cost_map.get(relationship, 1000)
+
+
+# ============================================================================
+# DEPENDENCY RESOLVER
+# ============================================================================
+class DependencyResolver:
+    """Resolves version dependencies across multiple requirements.
+    Finds versions that satisfy all constraints.
+    """
+
+    def __init__(self, available_versions: List[str]):
+        self.available_versions = available_versions
+
+    def resolve(self, requirements: List[str]) -> Optional[str]:
+        """
+        Resolve dependencies to find compatible version.
+        Args:
+            requirements: List of version range specifications
+        Returns:
+            Latest version satisfying all requirements, or None
+        """
+        # Parse all requirements
+        ranges = [VersionRange(req) for req in requirements]
+
+        # Find candidates satisfying all
+        candidates = []
+        for version in self.available_versions:
+            if all(r.satisfied_by(version) for r in ranges):
+                candidates.append(version)
+
+        if not candidates:
+            return None
+
+        # Return latest
+        return max(candidates, key=lambda v: SemanticVersion(v))
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -1627,4 +2065,14 @@ __all__ = [
     "MigrationNecessity",
     "MigrationNecessityAnalyzer",
     "ContractVersionComparator",
+    # From Prompt 5
+    "CompatibilityRelationship",
+    "VersionConstraint",
+    "VersionRange",
+    "CompatibilityMatrixEntry",
+    "CompatibilityMatrix",
+    "CompatibilityMatrixBuilder",
+    "UpgradePath",
+    "UpgradePathFinder",
+    "DependencyResolver",
 ]
