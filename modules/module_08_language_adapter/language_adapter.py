@@ -5755,3 +5755,605 @@ class PythonAdapterComplete(PythonAdapter):
             'timing_breakdown': diag.get('timings', {}),
             'memory_stats': self.memory_manager.get_statistics()
         }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 62: OWNERSHIP STATES EXTENDED
+# ════════════════════════════════════════════════════════════════════════════
+
+class OwnershipStateExtended(Enum):
+    """Extended ownership states for lifecycle tracking."""
+    ALLOCATED = "allocated"
+    IN_CALL = "in_call"
+    BORROWED = "borrowed"
+    TRANSFERRED = "transferred"
+    RETURNED = "returned"
+    FREED = "freed"
+    SHARED = "shared"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 63: TRANSFER ANNOTATION
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class TransferAnnotation:
+    """
+    Ownership transfer annotation from contract.
+    
+    Specifies how ownership transfers during FFI call.
+    """
+    
+    parameter_index: int
+    transfer_kind: str  # 'transfer', 'borrow', 'shared'
+    direction: str  # 'caller_to_callee', 'callee_to_caller'
+    condition: str = 'always'  # 'always', 'on_success', 'on_failure'
+    free_function: Optional[str] = None
+    
+    def should_transfer(self, call_succeeded: bool) -> bool:
+        """
+        Check if ownership should transfer based on call result.
+        
+        Args:
+            call_succeeded: Whether call succeeded
+            
+        Returns:
+            True if ownership should transfer
+        """
+        if self.condition == 'always':
+            return True
+        elif self.condition == 'on_success':
+            return call_succeeded
+        elif self.condition == 'on_failure':
+            return not call_succeeded
+        else:
+            return False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'parameter_index': self.parameter_index,
+            'transfer_kind': self.transfer_kind,
+            'direction': self.direction,
+            'condition': self.condition,
+            'free_function': self.free_function
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 64: OWNERSHIP GRAPH
+# ════════════════════════════════════════════════════════════════════════════
+
+class OwnershipGraph:
+    """
+    Graph-based ownership tracking.
+    
+    Tracks memory allocations and ownership relationships using
+    directed graph structure.
+    """
+    
+    def __init__(self):
+        # Nodes: address -> allocation info
+        self.allocations: Dict[int, Dict[str, Any]] = {}
+        
+        # Edges: address -> owner identifier
+        self.ownership_edges: Dict[int, str] = {}
+        
+        # Reference counts for shared ownership
+        self.ref_counts: Dict[int, int] = {}
+        
+        # Lifecycle hooks
+        self.hooks: Dict[str, List[Callable]] = {
+            'on_allocate': [],
+            'on_transfer': [],
+            'on_borrow': [],
+            'on_return': [],
+            'on_free': []
+        }
+    
+    def add_allocation(
+        self,
+        address: int,
+        size: int,
+        owner: str,
+        state: OwnershipStateExtended = OwnershipStateExtended.ALLOCATED
+    ) -> None:
+        """
+        Add allocation to graph.
+        
+        Args:
+            address: Memory address
+            size: Allocation size
+            owner: Initial owner
+            state: Initial ownership state
+        """
+        self.allocations[address] = {
+            'address': address,
+            'size': size,
+            'state': state,
+            'allocated_at': datetime.utcnow().isoformat() + 'Z',
+            'history': []
+        }
+        
+        self.ownership_edges[address] = owner
+        self.ref_counts[address] = 1
+        
+        # Trigger hooks
+        self._trigger_hooks('on_allocate', address, size, owner)
+    
+    def transfer_ownership(
+        self,
+        address: int,
+        new_owner: str
+    ) -> None:
+        """
+        Transfer ownership to new owner.
+        
+        Args:
+            address: Memory address
+            new_owner: New owner identifier
+            
+        Raises:
+            ValueError: If allocation not found or invalid state
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        alloc = self.allocations[address]
+        
+        if alloc['state'] == OwnershipStateExtended.FREED:
+            raise ValueError(
+                f"Cannot transfer freed allocation: {hex(address)}"
+            )
+        
+        old_owner = self.ownership_edges[address]
+        
+        # Update state
+        alloc['state'] = OwnershipStateExtended.TRANSFERRED
+        alloc['history'].append({
+            'event': 'transfer',
+            'from': old_owner,
+            'to': new_owner,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+        
+        # Update edge
+        self.ownership_edges[address] = new_owner
+        
+        # Trigger hooks
+        self._trigger_hooks('on_transfer', address, old_owner, new_owner)
+    
+    def borrow_allocation(
+        self,
+        address: int,
+        borrower: str
+    ) -> None:
+        """
+        Mark allocation as borrowed.
+        
+        Args:
+            address: Memory address
+            borrower: Borrower identifier
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        alloc = self.allocations[address]
+        alloc['state'] = OwnershipStateExtended.BORROWED
+        alloc['history'].append({
+            'event': 'borrow',
+            'borrower': borrower,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+        
+        # Trigger hooks
+        self._trigger_hooks('on_borrow', address, borrower)
+    
+    def return_allocation(
+        self,
+        address: int
+    ) -> None:
+        """
+        Mark borrowed allocation as returned.
+        
+        Args:
+            address: Memory address
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        alloc = self.allocations[address]
+        
+        if alloc['state'] != OwnershipStateExtended.BORROWED:
+            raise ValueError(
+                f"Allocation not borrowed: {hex(address)}"
+            )
+        
+        alloc['state'] = OwnershipStateExtended.RETURNED
+        alloc['history'].append({
+            'event': 'return',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+        
+        owner = self.ownership_edges[address]
+        
+        # Trigger hooks
+        self._trigger_hooks('on_return', address, owner)
+    
+    def add_reference(
+        self,
+        address: int
+    ) -> None:
+        """
+        Increment reference count for shared ownership.
+        
+        Args:
+            address: Memory address
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        self.ref_counts[address] += 1
+        self.allocations[address]['state'] = OwnershipStateExtended.SHARED
+    
+    def remove_reference(
+        self,
+        address: int
+    ) -> bool:
+        """
+        Decrement reference count.
+        
+        Args:
+            address: Memory address
+            
+        Returns:
+            True if reference count reached zero (should free)
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        self.ref_counts[address] -= 1
+        
+        if self.ref_counts[address] <= 0:
+            return True
+        
+        return False
+    
+    def mark_freed(
+        self,
+        address: int
+    ) -> None:
+        """
+        Mark allocation as freed.
+        
+        Args:
+            address: Memory address
+        """
+        if address not in self.allocations:
+            raise ValueError(f"Unknown allocation: {hex(address)}")
+        
+        alloc = self.allocations[address]
+        
+        if alloc['state'] == OwnershipStateExtended.FREED:
+            raise ValueError(f"Double-free: {hex(address)}")
+        
+        alloc['state'] = OwnershipStateExtended.FREED
+        alloc['freed_at'] = datetime.utcnow().isoformat() + 'Z'
+        
+        owner = self.ownership_edges[address]
+        
+        # Trigger hooks
+        self._trigger_hooks('on_free', address, owner)
+    
+    def get_owner(self, address: int) -> Optional[str]:
+        """Get current owner of allocation."""
+        return self.ownership_edges.get(address)
+    
+    def get_state(
+        self, address: int
+    ) -> Optional[OwnershipStateExtended]:
+        """Get current state of allocation."""
+        if address in self.allocations:
+            return self.allocations[address]['state']
+        return None
+    
+    def register_hook(
+        self,
+        hook_name: str,
+        callback: Callable
+    ) -> None:
+        """
+        Register lifecycle hook.
+        
+        Args:
+            hook_name: Hook name (on_allocate, on_transfer, etc.)
+            callback: Hook callback function
+        """
+        if hook_name in self.hooks:
+            self.hooks[hook_name].append(callback)
+    
+    def _trigger_hooks(
+        self,
+        hook_name: str,
+        *args
+    ) -> None:
+        """Trigger lifecycle hooks."""
+        for callback in self.hooks.get(hook_name, []):
+            try:
+                callback(*args)
+            except Exception:
+                pass  # Don't let hook errors break ownership tracking
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 65: OWNERSHIP STATE MACHINE
+# ════════════════════════════════════════════════════════════════════════════
+
+class OwnershipStateMachine:
+    """
+    Validates ownership state transitions.
+    
+    Ensures state transitions follow valid patterns.
+    """
+    
+    # Valid transitions: current_state -> allowed_next_states
+    VALID_TRANSITIONS: Dict[
+        OwnershipStateExtended, set
+    ] = {
+        OwnershipStateExtended.ALLOCATED: {
+            OwnershipStateExtended.IN_CALL,
+            OwnershipStateExtended.BORROWED,
+            OwnershipStateExtended.TRANSFERRED,
+            OwnershipStateExtended.SHARED,
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.IN_CALL: {
+            OwnershipStateExtended.RETURNED,
+            OwnershipStateExtended.TRANSFERRED,
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.BORROWED: {
+            OwnershipStateExtended.RETURNED,
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.TRANSFERRED: {
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.RETURNED: {
+            OwnershipStateExtended.IN_CALL,
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.SHARED: {
+            OwnershipStateExtended.FREED
+        },
+        OwnershipStateExtended.FREED: set()  # Terminal state
+    }
+    
+    def is_valid_transition(
+        self,
+        current_state: OwnershipStateExtended,
+        next_state: OwnershipStateExtended
+    ) -> bool:
+        """
+        Check if state transition is valid.
+        
+        Args:
+            current_state: Current ownership state
+            next_state: Proposed next state
+            
+        Returns:
+            True if transition is valid
+        """
+        allowed = self.VALID_TRANSITIONS.get(current_state, set())
+        return next_state in allowed
+    
+    def validate_transition(
+        self,
+        current_state: OwnershipStateExtended,
+        next_state: OwnershipStateExtended
+    ) -> None:
+        """
+        Validate state transition, raise if invalid.
+        
+        Args:
+            current_state: Current ownership state
+            next_state: Proposed next state
+            
+        Raises:
+            ValueError: If transition is invalid
+        """
+        if not self.is_valid_transition(current_state, next_state):
+            raise ValueError(
+                f"Invalid ownership transition: "
+                f"{current_state.value} -> {next_state.value}"
+            )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 66: TRANSFER SEMANTICS
+# ════════════════════════════════════════════════════════════════════════════
+
+class TransferSemantics:
+    """
+    Implements ownership transfer semantics.
+    
+    Applies transfer annotations to ownership graph during FFI calls.
+    """
+    
+    def __init__(self, ownership_graph: OwnershipGraph):
+        self.graph = ownership_graph
+        self.state_machine = OwnershipStateMachine()
+    
+    def apply_pre_call_transfers(
+        self,
+        annotations: List[TransferAnnotation],
+        addresses: Dict[int, int]
+    ) -> None:
+        """
+        Apply ownership transfers before native call.
+        
+        Args:
+            annotations: Transfer annotations
+            addresses: Parameter index -> memory address mapping
+        """
+        for annotation in annotations:
+            if annotation.direction != 'caller_to_callee':
+                continue
+            
+            address = addresses.get(annotation.parameter_index)
+            if address is None:
+                continue
+            
+            if annotation.transfer_kind == 'transfer':
+                self.graph.transfer_ownership(address, 'callee')
+            elif annotation.transfer_kind == 'borrow':
+                self.graph.borrow_allocation(address, 'callee')
+            elif annotation.transfer_kind == 'shared':
+                self.graph.add_reference(address)
+    
+    def apply_post_call_transfers(
+        self,
+        annotations: List[TransferAnnotation],
+        addresses: Dict[int, int],
+        call_succeeded: bool
+    ) -> None:
+        """
+        Apply ownership transfers after native call.
+        
+        Args:
+            annotations: Transfer annotations
+            addresses: Parameter index -> memory address mapping
+            call_succeeded: Whether call succeeded
+        """
+        for annotation in annotations:
+            address = addresses.get(annotation.parameter_index)
+            if address is None:
+                continue
+            
+            # Check if transfer should occur
+            if not annotation.should_transfer(call_succeeded):
+                continue
+            
+            # Handle borrow returns
+            if annotation.transfer_kind == 'borrow':
+                current_state = self.graph.get_state(address)
+                if current_state == OwnershipStateExtended.BORROWED:
+                    self.graph.return_allocation(address)
+            
+            # Handle callee-to-caller transfers
+            if annotation.direction == 'callee_to_caller':
+                if annotation.transfer_kind == 'transfer':
+                    self.graph.transfer_ownership(address, 'caller')
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 67: OWNERSHIP VALIDATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class OwnershipValidator:
+    """
+    Validates ownership operations for safety.
+    
+    Checks operations against ownership state before allowing them.
+    """
+    
+    def __init__(self, ownership_graph: OwnershipGraph):
+        self.graph = ownership_graph
+        self.state_machine = OwnershipStateMachine()
+    
+    def can_free(
+        self,
+        address: int,
+        requester: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Check if requester can free allocation.
+        
+        Args:
+            address: Memory address
+            requester: Requester identifier
+            
+        Returns:
+            Tuple of (can_free, error_message)
+        """
+        owner = self.graph.get_owner(address)
+        if owner != requester:
+            return (
+                False,
+                f"Only owner can free: owner={owner}, "
+                f"requester={requester}"
+            )
+        
+        state = self.graph.get_state(address)
+        if state == OwnershipStateExtended.FREED:
+            return (False, "Allocation already freed")
+        
+        if state == OwnershipStateExtended.BORROWED:
+            return (False, "Cannot free while borrowed")
+        
+        return (True, None)
+    
+    def can_transfer(
+        self,
+        address: int,
+        requester: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Check if requester can transfer allocation.
+        
+        Args:
+            address: Memory address
+            requester: Requester identifier
+            
+        Returns:
+            Tuple of (can_transfer, error_message)
+        """
+        owner = self.graph.get_owner(address)
+        if owner != requester:
+            return (
+                False,
+                f"Only owner can transfer: owner={owner}, "
+                f"requester={requester}"
+            )
+        
+        state = self.graph.get_state(address)
+        if state == OwnershipStateExtended.FREED:
+            return (False, "Cannot transfer freed allocation")
+        
+        return (True, None)
+    
+    def can_access(
+        self,
+        address: int,
+        requester: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Check if requester can access allocation.
+        
+        Args:
+            address: Memory address
+            requester: Requester identifier
+            
+        Returns:
+            Tuple of (can_access, error_message)
+        """
+        state = self.graph.get_state(address)
+        
+        if state == OwnershipStateExtended.FREED:
+            return (False, "Cannot access freed allocation")
+        
+        owner = self.graph.get_owner(address)
+        
+        # Owner can always access
+        if owner == requester:
+            return (True, None)
+        
+        # Borrower can access while borrowed
+        if state == OwnershipStateExtended.BORROWED:
+            return (True, None)
+        
+        # Shared allocations can be accessed
+        if state == OwnershipStateExtended.SHARED:
+            return (True, None)
+        
+        return (False, "Access denied: not owner or borrower")

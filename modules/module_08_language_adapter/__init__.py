@@ -77,6 +77,12 @@ from .language_adapter import (
     DiagnosticCollector,
     PythonInvocationPipeline,
     PythonAdapterComplete,
+    OwnershipStateExtended,
+    TransferAnnotation,
+    OwnershipGraph,
+    OwnershipStateMachine,
+    TransferSemantics,
+    OwnershipValidator,
     __version__,
 )
 
@@ -157,5 +163,11 @@ __all__ = [
     'DiagnosticCollector',
     'PythonInvocationPipeline',
     'PythonAdapterComplete',
+    'OwnershipStateExtended',
+    'TransferAnnotation',
+    'OwnershipGraph',
+    'OwnershipStateMachine',
+    'TransferSemantics',
+    'OwnershipValidator',
     '__version__',
 ]
