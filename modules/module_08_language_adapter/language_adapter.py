@@ -2412,6 +2412,7 @@ class PredicateRegistry:
     
     def list_predicates(self) -> List[str]:
         """Get list of registered predicate names."""
+        return list(self.predicates.keys())
 
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 29: RETURN VALUE VALIDATOR
@@ -2835,6 +2836,7 @@ class PostCallValidator:
                         'message': error_msg
                     })
         
+        return result
 
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 34: ENFORCEMENT POLICY
