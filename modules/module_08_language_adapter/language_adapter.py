@@ -3927,6 +3927,32 @@ class PythonAdapter(LanguageAdapter):
         
         # Initialize memory manager
         self.memory_manager = PythonMemoryManager()
+        
+        # Initialize exception handling (uses forward-declared classes)
+        self._exception_translator = None
+        self._crash_handler = None
+        self._recovery_handler = None
+    
+    @property
+    def exception_translator(self):
+        """Lazy-init PythonExceptionTranslator."""
+        if self._exception_translator is None:
+            self._exception_translator = PythonExceptionTranslator()
+        return self._exception_translator
+    
+    @property
+    def crash_handler(self):
+        """Lazy-init PythonCrashHandler."""
+        if self._crash_handler is None:
+            self._crash_handler = PythonCrashHandler()
+        return self._crash_handler
+    
+    @property
+    def recovery_handler(self):
+        """Lazy-init ErrorRecoveryHandler."""
+        if self._recovery_handler is None:
+            self._recovery_handler = ErrorRecoveryHandler()
+        return self._recovery_handler
     
     def load_native_library(
         self,
@@ -4662,3 +4688,583 @@ class PythonMemoryManager:
             'held_references': len(self.reference_holder.held_references),
             'active_wrappers': len(self.pointer_wrappers)
         }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 53: EXCEPTION HIERARCHY
+# ════════════════════════════════════════════════════════════════════════════
+
+class AdapterException(Exception):
+    """
+    Base exception for all adapter errors.
+    
+    Carries enforcement context and provides rich diagnostic information.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        enforcement_context: Optional[EnforcementContext] = None,
+        remediation_hints: Optional[List[str]] = None
+    ):
+        """
+        Initialize adapter exception.
+        
+        Args:
+            message: Error message
+            enforcement_context: Optional enforcement context
+            remediation_hints: Optional remediation hints
+        """
+        super().__init__(message)
+        self.enforcement_context = enforcement_context
+        self.remediation_hints = remediation_hints or []
+        self.timestamp = datetime.utcnow().isoformat() + 'Z'
+    
+    def get_context_dict(self) -> Dict[str, Any]:
+        """Get context as dictionary."""
+        return {
+            'message': str(self),
+            'timestamp': self.timestamp,
+            'enforcement_context': (
+                self.enforcement_context.to_dict()
+                if self.enforcement_context else None
+            ),
+            'remediation_hints': self.remediation_hints
+        }
+
+
+class ContractViolationError(AdapterException):
+    """
+    Exception raised when contract validation fails.
+    
+    Includes specific clause information and violation details.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        function_name: str,
+        clause_id: str,
+        expected: str,
+        observed: str,
+        enforcement_context: Optional[EnforcementContext] = None,
+        remediation_hints: Optional[List[str]] = None
+    ):
+        super().__init__(message, enforcement_context, remediation_hints)
+        self.function_name = function_name
+        self.clause_id = clause_id
+        self.expected = expected
+        self.observed = observed
+    
+    def __str__(self) -> str:
+        """Detailed string representation."""
+        parts = [
+            f"Contract violation in {self.function_name}",
+            f"Clause: {self.clause_id}",
+            f"Expected: {self.expected}",
+            f"Observed: {self.observed}"
+        ]
+        
+        if self.remediation_hints:
+            parts.append(f"Hints: {', '.join(self.remediation_hints)}")
+        
+        return '\n'.join(parts)
+
+
+class ParameterViolationError(ContractViolationError):
+    """Exception for parameter validation failures."""
+    
+    def __init__(
+        self,
+        message: str,
+        function_name: str,
+        parameter_name: str,
+        clause_id: str,
+        expected: str,
+        observed: str,
+        **kwargs
+    ):
+        super().__init__(
+            message, function_name, clause_id,
+            expected, observed, **kwargs
+        )
+        self.parameter_name = parameter_name
+
+
+class ReturnValueViolationError(ContractViolationError):
+    """Exception for return value validation failures."""
+    pass
+
+
+class OwnershipViolationError(ContractViolationError):
+    """Exception for ownership constraint violations."""
+    pass
+
+
+class NativeCrashError(AdapterException):
+    """
+    Exception raised when native code crashes.
+    
+    Includes crash context and native error information.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        crash_type: str,
+        crash_address: Optional[int] = None,
+        enforcement_context: Optional[EnforcementContext] = None,
+        remediation_hints: Optional[List[str]] = None
+    ):
+        super().__init__(message, enforcement_context, remediation_hints)
+        self.crash_type = crash_type
+        self.crash_address = crash_address
+    
+    def __str__(self) -> str:
+        """Detailed string representation."""
+        parts = [f"Native crash: {self.crash_type}"]
+        
+        if self.crash_address is not None:
+            parts.append(f"Address: {hex(self.crash_address)}")
+        
+        if self.remediation_hints:
+            parts.append(f"Hints: {', '.join(self.remediation_hints)}")
+        
+        return '\n'.join(parts)
+
+
+class SegmentationFaultError(NativeCrashError):
+    """Exception for segmentation faults."""
+    
+    def __init__(
+        self,
+        message: str,
+        crash_address: Optional[int] = None,
+        **kwargs
+    ):
+        super().__init__(
+            message, 'segmentation_fault',
+            crash_address, **kwargs
+        )
+
+
+class AccessViolationError(NativeCrashError):
+    """Exception for access violations (Windows)."""
+    
+    def __init__(
+        self,
+        message: str,
+        crash_address: Optional[int] = None,
+        **kwargs
+    ):
+        super().__init__(
+            message, 'access_violation',
+            crash_address, **kwargs
+        )
+
+
+class ConfigurationError(AdapterException):
+    """Exception for configuration errors."""
+    pass
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 54: EXCEPTION FORMATTER
+# ════════════════════════════════════════════════════════════════════════════
+
+class ExceptionFormatter:
+    """
+    Formats exceptions for human-readable output.
+    
+    Provides detailed, actionable error messages.
+    """
+    
+    def format_contract_violation(
+        self,
+        error: ContractViolationError
+    ) -> str:
+        """
+        Format contract violation error.
+        
+        Args:
+            error: ContractViolationError instance
+            
+        Returns:
+            Formatted error message
+        """
+        lines = []
+        lines.append("=" * 70)
+        lines.append("CONTRACT VIOLATION")
+        lines.append("=" * 70)
+        lines.append(f"Function: {error.function_name}")
+        lines.append(f"Clause:   {error.clause_id}")
+        lines.append(f"Time:     {error.timestamp}")
+        lines.append("")
+        lines.append("VIOLATION DETAILS:")
+        lines.append(f"  Expected: {error.expected}")
+        lines.append(f"  Observed: {error.observed}")
+        
+        if error.remediation_hints:
+            lines.append("")
+            lines.append("HOW TO FIX:")
+            for hint in error.remediation_hints:
+                lines.append(f"  * {hint}")
+        
+        if error.enforcement_context:
+            lines.append("")
+            lines.append("ENFORCEMENT CONTEXT:")
+            lines.append(
+                f"  Invocation ID: "
+                f"{error.enforcement_context.invocation_id}"
+            )
+            lines.append(
+                f"  Validations:   "
+                f"{len(error.enforcement_context.validation_results)}"
+            )
+        
+        lines.append("=" * 70)
+        
+        return '\n'.join(lines)
+    
+    def format_native_crash(
+        self,
+        error: NativeCrashError
+    ) -> str:
+        """
+        Format native crash error.
+        
+        Args:
+            error: NativeCrashError instance
+            
+        Returns:
+            Formatted error message
+        """
+        lines = []
+        lines.append("=" * 70)
+        lines.append("NATIVE CRASH")
+        lines.append("=" * 70)
+        lines.append(f"Type:     {error.crash_type}")
+        lines.append(f"Time:     {error.timestamp}")
+        
+        if error.crash_address is not None:
+            lines.append(f"Address:  {hex(error.crash_address)}")
+        
+        if error.remediation_hints:
+            lines.append("")
+            lines.append("POSSIBLE CAUSES:")
+            for hint in error.remediation_hints:
+                lines.append(f"  * {hint}")
+        
+        lines.append("=" * 70)
+        
+        return '\n'.join(lines)
+    
+    def format_short(self, error: AdapterException) -> str:
+        """
+        Format exception as short one-line message.
+        
+        Args:
+            error: AdapterException instance
+            
+        Returns:
+            Short error message
+        """
+        if isinstance(error, ContractViolationError):
+            return (
+                f"{error.function_name}: {error.clause_id} failed "
+                f"({error.expected} vs {error.observed})"
+            )
+        elif isinstance(error, NativeCrashError):
+            return f"Native crash: {error.crash_type}"
+        else:
+            return str(error)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 55: ERROR RECOVERY HANDLER
+# ════════════════════════════════════════════════════════════════════════════
+
+class ErrorRecoveryStrategy(Enum):
+    """Error recovery strategy."""
+    PROPAGATE = "propagate"
+    RETRY = "retry"
+    FALLBACK = "fallback"
+    IGNORE = "ignore"
+
+
+class ErrorRecoveryHandler:
+    """
+    Manages error recovery strategies.
+    
+    Determines how to handle different error types.
+    """
+    
+    def __init__(self):
+        self.strategies: Dict[type, ErrorRecoveryStrategy] = {
+            ContractViolationError: ErrorRecoveryStrategy.PROPAGATE,
+            NativeCrashError: ErrorRecoveryStrategy.PROPAGATE,
+            ConfigurationError: ErrorRecoveryStrategy.PROPAGATE
+        }
+        self.retry_counts: Dict[str, int] = {}
+        self.max_retries: int = 3
+    
+    def register_strategy(
+        self,
+        exception_type: type,
+        strategy: ErrorRecoveryStrategy
+    ) -> None:
+        """
+        Register recovery strategy for exception type.
+        
+        Args:
+            exception_type: Exception class
+            strategy: Recovery strategy
+        """
+        self.strategies[exception_type] = strategy
+    
+    def get_strategy(
+        self,
+        exception: Exception
+    ) -> ErrorRecoveryStrategy:
+        """
+        Get recovery strategy for exception.
+        
+        Args:
+            exception: Exception instance
+            
+        Returns:
+            Recovery strategy
+        """
+        exception_type = type(exception)
+        
+        # Check exact type match
+        if exception_type in self.strategies:
+            return self.strategies[exception_type]
+        
+        # Check parent classes
+        for exc_type, strategy in self.strategies.items():
+            if isinstance(exception, exc_type):
+                return strategy
+        
+        # Default: propagate
+        return ErrorRecoveryStrategy.PROPAGATE
+    
+    def should_retry(self, operation_id: str) -> bool:
+        """
+        Check if operation should be retried.
+        
+        Args:
+            operation_id: Operation identifier
+            
+        Returns:
+            True if retry allowed
+        """
+        count = self.retry_counts.get(operation_id, 0)
+        return count < self.max_retries
+    
+    def record_retry(self, operation_id: str) -> None:
+        """Record retry attempt."""
+        self.retry_counts[operation_id] = (
+            self.retry_counts.get(operation_id, 0) + 1
+        )
+    
+    def reset_retries(self, operation_id: str) -> None:
+        """Reset retry count for operation."""
+        if operation_id in self.retry_counts:
+            del self.retry_counts[operation_id]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 56: PYTHON EXCEPTION TRANSLATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonExceptionTranslator(ExceptionTranslator):
+    """
+    Python-specific exception translator.
+    
+    Translates crashes and violations into Python exception hierarchy.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.formatter = ExceptionFormatter()
+    
+    def translate_crash(
+        self,
+        crash_context: CrashContext,
+        enforcement_context: Optional[EnforcementContext] = None
+    ) -> NativeCrashError:
+        """
+        Translate crash context to Python exception.
+        
+        Args:
+            crash_context: Crash context
+            enforcement_context: Enforcement context
+            
+        Returns:
+            NativeCrashError instance
+        """
+        # Extract remediation hints
+        hints = self.extract_remediation_hints(crash_context)
+        
+        # Determine specific exception type
+        if crash_context.exception_type in [
+            'SegmentationFault', 'SIGSEGV'
+        ]:
+            return SegmentationFaultError(
+                crash_context.exception_message,
+                crash_context.faulting_address,
+                enforcement_context=enforcement_context,
+                remediation_hints=hints
+            )
+        
+        elif crash_context.exception_type in [
+            'AccessViolation', 'EXCEPTION_ACCESS_VIOLATION'
+        ]:
+            return AccessViolationError(
+                crash_context.exception_message,
+                crash_context.faulting_address,
+                enforcement_context=enforcement_context,
+                remediation_hints=hints
+            )
+        
+        else:
+            return NativeCrashError(
+                crash_context.exception_message,
+                crash_context.exception_type,
+                crash_context.faulting_address,
+                enforcement_context=enforcement_context,
+                remediation_hints=hints
+            )
+    
+    def translate_violation(
+        self,
+        violation_report: ViolationReport,
+        enforcement_context: Optional[EnforcementContext] = None
+    ) -> ContractViolationError:
+        """
+        Translate violation report to Python exception.
+        
+        Args:
+            violation_report: Violation report
+            enforcement_context: Enforcement context
+            
+        Returns:
+            ContractViolationError instance
+        """
+        clause_type_lower = violation_report.clause_type.lower()
+        
+        if 'parameter' in clause_type_lower:
+            return ParameterViolationError(
+                violation_report.message,
+                violation_report.function_name,
+                'unknown',
+                violation_report.clause_id,
+                violation_report.expected,
+                violation_report.observed,
+                enforcement_context=enforcement_context,
+                remediation_hints=violation_report.remediation_hints
+            )
+        
+        elif 'return' in clause_type_lower:
+            return ReturnValueViolationError(
+                violation_report.message,
+                violation_report.function_name,
+                violation_report.clause_id,
+                violation_report.expected,
+                violation_report.observed,
+                enforcement_context=enforcement_context,
+                remediation_hints=violation_report.remediation_hints
+            )
+        
+        elif 'ownership' in clause_type_lower:
+            return OwnershipViolationError(
+                violation_report.message,
+                violation_report.function_name,
+                violation_report.clause_id,
+                violation_report.expected,
+                violation_report.observed,
+                enforcement_context=enforcement_context,
+                remediation_hints=violation_report.remediation_hints
+            )
+        
+        else:
+            return ContractViolationError(
+                violation_report.message,
+                violation_report.function_name,
+                violation_report.clause_id,
+                violation_report.expected,
+                violation_report.observed,
+                enforcement_context=enforcement_context,
+                remediation_hints=violation_report.remediation_hints
+            )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 57: PYTHON CRASH HANDLER
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonCrashHandler(CrashIsolationBoundary):
+    """
+    Python-specific crash handler.
+    
+    Captures Python exceptions and native crashes, translating to
+    appropriate Python exception types.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.exception_translator = PythonExceptionTranslator()
+    
+    def execute_isolated(
+        self,
+        callable_func: Callable,
+        *args,
+        **kwargs
+    ) -> Tuple[bool, Any, Optional[CrashContext]]:
+        """
+        Execute callable with crash isolation.
+        
+        Args:
+            callable_func: Function to execute
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Tuple of (success, result, crash_context)
+        """
+        try:
+            result = callable_func(*args, **kwargs)
+            return (True, result, None)
+        
+        except MemoryError as e:
+            crash_ctx = CrashContext(
+                exception_type='MemoryError',
+                exception_message=str(e),
+                platform='python'
+            )
+            return (False, None, crash_ctx)
+        
+        except RecursionError as e:
+            crash_ctx = CrashContext(
+                exception_type='RecursionError',
+                exception_message=str(e),
+                platform='python'
+            )
+            return (False, None, crash_ctx)
+        
+        except OSError as e:
+            crash_ctx = CrashContext(
+                exception_type='OSError',
+                exception_message=str(e),
+                platform='python'
+            )
+            return (False, None, crash_ctx)
+        
+        except Exception as e:
+            crash_ctx = CrashContext(
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                platform='python'
+            )
+            return (False, None, crash_ctx)
