@@ -3528,6 +3528,339 @@ class ChangeAggregator:
 
 
 # ============================================================================
+# MIGRATION PATH GENERATION & UPGRADE STRATEGY PLANNING
+# ============================================================================
+class MigrationStrategy(Enum):
+    """Migration path selection strategy."""
+
+    SAFEST = "safest"
+    FASTEST = "fastest"
+    BALANCED = "balanced"
+
+
+@dataclass
+class MigrationStep:
+    """Single migration step in a path.
+    Encapsulates cost, risk, and impact for a transition between two versions.
+    """
+
+    from_version: str
+    to_version: str
+    breaking_changes: int = 0
+    total_changes: int = 0
+    affected_entities: List[str] = field(default_factory=list)
+    risk_score: float = 0.0
+    effort_estimate: float = 0.0
+
+    def get_cost(self) -> float:
+        """Calculate migration step cost based on industry heuristics."""
+        return self.breaking_changes * 10 + len(self.affected_entities) * 2 + self.risk_score * 5
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert step to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "breaking_changes": self.breaking_changes,
+            "total_changes": self.total_changes,
+            "affected_entities": self.affected_entities,
+            "risk_score": self.risk_score,
+            "effort_estimate": self.effort_estimate,
+            "cost": self.get_cost(),
+        }
+
+
+@dataclass
+class MigrationPath:
+    """Complete migration path from source to target version.
+    Contains sequence of steps and aggregated metrics.
+    """
+
+    source_version: str
+    target_version: str
+    steps: List[MigrationStep] = field(default_factory=list)
+    strategy: MigrationStrategy = MigrationStrategy.BALANCED
+
+    def get_total_cost(self) -> float:
+        """Calculate total path cost."""
+        return sum(step.get_cost() for step in self.steps)
+
+    def get_total_breaking_changes(self) -> int:
+        """Get total breaking changes across path."""
+        return sum(step.breaking_changes for step in self.steps)
+
+    def get_total_changes(self) -> int:
+        """Get total changes across path."""
+        return sum(step.total_changes for step in self.steps)
+
+    def get_step_count(self) -> int:
+        """Get number of steps in path."""
+        return len(self.steps)
+
+    def is_direct_path(self) -> bool:
+        """Check if this is a direct migration (single step)."""
+        return len(self.steps) == 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert path to dictionary summary."""
+        return {
+            "source_version": self.source_version,
+            "target_version": self.target_version,
+            "strategy": self.strategy.value,
+            "steps": [step.to_dict() for step in self.steps],
+            "total_cost": self.get_total_cost(),
+            "total_breaking_changes": self.get_total_breaking_changes(),
+            "total_changes": self.get_total_changes(),
+            "step_count": self.get_step_count(),
+            "is_direct": self.is_direct_path(),
+        }
+
+
+class MigrationPathGenerator:
+    """Generates and evaluates migration paths between versions."""
+
+    def __init__(self, version_history: VersionHistory):
+        self.history = version_history
+
+    def generate_direct_path(self, source: str, target: str) -> Optional[MigrationPath]:
+        """Generate direct migration path (single jump)."""
+        if not self._versions_exist(source, target):
+            return None
+
+        step = self._create_migration_step(source, target)
+        if step is None:
+            return None
+
+        return MigrationPath(
+            source_version=source, target_version=target, steps=[step], strategy=MigrationStrategy.FASTEST
+        )
+
+    def generate_incremental_path(self, source: str, target: str) -> Optional[MigrationPath]:
+        """Generate incremental migration path through the ancestry chain."""
+        if not self._versions_exist(source, target):
+            return None
+
+        if source == target:
+            return MigrationPath(source_version=source, target_version=target, steps=[], strategy=MigrationStrategy.SAFEST)
+
+        timeline = self.history.timeline_between(source, target)
+        if not timeline:
+            return None
+
+        steps = []
+        for from_v, to_v in timeline:
+            step = self._create_migration_step(from_v, to_v)
+            if step:
+                steps.append(step)
+
+        if not steps and source != target:
+            return None
+
+        return MigrationPath(
+            source_version=source, target_version=target, steps=steps, strategy=MigrationStrategy.SAFEST
+        )
+
+    def generate_all_paths(self, source: str, target: str, max_paths: int = 10) -> List[MigrationPath]:
+        """Generate all possible migration paths."""
+        paths = []
+
+        # Direct path
+        direct = self.generate_direct_path(source, target)
+        if direct:
+            paths.append(direct)
+
+        # Incremental path
+        incremental = self.generate_incremental_path(source, target)
+        if incremental and incremental.get_step_count() > 1:
+            paths.append(incremental)
+
+        return paths[:max_paths]
+
+    def find_optimal_path(
+        self, source: str, target: str, strategy: MigrationStrategy = MigrationStrategy.BALANCED
+    ) -> Optional[MigrationPath]:
+        """Find the optimal migration path based on strategy."""
+        paths = self.generate_all_paths(source, target)
+        if not paths:
+            if source == target:
+                return MigrationPath(source_version=source, target_version=target, steps=[], strategy=strategy)
+            return None
+
+        if strategy == MigrationStrategy.FASTEST:
+            return min(paths, key=lambda p: p.get_step_count())
+        elif strategy == MigrationStrategy.SAFEST:
+            return min(paths, key=lambda p: p.get_total_breaking_changes())
+        else:  # BALANCED
+            return min(paths, key=lambda p: p.get_total_cost())
+
+    def _versions_exist(self, source: str, target: str) -> bool:
+        """Check if both versions exist in history."""
+        return self.history.get_snapshot(source) is not None and self.history.get_snapshot(target) is not None
+
+    def _create_migration_step(self, from_version: str, to_version: str) -> Optional[MigrationStep]:
+        """Create migration step with cost and risk analysis."""
+        diff = self.history.diff_between(from_version, to_version)
+
+        if diff is None:
+            # Fallback for same version or missing data
+            return MigrationStep(
+                from_version=from_version,
+                to_version=to_version,
+                breaking_changes=0,
+                total_changes=0,
+                affected_entities=[],
+                risk_score=0.0 if from_version == to_version else 1.0,
+                effort_estimate=0.0 if from_version == to_version else 1.0,
+            )
+
+        stats = diff.get_statistics()
+        breaking_count = stats["by_severity"].get("breaking", 0)
+        total_count = stats["total_changes"]
+
+        # Calculate heuristics
+        risk_score = min(1.0, breaking_count / 10.0) if breaking_count > 0 else 0.1
+        effort_estimate = breaking_count * 2.0 + total_count * 0.5
+
+        affected_entities = [entity_diff.entity_id for entity_diff in diff.entity_diffs]
+
+        return MigrationStep(
+            from_version=from_version,
+            to_version=to_version,
+            breaking_changes=breaking_count,
+            total_changes=total_count,
+            affected_entities=affected_entities,
+            risk_score=risk_score,
+            effort_estimate=effort_estimate,
+        )
+
+
+class UpgradeRecommendation:
+    """Generates tailored upgrade recommendations based on history and risk."""
+
+    def __init__(self, path_generator: MigrationPathGenerator):
+        self.generator = path_generator
+
+    def recommend_upgrade(self, current_version: str, target_version: str) -> Dict[str, Any]:
+        """Generate a complete upgrade recommendation suite."""
+        paths = self.generator.generate_all_paths(current_version, target_version)
+
+        if not paths and current_version != target_version:
+            return {"possible": False, "reason": "No migration path found", "recommendation": None}
+
+        recommended = self.generator.find_optimal_path(current_version, target_version, MigrationStrategy.BALANCED)
+        fastest = self.generator.find_optimal_path(current_version, target_version, MigrationStrategy.FASTEST)
+        safest = self.generator.find_optimal_path(current_version, target_version, MigrationStrategy.SAFEST)
+
+        return {
+            "possible": True,
+            "recommended_path": recommended.to_dict() if recommended else None,
+            "fastest_path": fastest.to_dict() if fastest else None,
+            "safest_path": safest.to_dict() if safest else None,
+            "all_paths": [p.to_dict() for p in paths],
+            "summary": {
+                "total_paths": len(paths),
+                "recommended_steps": recommended.get_step_count() if recommended else 0,
+                "recommended_breaking_changes": recommended.get_total_breaking_changes() if recommended else 0,
+            },
+        }
+
+
+class MigrationPlanner:
+    """Plans and validates detailed migration steps."""
+
+    def __init__(self, version_history: VersionHistory, path_generator: MigrationPathGenerator):
+        self.history = version_history
+        self.generator = path_generator
+
+    def create_migration_plan(
+        self, source: str, target: str, strategy: MigrationStrategy = MigrationStrategy.BALANCED
+    ) -> Dict[str, Any]:
+        """Create a detailed migration plan with tasks."""
+        path = self.generator.find_optimal_path(source, target, strategy)
+
+        if not path:
+            return {"success": False, "error": "No migration path found"}
+
+        plan = {
+            "success": True,
+            "source_version": source,
+            "target_version": target,
+            "strategy": strategy.value,
+            "total_steps": path.get_step_count(),
+            "total_cost": path.get_total_cost(),
+            "total_breaking_changes": path.get_total_breaking_changes(),
+            "estimated_effort_hours": sum(s.effort_estimate for s in path.steps),
+            "steps": [],
+        }
+
+        for i, step in enumerate(path.steps, 1):
+            step_detail = {
+                "step_number": i,
+                "from_version": step.from_version,
+                "to_version": step.to_version,
+                "breaking_changes": step.breaking_changes,
+                "affected_entities": step.affected_entities,
+                "risk_level": self._get_risk_level(step.risk_score),
+                "estimated_effort_hours": step.effort_estimate,
+                "tasks": self._generate_tasks(step),
+            }
+            plan["steps"].append(step_detail)
+
+        return plan
+
+    def _get_risk_level(self, risk_score: float) -> str:
+        """Categorize risk score into human-readable levels."""
+        if risk_score < 0.3:
+            return "LOW"
+        elif risk_score < 0.6:
+            return "MEDIUM"
+        else:
+            return "HIGH"
+
+    def _generate_tasks(self, step: MigrationStep) -> List[str]:
+        """Generate a task list for a specific migration step."""
+        tasks = []
+
+        if step.breaking_changes > 0:
+            tasks.append(f"Review {step.breaking_changes} breaking changes")
+            tasks.append("Update binding code for breaking changes")
+
+        if step.affected_entities:
+            tasks.append(f"Update {len(step.affected_entities)} affected entities")
+
+        tasks.append("Regenerate bindings")
+        tasks.append("Run integration tests")
+        tasks.append("Update documentation")
+
+        return tasks
+
+    def validate_path(self, path: MigrationPath) -> Dict[str, Any]:
+        """Validate the viability and risk of a migration path."""
+        issues = []
+        warnings = []
+
+        for step in path.steps:
+            if step.risk_score > 0.7:
+                warnings.append(f"High risk step: {step.from_version} -> {step.to_version}")
+
+            if step.breaking_changes > 10:
+                issues.append(
+                    f"Very high breaking changes ({step.breaking_changes}) in step {step.from_version} -> {step.to_version}"
+                )
+
+        total_cost = path.get_total_cost()
+        if total_cost > 1000:
+            warnings.append(f"High total migration cost: {total_cost}")
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "warnings": warnings,
+            "risk_assessment": "HIGH" if issues else ("MEDIUM" if warnings else "LOW"),
+        }
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -3607,4 +3940,11 @@ __all__ = [
     "VersionHistory",
     "VersionHistoryBuilder",
     "ChangeAggregator",
+    # From Prompt 11
+    "MigrationStrategy",
+    "MigrationStep",
+    "MigrationPath",
+    "MigrationPathGenerator",
+    "UpgradeRecommendation",
+    "MigrationPlanner",
 ]
