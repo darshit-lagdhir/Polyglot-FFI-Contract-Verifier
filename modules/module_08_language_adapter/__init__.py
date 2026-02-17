@@ -89,6 +89,12 @@ from .language_adapter import (
     QueryEngine,
     MetadataEnricher,
     IntrospectionAPI,
+    ValidationCache,
+    PredicateCache,
+    FastPathDetector,
+    LazyEvaluator,
+    PerformanceProfiler,
+    OptimizationManager,
     __version__,
 )
 
@@ -181,5 +187,11 @@ __all__ = [
     'QueryEngine',
     'MetadataEnricher',
     'IntrospectionAPI',
+    'ValidationCache',
+    'PredicateCache',
+    'FastPathDetector',
+    'LazyEvaluator',
+    'PerformanceProfiler',
+    'OptimizationManager',
     '__version__',
 ]
