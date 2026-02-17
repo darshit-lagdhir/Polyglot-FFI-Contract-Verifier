@@ -15,7 +15,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 # ============================================================================
@@ -646,6 +646,475 @@ class SchemaUpgradeChecker:
 
 
 # ============================================================================
+# SYNTHESIS VERSION ENUMS
+# ============================================================================
+class SynthesisCompatibility(Enum):
+    """Synthesis version compatibility classifications.
+    Defines semantic relationship between synthesis versions.
+    """
+
+    IDENTICAL = "identical"
+    EQUIVALENT = "equivalent"
+    STRENGTHENING = "strengthening"
+    RELAXATION = "relaxation"
+    INCOMPATIBLE = "incompatible"
+    UNKNOWN_VERSION = "unknown_version"
+
+
+class RuleCategory(Enum):
+    """Categories of synthesis rules."""
+
+    LAYOUT = "layout"
+    NULLABILITY = "nullability"
+    OWNERSHIP = "ownership"
+    RELATIONAL = "relational"
+    CALLING_CONVENTION = "calling_convention"
+    ABI_COMPATIBILITY = "abi_compatibility"
+    ADVISORY = "advisory"
+
+
+class SynthesisVersionStatus(Enum):
+    """Synthesis version lifecycle status."""
+
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+
+
+# ============================================================================
+# SYNTHESIS RULE METADATA
+# ============================================================================
+@dataclass
+class SynthesisRuleInfo:
+    """Metadata about a specific synthesis rule.
+    Each rule has immutable identity and versioning.
+    """
+
+    rule_id: str
+    rule_version: str
+    synthesis_version_introduced: str
+    rule_category: RuleCategory
+    applies_to: List[str] = field(default_factory=list)
+    confidence_range: Tuple[float, float] = (0.0, 1.0)
+    description: str = ""
+    synthesis_version_deprecated: Optional[str] = None
+
+    def is_deprecated_in(self, synthesis_version: str) -> bool:
+        """Check if rule is deprecated in given synthesis version."""
+        if not self.synthesis_version_deprecated:
+            return False
+
+        try:
+            current = SemanticVersion(synthesis_version)
+            deprecated_at = SemanticVersion(self.synthesis_version_deprecated)
+            return current >= deprecated_at
+        except ValueError:
+            return False
+
+    def is_active_in(self, synthesis_version: str) -> bool:
+        """Check if rule is active in given synthesis version."""
+        try:
+            current = SemanticVersion(synthesis_version)
+            introduced = SemanticVersion(self.synthesis_version_introduced)
+
+            # Active if version >= introduced and not deprecated
+            if current < introduced:
+                return False
+
+            return not self.is_deprecated_in(synthesis_version)
+        except ValueError:
+            return False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "rule_id": self.rule_id,
+            "rule_version": self.rule_version,
+            "synthesis_version_introduced": self.synthesis_version_introduced,
+            "rule_category": self.rule_category.value,
+            "applies_to": self.applies_to,
+            "confidence_range": self.confidence_range,
+            "description": self.description,
+            "synthesis_version_deprecated": self.synthesis_version_deprecated,
+        }
+
+
+@dataclass
+class SynthesisVersionInfo:
+    """Metadata about a specific synthesis version.
+    Tracks which rules are active, changes from previous version, etc.
+    """
+
+    version: str
+    release_date: str
+    status: SynthesisVersionStatus
+    active_rules: List[str] = field(default_factory=list)
+    new_rules: List[str] = field(default_factory=list)
+    deprecated_rules: List[str] = field(default_factory=list)
+    changed_rules: List[str] = field(default_factory=list)
+    description: str = ""
+    deprecation_date: Optional[str] = None
+    retirement_date: Optional[str] = None
+
+    def is_active(self) -> bool:
+        """Check if version is active."""
+        return self.status == SynthesisVersionStatus.ACTIVE
+
+    def is_deprecated(self) -> bool:
+        """Check if version is deprecated."""
+        return self.status == SynthesisVersionStatus.DEPRECATED
+
+    def is_retired(self) -> bool:
+        """Check if version is retired."""
+        return self.status == SynthesisVersionStatus.RETIRED
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "release_date": self.release_date,
+            "status": self.status.value,
+            "active_rules": self.active_rules,
+            "new_rules": self.new_rules,
+            "deprecated_rules": self.deprecated_rules,
+            "changed_rules": self.changed_rules,
+            "description": self.description,
+            "deprecation_date": self.deprecation_date,
+            "retirement_date": self.retirement_date,
+        }
+
+
+# ============================================================================
+# SYNTHESIS RULE REGISTRY
+# ============================================================================
+class SynthesisRuleRegistry:
+    """Registry of all synthesis rules across all versions.
+    Provides rule lookup, version comparison, and evolution tracking.
+    """
+
+    def __init__(self):
+        self.rules: Dict[str, SynthesisRuleInfo] = {}
+        self.versions: Dict[str, SynthesisVersionInfo] = {}
+        self._initialize_builtin_rules()
+
+    def _initialize_builtin_rules(self):
+        """Initialize built-in synthesis rules and versions."""
+        # Version 1.0.0: Initial synthesis rules
+        self.register_version(
+            SynthesisVersionInfo(
+                version="1.0.0",
+                release_date="2025-01-20",
+                status=SynthesisVersionStatus.ACTIVE,
+                active_rules=[
+                    "layout_struct_v1",
+                    "nullability_pointer_default_v1",
+                    "ownership_return_caller_v1",
+                ],
+                description="Initial synthesis rule set",
+            )
+        )
+
+        # Register individual rules
+        self.register_rule(
+            SynthesisRuleInfo(
+                rule_id="layout_struct_v1",
+                rule_version="1.0.0",
+                synthesis_version_introduced="1.0.0",
+                rule_category=RuleCategory.LAYOUT,
+                applies_to=["structures", "unions"],
+                description="Generate layout clauses for structures",
+            )
+        )
+
+        self.register_rule(
+            SynthesisRuleInfo(
+                rule_id="nullability_pointer_default_v1",
+                rule_version="1.0.0",
+                synthesis_version_introduced="1.0.0",
+                rule_category=RuleCategory.NULLABILITY,
+                applies_to=["pointer_parameters", "return_values"],
+                confidence_range=(0.7, 0.9),
+                description="Default nullability inference for pointers",
+            )
+        )
+
+        self.register_rule(
+            SynthesisRuleInfo(
+                rule_id="ownership_return_caller_v1",
+                rule_version="1.0.0",
+                synthesis_version_introduced="1.0.0",
+                rule_category=RuleCategory.OWNERSHIP,
+                applies_to=["return_values"],
+                confidence_range=(0.6, 0.8),
+                description="Return value ownership defaults to caller",
+            )
+        )
+
+    def register_rule(self, rule_info: SynthesisRuleInfo):
+        """
+        Register a synthesis rule.
+        Args:
+            rule_info: Rule metadata
+        """
+        self.rules[rule_info.rule_id] = rule_info
+
+    def register_version(self, version_info: SynthesisVersionInfo):
+        """
+        Register a synthesis version.
+        Args:
+            version_info: Version metadata
+        """
+        self.versions[version_info.version] = version_info
+
+    def get_rule(self, rule_id: str) -> Optional[SynthesisRuleInfo]:
+        """Get rule metadata by ID."""
+        return self.rules.get(rule_id)
+
+    def get_version_info(self, version: str) -> Optional[SynthesisVersionInfo]:
+        """Get version metadata."""
+        return self.versions.get(version)
+
+    def get_active_rules_for_version(self, version: str) -> List[SynthesisRuleInfo]:
+        """
+        Get all active rules for a synthesis version.
+        Args:
+            version: Synthesis version string
+        Returns:
+            List of active rules in that version
+        """
+        rules = []
+        for rule_info in self.rules.values():
+            if rule_info.is_active_in(version):
+                rules.append(rule_info)
+        return rules
+
+    def get_rules_by_category(self, version: str, category: RuleCategory) -> List[SynthesisRuleInfo]:
+        """Get all rules in a category for a version."""
+        active_rules = self.get_active_rules_for_version(version)
+        return [r for r in active_rules if r.rule_category == category]
+
+    def is_known_version(self, version: str) -> bool:
+        """Check if synthesis version is registered."""
+        return version in self.versions
+
+
+# ============================================================================
+# SYNTHESIS COMPATIBILITY DETECTOR
+# ============================================================================
+class SynthesisCompatibilityDetector:
+    """Detects compatibility between synthesis versions.
+    Analyzes rule set changes to classify semantic drift.
+    """
+
+    def __init__(self, registry: Optional[SynthesisRuleRegistry] = None):
+        """
+        Initialize detector.
+        Args:
+            registry: Optional synthesis rule registry
+        """
+        self.registry = registry or SynthesisRuleRegistry()
+
+    def detect_compatibility(self, version1: str, version2: str) -> SynthesisCompatibility:
+        """
+        Detect compatibility between synthesis versions.
+        Args:
+            version1: First synthesis version
+            version2: Second synthesis version
+        Returns:
+            SynthesisCompatibility classification
+        """
+        # Step 1: Check if versions are known
+        if not self.registry.is_known_version(version1):
+            return SynthesisCompatibility.UNKNOWN_VERSION
+        if not self.registry.is_known_version(version2):
+            return SynthesisCompatibility.UNKNOWN_VERSION
+
+        # Step 2: Parse versions
+        try:
+            v1 = SemanticVersion(version1)
+            v2 = SemanticVersion(version2)
+        except ValueError:
+            return SynthesisCompatibility.UNKNOWN_VERSION
+
+        # Step 3: Check if identical
+        if v1 == v2:
+            return SynthesisCompatibility.IDENTICAL
+
+        # Step 4: Check MAJOR version difference
+        if v1.major != v2.major:
+            return SynthesisCompatibility.INCOMPATIBLE
+
+        # Step 5: Load rule sets
+        rules_v1 = set(r.rule_id for r in self.registry.get_active_rules_for_version(version1))
+        rules_v2 = set(r.rule_id for r in self.registry.get_active_rules_for_version(version2))
+
+        # Step 6: Compare rule sets
+        added_rules = rules_v2 - rules_v1
+        removed_rules = rules_v1 - rules_v2
+
+        # Step 7: Classify change direction
+        if added_rules and not removed_rules:
+            # Only additions → strengthening
+            return SynthesisCompatibility.STRENGTHENING
+
+        if removed_rules:
+            # Any removals → relaxation (requires review)
+            return SynthesisCompatibility.RELAXATION
+
+        if not added_rules and not removed_rules:
+            # Same rule set → equivalent
+            return SynthesisCompatibility.EQUIVALENT
+
+        # Default
+        return SynthesisCompatibility.EQUIVALENT
+
+    def is_safe_upgrade(self, from_version: str, to_version: str) -> bool:
+        """
+        Check if upgrade is safe without review.
+        Args:
+            from_version: Current version
+            to_version: Target version
+        Returns:
+            True if safe upgrade
+        """
+        compatibility = self.detect_compatibility(from_version, to_version)
+
+        return compatibility in [
+            SynthesisCompatibility.IDENTICAL,
+            SynthesisCompatibility.EQUIVALENT,
+            SynthesisCompatibility.STRENGTHENING,
+        ]
+
+    def requires_review(self, from_version: str, to_version: str) -> bool:
+        """
+        Check if version change requires manual review.
+        Args:
+            from_version: Current version
+            to_version: Target version
+        Returns:
+            True if manual review required
+        """
+        compatibility = self.detect_compatibility(from_version, to_version)
+
+        return compatibility in [SynthesisCompatibility.RELAXATION, SynthesisCompatibility.INCOMPATIBLE]
+
+
+# ============================================================================
+# SYNTHESIS EVOLUTION TRACKER
+# ============================================================================
+@dataclass
+class SynthesisEvolutionEvent:
+    """Records a synthesis evolution event.
+    Tracks changes to synthesis rules over time.
+    """
+
+    event_id: str
+    event_type: str  # "rule_added", "rule_deprecated", "confidence_adjusted", etc.
+    synthesis_version: str
+    timestamp: str
+    affected_rules: List[str] = field(default_factory=list)
+    description: str = ""
+    impact_assessment: str = ""  # "strengthening", "relaxation", etc.
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "synthesis_version": self.synthesis_version,
+            "timestamp": self.timestamp,
+            "affected_rules": self.affected_rules,
+            "description": self.description,
+            "impact_assessment": self.impact_assessment,
+        }
+
+
+class SynthesisEvolutionTracker:
+    """Tracks evolution of synthesis rules over time.
+    Maintains log of all changes to synthesis versions.
+    """
+
+    def __init__(self):
+        self.events: List[SynthesisEvolutionEvent] = []
+
+    def record_event(self, event: SynthesisEvolutionEvent):
+        """
+        Record a synthesis evolution event.
+        Args:
+            event: Evolution event to record
+        """
+        self.events.append(event)
+
+    def get_events_for_version(self, version: str) -> List[SynthesisEvolutionEvent]:
+        """Get all events for a specific version."""
+        return [e for e in self.events if e.synthesis_version == version]
+
+    def get_events_by_type(self, event_type: str) -> List[SynthesisEvolutionEvent]:
+        """Get all events of a specific type."""
+        return [e for e in self.events if e.event_type == event_type]
+
+    def get_timeline(self) -> List[SynthesisEvolutionEvent]:
+        """Get chronological timeline of all events."""
+        return sorted(self.events, key=lambda e: e.timestamp)
+
+
+# ============================================================================
+# DETERMINISM VERIFIER
+# ============================================================================
+class SynthesisDeterminismVerifier:
+    """Verifies deterministic synthesis reproduction.
+    Ensures identical inputs produce identical outputs.
+    """
+
+    def verify_determinism(
+        self,
+        ir_fingerprint: str,
+        synthesis_version: str,
+        schema_version: str,
+        contract_fingerprint1: str,
+        contract_fingerprint2: str,
+    ) -> bool:
+        """
+        Verify two synthesis runs produced identical results.
+        Args:
+            ir_fingerprint: IR artifact fingerprint
+            synthesis_version: Synthesis version used
+            schema_version: Schema version used
+            contract_fingerprint1: First contract fingerprint
+            contract_fingerprint2: Second contract fingerprint
+        Returns:
+            True if deterministic (fingerprints match)
+        """
+        return contract_fingerprint1 == contract_fingerprint2
+
+    def compute_expected_fingerprint(
+        self, ir_fingerprint: str, synthesis_version: str, schema_version: str
+    ) -> str:
+        """
+        Compute expected contract fingerprint deterministically.
+        This is a placeholder - actual implementation would use
+        synthesis engine to regenerate contract.
+        Args:
+            ir_fingerprint: IR fingerprint
+            synthesis_version: Synthesis version
+            schema_version: Schema version
+        Returns:
+            Expected contract fingerprint
+        """
+        # In real implementation, this would:
+        # 1. Load IR from fingerprint
+        # 2. Load synthesis rules for version
+        # 3. Run synthesis
+        # 4. Return contract fingerprint
+
+        # For now, return placeholder
+        import hashlib
+
+        data = f"{ir_fingerprint}:{synthesis_version}:{schema_version}"
+        return hashlib.sha256(data.encode()).hexdigest()
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -663,4 +1132,15 @@ __all__ = [
     "SchemaMigrationPath",
     "SchemaMigrationRegistry",
     "SchemaUpgradeChecker",
+    # From Prompt 3
+    "SynthesisCompatibility",
+    "RuleCategory",
+    "SynthesisVersionStatus",
+    "SynthesisRuleInfo",
+    "SynthesisVersionInfo",
+    "SynthesisRuleRegistry",
+    "SynthesisCompatibilityDetector",
+    "SynthesisEvolutionEvent",
+    "SynthesisEvolutionTracker",
+    "SynthesisDeterminismVerifier",
 ]

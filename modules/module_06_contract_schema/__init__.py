@@ -104,7 +104,7 @@ from .contract_validation import (
     ValidationLayer,
 )
 
-# Versioning (Prompt 1 & 2/20)
+# Versioning (Prompt 1, 2 & 3/20)
 from .contract_versioning import (
     # Identity (Prompt 1)
     ContractVersionMetadata,
@@ -121,6 +121,17 @@ from .contract_versioning import (
     SchemaMigrationPath,
     SchemaMigrationRegistry,
     SchemaUpgradeChecker,
+    # Synthesis (Prompt 3)
+    SynthesisCompatibility,
+    RuleCategory,
+    SynthesisVersionStatus,
+    SynthesisRuleInfo,
+    SynthesisVersionInfo,
+    SynthesisRuleRegistry,
+    SynthesisCompatibilityDetector,
+    SynthesisEvolutionEvent,
+    SynthesisEvolutionTracker,
+    SynthesisDeterminismVerifier,
     # Change tracking (Pending re-implementation in later prompts)
     # ChangeType,
     # CompatibilityImpact,
@@ -312,7 +323,7 @@ __all__ = [
     "ValidationError",
     "ValidationWarning",
     "ValidationLayer",
-    # Versioning (Prompt 1 & 2)
+    # Versioning (Prompt 1, 2 & 3)
     "ContractVersionMetadata",
     "ContractFingerprintComputer",
     "VersionIdentityManager",
@@ -325,6 +336,16 @@ __all__ = [
     "SchemaMigrationPath",
     "SchemaMigrationRegistry",
     "SchemaUpgradeChecker",
+    "SynthesisCompatibility",
+    "RuleCategory",
+    "SynthesisVersionStatus",
+    "SynthesisRuleInfo",
+    "SynthesisVersionInfo",
+    "SynthesisRuleRegistry",
+    "SynthesisCompatibilityDetector",
+    "SynthesisEvolutionEvent",
+    "SynthesisEvolutionTracker",
+    "SynthesisDeterminismVerifier",
     # "ChangeType",
     # "CompatibilityImpact",
     # "ContractChange",
