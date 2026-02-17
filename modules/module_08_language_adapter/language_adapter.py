@@ -5268,3 +5268,490 @@ class PythonCrashHandler(CrashIsolationBoundary):
                 platform='python'
             )
             return (False, None, crash_ctx)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 58: ENFORCEMENT SCOPE
+# ════════════════════════════════════════════════════════════════════════════
+
+class EnforcementScope:
+    """
+    Context manager for FFI invocation with automatic resource management.
+    
+    Ensures buffers are pinned, references held, and cleanup occurs even
+    on exception paths.
+    """
+    
+    def __init__(
+        self,
+        adapter: 'PythonAdapter',
+        function_name: str
+    ):
+        """
+        Initialize enforcement scope.
+        
+        Args:
+            adapter: PythonAdapter instance
+            function_name: Function to invoke
+        """
+        self.adapter = adapter
+        self.function_name = function_name
+        self.context: Optional[EnforcementContext] = None
+        self.buffers: List[Any] = []
+        self.wrappers: List[PythonPointerWrapper] = []
+        self.active = False
+    
+    def __enter__(self) -> 'EnforcementScope':
+        """Enter context - setup resources."""
+        self.context = self.adapter.create_enforcement_context(
+            self.function_name
+        )
+        self.active = True
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context - cleanup resources."""
+        self.active = False
+        
+        # Cleanup wrappers and buffers
+        for wrapper in self.wrappers:
+            try:
+                if wrapper.is_valid() and wrapper.python_object is not None:
+                    self.adapter.memory_manager.buffer_pinner.unpin_buffer(
+                        wrapper.address
+                    )
+                    self.adapter.memory_manager.reference_holder.release(
+                        wrapper.python_object
+                    )
+            except Exception:
+                pass  # Best effort cleanup
+        
+        self.buffers.clear()
+        self.wrappers.clear()
+        
+        # Don't suppress exceptions
+        return False
+    
+    def add_buffer(self, buffer_obj: Any) -> PythonPointerWrapper:
+        """
+        Add buffer to scope.
+        
+        Args:
+            buffer_obj: Python buffer object
+            
+        Returns:
+            PythonPointerWrapper for buffer
+        """
+        wrapper = self.adapter.memory_manager.wrap_buffer(buffer_obj)
+        self.buffers.append(buffer_obj)
+        self.wrappers.append(wrapper)
+        return wrapper
+    
+    def invoke(self, *args) -> Any:
+        """
+        Invoke function within scope.
+        
+        Args:
+            *args: Function arguments
+            
+        Returns:
+            Function result
+        """
+        if not self.active:
+            raise RuntimeError("EnforcementScope not active")
+        
+        return self.adapter.call(self.function_name, *args)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 59: DIAGNOSTIC COLLECTOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class DiagnosticCollector:
+    """
+    Collects diagnostic information during enforcement.
+    
+    Aggregates traces, timings, and decision logs for debugging.
+    """
+    
+    def __init__(self):
+        self.traces: List[Dict[str, Any]] = []
+        self.timings: Dict[str, float] = {}
+        self.decisions: List[Dict[str, Any]] = []
+        self.enabled = False
+    
+    def enable(self) -> None:
+        """Enable diagnostic collection."""
+        self.enabled = True
+    
+    def disable(self) -> None:
+        """Disable diagnostic collection."""
+        self.enabled = False
+    
+    def record_trace(
+        self,
+        phase: str,
+        message: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Record trace message.
+        
+        Args:
+            phase: Pipeline phase
+            message: Trace message
+            metadata: Optional metadata
+        """
+        if not self.enabled:
+            return
+        
+        self.traces.append({
+            'phase': phase,
+            'message': message,
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'metadata': metadata or {}
+        })
+    
+    def record_timing(
+        self,
+        operation: str,
+        duration_ms: float
+    ) -> None:
+        """
+        Record operation timing.
+        
+        Args:
+            operation: Operation name
+            duration_ms: Duration in milliseconds
+        """
+        if not self.enabled:
+            return
+        
+        if operation in self.timings:
+            self.timings[operation] += duration_ms
+        else:
+            self.timings[operation] = duration_ms
+    
+    def record_decision(
+        self,
+        clause_id: str,
+        decision: bool,
+        reason: str
+    ) -> None:
+        """
+        Record validation decision.
+        
+        Args:
+            clause_id: Clause identifier
+            decision: Validation result
+            reason: Decision reason
+        """
+        if not self.enabled:
+            return
+        
+        self.decisions.append({
+            'clause_id': clause_id,
+            'decision': 'pass' if decision else 'fail',
+            'reason': reason,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+    
+    def get_report(self) -> Dict[str, Any]:
+        """Get diagnostic report."""
+        return {
+            'traces': self.traces,
+            'timings': self.timings,
+            'decisions': self.decisions,
+            'total_traces': len(self.traces),
+            'total_operations': len(self.timings),
+            'total_time_ms': sum(self.timings.values())
+        }
+    
+    def clear(self) -> None:
+        """Clear all collected diagnostics."""
+        self.traces.clear()
+        self.timings.clear()
+        self.decisions.clear()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 60: PYTHON INVOCATION PIPELINE
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonInvocationPipeline:
+    """
+    Complete Python FFI invocation pipeline.
+    
+    Orchestrates normalization, validation, invocation, and cleanup
+    with full diagnostic and exception support.
+    """
+    
+    def __init__(
+        self,
+        adapter: 'PythonAdapter'
+    ):
+        """
+        Initialize pipeline.
+        
+        Args:
+            adapter: PythonAdapter instance
+        """
+        self.adapter = adapter
+        self.diagnostics = DiagnosticCollector()
+    
+    def execute(
+        self,
+        function_name: str,
+        inputs: List[Any],
+        native_callable: Optional[Callable] = None
+    ) -> Any:
+        """
+        Execute complete invocation pipeline.
+        
+        Args:
+            function_name: Function name
+            inputs: Input arguments
+            native_callable: Optional native callable (for testing)
+            
+        Returns:
+            Function result
+            
+        Raises:
+            ContractViolationError: If validation fails
+            NativeCrashError: If native code crashes
+        """
+        start_time = datetime.utcnow()
+        
+        # Create enforcement context
+        context = self.adapter.create_enforcement_context(function_name)
+        
+        self.diagnostics.record_trace(
+            'setup',
+            f'Starting invocation of {function_name}',
+            {'input_count': len(inputs)}
+        )
+        
+        try:
+            # Phase 1: Normalization
+            norm_start = datetime.utcnow()
+            normalized = self.adapter.normalizer.normalize_inputs(inputs)
+            norm_duration = (
+                (datetime.utcnow() - norm_start).total_seconds() * 1000
+            )
+            
+            self.diagnostics.record_timing('normalization', norm_duration)
+            self.diagnostics.record_trace(
+                'normalization',
+                f'Normalized {len(inputs)} inputs',
+                {'duration_ms': norm_duration}
+            )
+            
+            # Phase 2: Buffer pinning
+            pin_start = datetime.utcnow()
+            for inp in inputs:
+                if isinstance(inp, (bytes, bytearray, memoryview)):
+                    self.adapter.memory_manager.wrap_buffer(inp)
+            pin_duration = (
+                (datetime.utcnow() - pin_start).total_seconds() * 1000
+            )
+            
+            self.diagnostics.record_timing('buffer_pinning', pin_duration)
+            
+            # Phase 3: Pre-call validation
+            graph = self.adapter.get_validation_graph(function_name)
+            if graph:
+                val_start = datetime.utcnow()
+                valid = self.adapter.validation_engine.validate(
+                    graph, normalized, context
+                )
+                val_duration = (
+                    (datetime.utcnow() - val_start).total_seconds() * 1000
+                )
+                
+                self.diagnostics.record_timing('validation', val_duration)
+                
+                if not valid:
+                    # Find the failing validation result
+                    for result in context.validation_results:
+                        if result['status'] == 'fail':
+                            report = ViolationReport(
+                                function_name,
+                                result['clause_id'],
+                                'unknown',
+                                ClauseSeverity.MANDATORY,
+                                'validation pass',
+                                'validation fail',
+                                result.get('message', ''),
+                                self.adapter.contract_fingerprint or '',
+                                result['timestamp']
+                            )
+                            raise (
+                                self.adapter.exception_translator
+                                .translate_violation(report, context)
+                            )
+            
+            # Phase 4: Native invocation
+            if native_callable:
+                invoke_start = datetime.utcnow()
+                result = native_callable(*normalized)
+                invoke_duration = (
+                    (datetime.utcnow() - invoke_start).total_seconds() * 1000
+                )
+                self.diagnostics.record_timing('invocation', invoke_duration)
+            else:
+                result = None
+            
+            # Phase 5: Cleanup
+            self.adapter.memory_manager.cleanup()
+            
+            total_duration = (
+                (datetime.utcnow() - start_time).total_seconds() * 1000
+            )
+            self.diagnostics.record_timing('total', total_duration)
+            
+            context.finalize()
+            
+            return result
+            
+        except Exception as e:
+            # Record exception
+            self.diagnostics.record_trace(
+                'exception',
+                f'Exception during invocation: {type(e).__name__}',
+                {'message': str(e)}
+            )
+            
+            # Cleanup on error
+            try:
+                self.adapter.memory_manager.cleanup()
+            except Exception:
+                pass
+            
+            raise
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 61: COMPLETE PYTHON ADAPTER
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonAdapterComplete(PythonAdapter):
+    """
+    Complete, production-ready Python FFI adapter.
+    
+    Integrates all Python specialization components with full
+    enforcement pipeline, diagnostics, and exception handling.
+    """
+    
+    def __init__(
+        self,
+        config: Optional[AdapterConfig] = None,
+        ffi_mode: str = 'ctypes'
+    ):
+        """
+        Initialize complete Python adapter.
+        
+        Args:
+            config: Adapter configuration
+            ffi_mode: FFI mechanism ('ctypes' or 'cffi')
+        """
+        super().__init__(config, ffi_mode)
+        
+        # Initialize pipeline
+        self.pipeline = PythonInvocationPipeline(self)
+        
+        # Configuration flags
+        self.enable_diagnostics = False
+    
+    def enable_diagnostic_mode(self) -> None:
+        """Enable diagnostic collection."""
+        self.enable_diagnostics = True
+        self.pipeline.diagnostics.enable()
+    
+    def disable_diagnostic_mode(self) -> None:
+        """Disable diagnostic collection."""
+        self.enable_diagnostics = False
+        self.pipeline.diagnostics.disable()
+    
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get collected diagnostics."""
+        return self.pipeline.diagnostics.get_report()
+    
+    def clear_diagnostics(self) -> None:
+        """Clear diagnostic history."""
+        self.pipeline.diagnostics.clear()
+    
+    def enforcement_scope(
+        self,
+        function_name: str
+    ) -> EnforcementScope:
+        """
+        Create enforcement scope for function.
+        
+        Args:
+            function_name: Function name
+            
+        Returns:
+            EnforcementScope context manager
+        """
+        return EnforcementScope(self, function_name)
+    
+    def call_with_enforcement(
+        self,
+        function_name: str,
+        *args,
+        native_callable: Optional[Callable] = None
+    ) -> Any:
+        """
+        Call function with full enforcement pipeline.
+        
+        Args:
+            function_name: Function name
+            *args: Function arguments
+            native_callable: Optional native callable
+            
+        Returns:
+            Function result
+            
+        Raises:
+            ContractViolationError: If validation fails
+            NativeCrashError: If native crashes
+        """
+        return self.pipeline.execute(
+            function_name,
+            list(args),
+            native_callable
+        )
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Get adapter statistics.
+        
+        Returns:
+            Statistics dictionary
+        """
+        return {
+            'loaded_functions': len(self.validation_graphs),
+            'ffi_mode': self.ffi_mode,
+            'diagnostics_enabled': self.enable_diagnostics,
+            'memory_stats': self.memory_manager.get_statistics()
+        }
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get performance metrics.
+        
+        Returns:
+            Performance metrics dictionary
+        """
+        diag = self.get_diagnostics()
+        
+        return {
+            'total_invocations': diag.get('total_operations', 0),
+            'total_time_ms': diag.get('total_time_ms', 0),
+            'average_time_ms': (
+                diag.get('total_time_ms', 0) /
+                max(1, diag.get('total_operations', 1))
+            ),
+            'timing_breakdown': diag.get('timings', {}),
+            'memory_stats': self.memory_manager.get_statistics()
+        }

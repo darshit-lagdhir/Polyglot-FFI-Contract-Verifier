@@ -73,6 +73,10 @@ from .language_adapter import (
     ErrorRecoveryHandler,
     PythonExceptionTranslator,
     PythonCrashHandler,
+    EnforcementScope,
+    DiagnosticCollector,
+    PythonInvocationPipeline,
+    PythonAdapterComplete,
     __version__,
 )
 
@@ -149,5 +153,9 @@ __all__ = [
     'ErrorRecoveryHandler',
     'PythonExceptionTranslator',
     'PythonCrashHandler',
+    'EnforcementScope',
+    'DiagnosticCollector',
+    'PythonInvocationPipeline',
+    'PythonAdapterComplete',
     '__version__',
 ]
