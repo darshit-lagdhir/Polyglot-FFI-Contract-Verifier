@@ -1151,6 +1151,8 @@ class InvocationOrchestrator:
         self.ownership_registry = ownership_registry
         self.config = config or PipelineConfig()
         self.normalizer = NormalizationInterface()
+        self.crash_boundary = CrashIsolationBoundary()
+        self.exception_translator = ExceptionTranslator()
         self.phase_results: List[PhaseResult] = []
     
     def execute_pipeline(
@@ -1324,22 +1326,48 @@ class InvocationOrchestrator:
     def _phase_native_invocation(
         self,
         function_name: str,
-        inputs: List[Any]
+        inputs: List[Any],
+        native_callable: Optional[Callable] = None
     ) -> PhaseResult:
-        """Execute native invocation phase (simulated)."""
+        """Execute native invocation with crash isolation."""
         start = datetime.utcnow()
         
-        # Simulated invocation - real implementation in Python specialization
-        result = {'simulated': True, 'function': function_name}
+        if native_callable is None:
+            # Simulated invocation for testing
+            native_callable = lambda *args: {'simulated': True, 'function': function_name}
+        
+        # Execute with crash isolation
+        success, result, crash_ctx = self.crash_boundary.execute_isolated(
+            native_callable,
+            *inputs
+        )
         
         duration = (datetime.utcnow() - start).total_seconds() * 1000
         
-        return PhaseResult(
-            phase_name='native_invocation',
-            success=True,
-            duration_ms=duration,
-            diagnostics={'result': result}
-        )
+        if success:
+            return PhaseResult(
+                phase_name='native_invocation',
+                success=True,
+                duration_ms=duration,
+                diagnostics={'result': result}
+            )
+        else:
+            # Crash occurred
+            crash_ctx.function_name = function_name
+            crash_ctx.normalized_inputs = inputs
+            
+            hints = self.exception_translator.extract_remediation_hints(crash_ctx)
+            
+            return PhaseResult(
+                phase_name='native_invocation',
+                success=False,
+                duration_ms=duration,
+                diagnostics={
+                    'crash_context': crash_ctx.to_dict(),
+                    'remediation_hints': hints,
+                    'recoverable': self.crash_boundary.is_crash_recoverable(crash_ctx)
+                }
+            )
     
     def _phase_post_validation(self, result: Any) -> PhaseResult:
         """Execute post-call validation phase."""
@@ -1447,6 +1475,75 @@ class InvocationOrchestrator:
             context
         )
 
+    def invoke_with_enforcement_and_exceptions(
+        self,
+        function_name: str,
+        inputs: List[Any],
+        native_callable: Optional[Callable] = None
+    ) -> Any:
+        """
+        Invoke function with enforcement and exception raising.
+        
+        Args:
+            function_name: Function name
+            inputs: Input values
+            native_callable: Optional native function (for testing)
+            
+        Returns:
+            Native function result
+            
+        Raises:
+            ContractViolationException: If validation fails
+            NativeCrashException: If native invocation crashes
+        """
+        result = self.invoke_with_enforcement(function_name, inputs)
+        
+        if not result['success']:
+            # Check if crash or violation
+            failed_phase = result.get('failed_phase')
+            
+            if failed_phase == 'native_invocation':
+                # Native crash
+                phases = result['phases']
+                native_phase = next(
+                    (p for p in phases if p['phase_name'] == 'native_invocation'),
+                    None
+                )
+                
+                if native_phase and 'crash_context' in native_phase['diagnostics']:
+                    crash_dict = native_phase['diagnostics']['crash_context']
+                    crash_ctx = CrashContext(
+                        exception_type=crash_dict['exception_type'],
+                        exception_message=crash_dict.get('exception_message', ''),
+                        function_name=crash_dict['function_name']
+                    )
+                    
+                    raise self.orchestrator.exception_translator.translate_crash(
+                        crash_ctx,
+                        EnforcementContext(function_name, result['context']['invocation_id'])
+                    )
+            
+            # Contract violation
+            phases = result['phases']
+            for phase in phases:
+                if phase['violations']:
+                    violation_dict = phase['violations'][0]
+                    violation = ViolationReport(
+                        function_name=violation_dict['function_name'],
+                        clause_id=violation_dict['clause_id'],
+                        clause_type=violation_dict['clause_type'],
+                        severity=ClauseSeverity(violation_dict['severity']),
+                        expected=violation_dict['expected'],
+                        observed=violation_dict['observed'],
+                        message=violation_dict['message'],
+                        contract_fingerprint=violation_dict['contract_fingerprint'],
+                        timestamp=violation_dict['timestamp']
+                    )
+                    
+                    raise self.orchestrator.exception_translator.translate_violation(violation)
+        
+        return result.get('result')
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get adapter statistics."""
         return {
@@ -1455,3 +1552,308 @@ class InvocationOrchestrator:
             'loaded_functions': len(self.validation_graphs),
             'ownership': self.ownership_registry.get_statistics()
         }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 17: CRASH CONTEXT
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class CrashContext:
+    """
+    Diagnostic information captured from native crash.
+    
+    Contains exception details, faulting address, function context,
+    and other crash-specific diagnostics.
+    """
+    
+    exception_type: str
+    exception_code: Optional[int] = None
+    exception_message: str = ""
+    faulting_address: Optional[int] = None
+    function_name: str = ""
+    normalized_inputs: List[Any] = field(default_factory=list)
+    stack_trace: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat() + 'Z')
+    platform: str = "unknown"
+    additional_info: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'exception_type': self.exception_type,
+            'exception_code': self.exception_code,
+            'exception_message': self.exception_message,
+            'faulting_address': hex(self.faulting_address) if self.faulting_address is not None else None,
+            'function_name': self.function_name,
+            'normalized_inputs_count': len(self.normalized_inputs),
+            'stack_trace': self.stack_trace,
+            'timestamp': self.timestamp,
+            'platform': self.platform,
+            'additional_info': self.additional_info
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 18: EXCEPTION TYPES
+# ════════════════════════════════════════════════════════════════════════════
+
+class ContractViolationException(Exception):
+    """
+    Exception raised when contract validation fails.
+    
+    Contains violation report and enforcement context for debugging.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        violation_report: ViolationReport,
+        enforcement_context: Optional[EnforcementContext] = None
+    ):
+        super().__init__(message)
+        self.violation_report = violation_report
+        self.enforcement_context = enforcement_context
+    
+    def __str__(self) -> str:
+        """String representation."""
+        parts = [
+            f"Contract Violation: {self.args[0]}",
+            f"Function: {self.violation_report.function_name}",
+            f"Clause: {self.violation_report.clause_id}",
+            f"Expected: {self.violation_report.expected}",
+            f"Observed: {self.violation_report.observed}"
+        ]
+        return '\n'.join(parts)
+
+
+class NativeCrashException(Exception):
+    """
+    Exception raised when native invocation crashes.
+    
+    Contains crash context and diagnostic information.
+    """
+    
+    def __init__(
+        self,
+        message: str,
+        crash_context: CrashContext,
+        enforcement_context: Optional[EnforcementContext] = None
+    ):
+        super().__init__(message)
+        self.crash_context = crash_context
+        self.enforcement_context = enforcement_context
+    
+    def __str__(self) -> str:
+        """String representation."""
+        parts = [
+            f"Native Crash: {self.args[0]}",
+            f"Exception Type: {self.crash_context.exception_type}",
+            f"Function: {self.crash_context.function_name}",
+        ]
+        
+        if self.crash_context.exception_code is not None:
+            parts.append(f"Exception Code: 0x{self.crash_context.exception_code:08X}")
+        
+        if self.crash_context.faulting_address is not None:
+            parts.append(f"Faulting Address: {hex(self.crash_context.faulting_address)}")
+        
+        return '\n'.join(parts)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 19: CRASH ISOLATION BOUNDARY
+# ════════════════════════════════════════════════════════════════════════════
+
+class CrashIsolationBoundary:
+    """
+    Platform-neutral crash isolation interface.
+    
+    Provides abstraction for capturing native crashes across platforms.
+    Concrete implementations handle platform-specific details.
+    """
+    
+    def __init__(self):
+        self.enabled = True
+        self.crash_handler_installed = False
+    
+    def install_crash_handler(self) -> bool:
+        """
+        Install platform-specific crash handler.
+        
+        Returns:
+            True if handler installed successfully, False otherwise
+        """
+        # Platform-specific implementation in subclasses
+        self.crash_handler_installed = True
+        return True
+    
+    def uninstall_crash_handler(self) -> bool:
+        """
+        Uninstall crash handler.
+        
+        Returns:
+            True if handler uninstalled successfully
+        """
+        self.crash_handler_installed = False
+        return True
+    
+    def execute_isolated(
+        self,
+        callable_func: Callable,
+        *args,
+        **kwargs
+    ) -> Tuple[bool, Any, Optional[CrashContext]]:
+        """
+        Execute callable with crash isolation.
+        
+        Args:
+            callable_func: Function to execute
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Tuple of (success, result, crash_context)
+            - success: True if no crash, False if crash occurred
+            - result: Return value if successful, None if crash
+            - crash_context: CrashContext if crash, None otherwise
+        """
+        if not self.enabled:
+            # No isolation, direct call
+            try:
+                result = callable_func(*args, **kwargs)
+                return (True, result, None)
+            except Exception as e:
+                crash_ctx = CrashContext(
+                    exception_type=type(e).__name__,
+                    exception_message=str(e),
+                    platform='python'
+                )
+                return (False, None, crash_ctx)
+        
+        # With isolation (simulated for base class)
+        try:
+            result = callable_func(*args, **kwargs)
+            return (True, result, None)
+        except Exception as e:
+            # Convert to crash context
+            crash_ctx = CrashContext(
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                platform='python'
+            )
+            return (False, None, crash_ctx)
+    
+    def is_crash_recoverable(self, crash_context: CrashContext) -> bool:
+        """
+        Check if crash is recoverable.
+        
+        Some crashes (like assertion failures) may allow recovery,
+        while others (like stack corruption) do not.
+        
+        Args:
+            crash_context: Crash context to analyze
+            
+        Returns:
+            True if recovery possible, False otherwise
+        """
+        # Most crashes are not recoverable
+        unrecoverable = [
+            'StackCorruption',
+            'StackOverflow',
+            'OutOfMemory'
+        ]
+        
+        return crash_context.exception_type not in unrecoverable
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 20: EXCEPTION TRANSLATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class ExceptionTranslator:
+    """
+    Translates native crashes and contract violations into foreign exceptions.
+    
+    Converts crash contexts and violation reports into appropriate exception
+    types for the foreign runtime.
+    """
+    
+    def translate_crash(
+        self,
+        crash_context: CrashContext,
+        enforcement_context: Optional[EnforcementContext] = None
+    ) -> NativeCrashException:
+        """
+        Translate crash context to exception.
+        
+        Args:
+            crash_context: Captured crash context
+            enforcement_context: Optional enforcement context
+            
+        Returns:
+            NativeCrashException instance
+        """
+        message = f"Native crash in {crash_context.function_name}: {crash_context.exception_message}"
+        
+        return NativeCrashException(
+            message,
+            crash_context,
+            enforcement_context
+        )
+    
+    def translate_violation(
+        self,
+        violation_report: ViolationReport,
+        enforcement_context: Optional[EnforcementContext] = None
+    ) -> ContractViolationException:
+        """
+        Translate violation report to exception.
+        
+        Args:
+            violation_report: Violation report
+            enforcement_context: Optional enforcement context
+            
+        Returns:
+            ContractViolationException instance
+        """
+        message = f"Contract violation in {violation_report.function_name}: {violation_report.message}"
+        
+        return ContractViolationException(
+            message,
+            violation_report,
+            enforcement_context
+        )
+    
+    def extract_remediation_hints(
+        self,
+        crash_context: CrashContext
+    ) -> List[str]:
+        """
+        Extract remediation hints from crash context.
+        
+        Args:
+            crash_context: Crash context to analyze
+            
+        Returns:
+            List of remediation hints
+        """
+        hints = []
+        
+        if crash_context.exception_type == 'NullPointerException':
+            hints.append("Check that pointer parameters are not null")
+            hints.append("Verify buffer allocation before passing to function")
+        
+        if crash_context.exception_type == 'AccessViolation':
+            hints.append("Verify buffer size matches size parameter")
+            hints.append("Check pointer validity and alignment")
+        
+        if crash_context.exception_type == 'StackOverflow':
+            hints.append("Reduce recursion depth")
+            hints.append("Check for infinite recursion")
+        
+        if crash_context.faulting_address == 0:
+            hints.append("Null pointer dereference detected")
+            hints.append("Ensure pointer is initialized before use")
+        
+        return hints

@@ -20,6 +20,11 @@ from .language_adapter import (
     PipelineConfig,
     NormalizationInterface,
     InvocationOrchestrator,
+    CrashContext,
+    ContractViolationException,
+    NativeCrashException,
+    CrashIsolationBoundary,
+    ExceptionTranslator,
     __version__,
 )
 
@@ -43,5 +48,10 @@ __all__ = [
     'PipelineConfig',
     'NormalizationInterface',
     'InvocationOrchestrator',
+    'CrashContext',
+    'ContractViolationException',
+    'NativeCrashException',
+    'CrashIsolationBoundary',
+    'ExceptionTranslator',
     '__version__',
 ]
