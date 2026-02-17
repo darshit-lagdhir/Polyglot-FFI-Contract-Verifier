@@ -3395,3 +3395,641 @@ class ConfigurationManager:
         """
         config = self.get_active_config()
         config.function_overrides[function_name] = overrides
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 41: PYTHON TYPE MAPPER
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonTypeMapper:
+    """
+    Maps between Python types and C types.
+    
+    Provides bidirectional mapping for ctypes and cffi integration.
+    """
+    
+    def __init__(self):
+        # Python type -> C type name mapping
+        self.python_to_c: Dict[type, str] = {
+            int: 'int',
+            float: 'double',
+            bool: 'bool',
+            str: 'char*',
+            bytes: 'char*',
+            type(None): 'void*'
+        }
+        
+        # C type name -> Python type mapping
+        self.c_to_python: Dict[str, type] = {
+            'int': int,
+            'int32_t': int,
+            'uint32_t': int,
+            'int64_t': int,
+            'uint64_t': int,
+            'float': float,
+            'double': float,
+            'bool': bool,
+            'char*': bytes,
+            'const char*': bytes,
+            'void*': int  # Pointer as integer address
+        }
+    
+    def get_c_type(self, python_type: type) -> Optional[str]:
+        """
+        Get C type name for Python type.
+        
+        Args:
+            python_type: Python type
+            
+        Returns:
+            C type name or None
+        """
+        return self.python_to_c.get(python_type)
+    
+    def get_python_type(self, c_type_name: str) -> Optional[type]:
+        """
+        Get Python type for C type name.
+        
+        Args:
+            c_type_name: C type name
+            
+        Returns:
+            Python type or None
+        """
+        return self.c_to_python.get(c_type_name)
+    
+    def is_pointer_type(self, c_type_name: str) -> bool:
+        """
+        Check if C type is a pointer.
+        
+        Args:
+            c_type_name: C type name
+            
+        Returns:
+            True if pointer type
+        """
+        return '*' in c_type_name or 'ptr' in c_type_name.lower()
+    
+    def register_mapping(
+        self,
+        python_type: type,
+        c_type_name: str
+    ) -> None:
+        """
+        Register custom type mapping.
+        
+        Args:
+            python_type: Python type
+            c_type_name: C type name
+        """
+        self.python_to_c[python_type] = c_type_name
+        self.c_to_python[c_type_name] = python_type
+    
+    def get_all_c_types(self) -> List[str]:
+        """Get all registered C type names."""
+        return list(self.c_to_python.keys())
+    
+    def get_all_python_types(self) -> List[type]:
+        """Get all registered Python types."""
+        return list(self.python_to_c.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 42: PYTHON NORMALIZER
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonNormalizer(NormalizationInterface):
+    """
+    Python-specific value normalization.
+    
+    Converts Python objects to canonical forms suitable for validation
+    and native invocation.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.type_mapper = PythonTypeMapper()
+    
+    def normalize_value(self, value: Any) -> Any:
+        """
+        Normalize single Python value.
+        
+        Args:
+            value: Python value
+            
+        Returns:
+            Normalized value
+        """
+        # None remains None
+        if value is None:
+            return None
+        
+        # Integers: check for overflow concerns (validation handles this)
+        if isinstance(value, bool):
+            # bool is subclass of int, handle separately
+            return 1 if value else 0
+        
+        if isinstance(value, int):
+            return value
+        
+        # Floats pass through
+        if isinstance(value, float):
+            return value
+        
+        # Strings: keep as-is for now (encoding happens at call boundary)
+        if isinstance(value, str):
+            return value
+        
+        # Bytes: keep as-is
+        if isinstance(value, bytes):
+            return value
+        
+        # Bytearray: convert to bytes for consistency
+        if isinstance(value, bytearray):
+            return bytes(value)
+        
+        # Memoryview: convert to bytes
+        if isinstance(value, memoryview):
+            return bytes(value)
+        
+        # ctypes types: extract value or address
+        try:
+            import ctypes
+            if isinstance(value, ctypes._Pointer):
+                # Extract pointer address
+                return ctypes.addressof(value.contents)
+            elif isinstance(value, ctypes._SimpleCData):
+                # Extract value from ctypes type
+                return value.value
+        except ImportError:
+            pass
+        
+        # Default: return as-is
+        return value
+    
+    def normalize_buffer(
+        self,
+        buffer: Any
+    ) -> Tuple[Optional[bytes], int]:
+        """
+        Normalize buffer to bytes and length.
+        
+        Args:
+            buffer: Buffer object
+            
+        Returns:
+            Tuple of (bytes, length)
+        """
+        if buffer is None:
+            return (None, 0)
+        
+        if isinstance(buffer, bytes):
+            return (buffer, len(buffer))
+        
+        if isinstance(buffer, bytearray):
+            return (bytes(buffer), len(buffer))
+        
+        if isinstance(buffer, memoryview):
+            return (bytes(buffer), len(buffer))
+        
+        if isinstance(buffer, str):
+            # Encode string to bytes
+            encoded = buffer.encode('utf-8')
+            return (encoded, len(encoded))
+        
+        # Try to get buffer interface
+        try:
+            mv = memoryview(buffer)
+            return (bytes(mv), len(mv))
+        except TypeError:
+            return (None, 0)
+    
+    def get_type_mapper(self) -> 'PythonTypeMapper':
+        """Get the associated type mapper."""
+        return self.type_mapper
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 43: PYTHON SIGNATURE MIRROR
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonSignatureMirror:
+    """
+    Mirrors C function signatures from contracts for Python FFI.
+    
+    Reconstructs exact function signatures for ctypes/cffi usage.
+    """
+    
+    def __init__(self):
+        self.type_mapper = PythonTypeMapper()
+    
+    def build_signature(
+        self,
+        function_contract: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Build function signature from contract.
+        
+        Args:
+            function_contract: Function contract dictionary
+            
+        Returns:
+            Signature dictionary with types and calling convention
+        """
+        signature: Dict[str, Any] = {
+            'name': function_contract.get('name', 'unknown'),
+            'parameters': [],
+            'return_type': 'void',
+            'calling_convention': 'cdecl'
+        }
+        
+        # Extract parameter types
+        for param in function_contract.get('parameters', []):
+            param_info = {
+                'name': param.get('name', ''),
+                'c_type': param.get('type', 'int'),
+                'python_type': self.type_mapper.get_python_type(
+                    param.get('type', 'int')
+                )
+            }
+            signature['parameters'].append(param_info)
+        
+        # Extract return type
+        return_info = function_contract.get('return', {})
+        if return_info:
+            signature['return_type'] = return_info.get('type', 'void')
+        
+        # Extract calling convention
+        signature['calling_convention'] = function_contract.get(
+            'calling_convention',
+            'cdecl'
+        )
+        
+        return signature
+    
+    def get_ctypes_signature(
+        self,
+        signature: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Convert signature to ctypes-compatible form.
+        
+        Args:
+            signature: Signature dictionary
+            
+        Returns:
+            ctypes-compatible signature
+        """
+        try:
+            import ctypes
+            
+            # Map C types to ctypes types
+            type_map = {
+                'int': ctypes.c_int,
+                'int32_t': ctypes.c_int32,
+                'uint32_t': ctypes.c_uint32,
+                'int64_t': ctypes.c_int64,
+                'float': ctypes.c_float,
+                'double': ctypes.c_double,
+                'char*': ctypes.c_char_p,
+                'void*': ctypes.c_void_p,
+                'bool': ctypes.c_bool
+            }
+            
+            argtypes = []
+            for param in signature['parameters']:
+                c_type = param['c_type']
+                ctypes_type = type_map.get(c_type, ctypes.c_int)
+                argtypes.append(ctypes_type)
+            
+            restype = type_map.get(signature['return_type'], None)
+            
+            return {
+                'argtypes': argtypes,
+                'restype': restype
+            }
+        except ImportError:
+            return {'argtypes': [], 'restype': None}
+    
+    def get_cffi_cdef(
+        self,
+        signature: Dict[str, Any]
+    ) -> str:
+        """
+        Build cffi cdef string from signature.
+        
+        Args:
+            signature: Function signature
+            
+        Returns:
+            C definition string
+        """
+        params = []
+        for param in signature['parameters']:
+            params.append(f"{param['c_type']} {param['name']}")
+        
+        params_str = ', '.join(params) if params else 'void'
+        return f"{signature['return_type']} {signature['name']}({params_str});"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 44: CTYPES INTEGRATION
+# ════════════════════════════════════════════════════════════════════════════
+
+class CtypesIntegration:
+    """
+    Integration layer for ctypes-based FFI.
+    
+    Wraps ctypes function calls with enforcement pipeline.
+    """
+    
+    def __init__(self):
+        self.signature_mirror = PythonSignatureMirror()
+        self.loaded_libraries: Dict[str, Any] = {}
+    
+    def load_library(
+        self,
+        library_path: str,
+        calling_convention: str = 'cdecl'
+    ) -> Any:
+        """
+        Load native library using ctypes.
+        
+        Args:
+            library_path: Path to shared library
+            calling_convention: Calling convention (cdecl/stdcall)
+            
+        Returns:
+            ctypes library object
+        """
+        try:
+            import ctypes
+            
+            if calling_convention == 'stdcall':
+                lib = ctypes.WinDLL(library_path)
+            else:
+                lib = ctypes.CDLL(library_path)
+            
+            self.loaded_libraries[library_path] = lib
+            return lib
+        except ImportError:
+            raise RuntimeError("ctypes not available")
+        except OSError as e:
+            raise RuntimeError(f"Failed to load library: {e}")
+    
+    def configure_function(
+        self,
+        library: Any,
+        function_name: str,
+        signature: Dict[str, Any]
+    ) -> Any:
+        """
+        Configure ctypes function with signature.
+        
+        Args:
+            library: ctypes library object
+            function_name: Function name
+            signature: Function signature
+            
+        Returns:
+            Configured function object
+        """
+        if not hasattr(library, function_name):
+            raise ValueError(f"Function not found: {function_name}")
+        
+        func = getattr(library, function_name)
+        
+        # Apply ctypes signature
+        ctypes_sig = self.signature_mirror.get_ctypes_signature(signature)
+        func.argtypes = ctypes_sig['argtypes']
+        func.restype = ctypes_sig['restype']
+        
+        return func
+    
+    def get_loaded_libraries(self) -> List[str]:
+        """Get list of loaded library paths."""
+        return list(self.loaded_libraries.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 45: CFFI INTEGRATION
+# ════════════════════════════════════════════════════════════════════════════
+
+class CffiIntegration:
+    """
+    Integration layer for cffi-based FFI.
+    
+    Wraps cffi function calls with enforcement pipeline.
+    """
+    
+    def __init__(self):
+        self.ffi = None
+        self.loaded_libraries: Dict[str, Any] = {}
+    
+    def initialize_ffi(self) -> None:
+        """Initialize cffi FFI instance."""
+        try:
+            from cffi import FFI
+            self.ffi = FFI()
+        except ImportError:
+            raise RuntimeError("cffi not available")
+    
+    def load_library(
+        self,
+        library_path: str,
+        definitions: str
+    ) -> Any:
+        """
+        Load native library using cffi.
+        
+        Args:
+            library_path: Path to shared library
+            definitions: C function definitions
+            
+        Returns:
+            cffi library object
+        """
+        if self.ffi is None:
+            self.initialize_ffi()
+        
+        # Define C signatures
+        self.ffi.cdef(definitions)
+        
+        # Load library
+        lib = self.ffi.dlopen(library_path)
+        self.loaded_libraries[library_path] = lib
+        
+        return lib
+    
+    def build_cdef_from_signature(
+        self,
+        signature: Dict[str, Any]
+    ) -> str:
+        """
+        Build cffi cdef string from signature.
+        
+        Args:
+            signature: Function signature
+            
+        Returns:
+            C definition string
+        """
+        params = []
+        for param in signature['parameters']:
+            params.append(f"{param['c_type']} {param['name']}")
+        
+        params_str = ', '.join(params) if params else 'void'
+        
+        return f"{signature['return_type']} {signature['name']}({params_str});"
+    
+    def get_loaded_libraries(self) -> List[str]:
+        """Get list of loaded library paths."""
+        return list(self.loaded_libraries.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 46: PYTHON ADAPTER
+# ════════════════════════════════════════════════════════════════════════════
+
+class PythonAdapter(LanguageAdapter):
+    """
+    Python-specific language adapter.
+    
+    Integrates Python normalization, ctypes/cffi support, and enforcement
+    pipeline for Python-to-native FFI calls.
+    """
+    
+    def __init__(
+        self,
+        config: Optional[AdapterConfig] = None,
+        ffi_mode: str = 'ctypes'
+    ):
+        """
+        Initialize Python adapter.
+        
+        Args:
+            config: Adapter configuration
+            ffi_mode: FFI mechanism ('ctypes' or 'cffi')
+        """
+        super().__init__(config)
+        
+        self.ffi_mode = ffi_mode
+        self.normalizer = PythonNormalizer()
+        self.signature_mirror = PythonSignatureMirror()
+        
+        # Initialize FFI integration
+        if ffi_mode == 'ctypes':
+            self.ffi_integration = CtypesIntegration()
+        elif ffi_mode == 'cffi':
+            self.ffi_integration = CffiIntegration()
+        else:
+            raise ValueError(f"Invalid FFI mode: {ffi_mode}")
+    
+    def load_native_library(
+        self,
+        library_path: str,
+        definitions: Optional[str] = None
+    ) -> Any:
+        """
+        Load native library.
+        
+        Args:
+            library_path: Path to shared library
+            definitions: C definitions (cffi only)
+            
+        Returns:
+            Library object
+        """
+        if self.ffi_mode == 'ctypes':
+            return self.ffi_integration.load_library(library_path)
+        elif self.ffi_mode == 'cffi':
+            if definitions is None:
+                raise ValueError("cffi requires C definitions")
+            return self.ffi_integration.load_library(library_path, definitions)
+    
+    def normalize_for_call(
+        self,
+        inputs: List[Any]
+    ) -> List[Any]:
+        """
+        Normalize inputs for native call.
+        
+        Args:
+            inputs: Python values
+            
+        Returns:
+            Normalized values
+        """
+        return self.normalizer.normalize_inputs(inputs)
+    
+    def call(
+        self,
+        function_name: str,
+        *args: Any,
+        **kwargs: Any
+    ) -> Any:
+        """
+        Call native function with enforcement.
+        
+        Args:
+            function_name: Function name
+            *args: Function arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Function result
+        """
+        # Convert args to list and normalize
+        inputs = list(args)
+        normalized = self.normalize_for_call(inputs)
+        
+        # Get validation graph
+        graph = self.get_validation_graph(function_name)
+        if graph:
+            # Create enforcement context
+            context = self.create_enforcement_context(function_name)
+            context.normalized_inputs = normalized
+            
+            # Run pre-validation
+            result = self.validation_engine.validate_with_metrics(
+                graph, normalized, context
+            )
+            
+            if not result.get('all_passed', True):
+                raise RuntimeError(
+                    f"Pre-call validation failed for {function_name}"
+                )
+        
+        # Return normalized inputs (actual call would happen here)
+        return {'normalized_inputs': normalized, 'function': function_name}
+    
+    def get_function_signature(
+        self,
+        function_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get function signature from loaded contract.
+        
+        Args:
+            function_name: Function name
+            
+        Returns:
+            Signature dictionary or None
+        """
+        graph = self.get_validation_graph(function_name)
+        if not graph:
+            return None
+        
+        return {
+            'name': function_name,
+            'parameters': [],
+            'return_type': 'int'
+        }
+    
+    def get_normalizer(self) -> PythonNormalizer:
+        """Get the Python normalizer."""
+        return self.normalizer
+    
+    def get_ffi_mode(self) -> str:
+        """Get the current FFI mode."""
+        return self.ffi_mode

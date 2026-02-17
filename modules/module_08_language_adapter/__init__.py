@@ -47,6 +47,12 @@ from .language_adapter import (
     ConfigurationLoader,
     PolicyRegistry,
     ConfigurationManager,
+    PythonTypeMapper,
+    PythonNormalizer,
+    PythonSignatureMirror,
+    CtypesIntegration,
+    CffiIntegration,
+    PythonAdapter,
     __version__,
 )
 
@@ -97,5 +103,11 @@ __all__ = [
     'ConfigurationLoader',
     'PolicyRegistry',
     'ConfigurationManager',
+    'PythonTypeMapper',
+    'PythonNormalizer',
+    'PythonSignatureMirror',
+    'CtypesIntegration',
+    'CffiIntegration',
+    'PythonAdapter',
     '__version__',
 ]
