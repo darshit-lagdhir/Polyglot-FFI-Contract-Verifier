@@ -6440,6 +6440,321 @@ class ProvenanceExporter:
             return None
 
 
+class VersionManager:
+    """Unified version management interface."""
+
+    def __init__(self):
+        self.version_history = VersionHistory()
+        self.lifecycle_manager = LifecycleManager()
+        self.metadata_manager = MetadataManager()
+        self.provenance_tracker = ProvenanceTracker()
+        self.diff_analyzer = DetailedDiffAnalyzer()
+        self.changelog_generator = ChangelogGenerator()
+        self.signature_manager = SignatureManager()
+
+    def get_current_version(self, contract_name: str) -> Optional[str]:
+        """Get current version for contract."""
+        # Implementation would query version registry
+        return None
+
+    def list_versions(self, contract_name: str) -> List[str]:
+        """List all versions for contract."""
+        return self.version_history.get_all_versions()
+
+    def get_version_info(self, version: str) -> Dict[str, Any]:
+        """Get complete version information."""
+        lifecycle = self.lifecycle_manager.get_lifecycle(version)
+        metadata = self.metadata_manager.get_metadata(version)
+        provenance = self.provenance_tracker.get_provenance(version)
+
+        return {
+            "version": version,
+            "lifecycle": lifecycle.to_dict() if lifecycle else None,
+            "metadata": metadata.to_dict() if metadata else None,
+            "provenance": provenance.to_dict() if provenance else None,
+        }
+
+
+class ReleaseWorkflow:
+    """Orchestrates version release workflow."""
+
+    def __init__(self, version_manager: VersionManager):
+        self.manager = version_manager
+        self.recommender = VersionRecommendationEngine()
+        self.policy = VersionPolicy("default")
+        self.enforcer = VersionPolicyEnforcer(self.policy)
+
+    def prepare_release(
+        self, current_version: str, candidate_contract: Any, author: Author, baseline_contract: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Prepare version release."""
+        result = {"success": False, "steps_completed": []}
+
+        # Step 1: Analyze changes
+        if baseline_contract:
+            diff = self.manager.diff_analyzer.analyze(baseline_contract, candidate_contract)
+            result["steps_completed"].append("diff_analysis")
+        else:
+            # First version, no diff
+            diff = None
+            result["steps_completed"].append("diff_analysis_skipped")
+
+        # Step 2: Recommend version
+        if diff:
+            recommendation = self.recommender.recommend_version(current_version, diff)
+            proposed_version = recommendation["recommended_version"]
+            result["recommended_version"] = proposed_version
+            result["steps_completed"].append("version_recommendation")
+        else:
+            proposed_version = current_version
+            result["recommended_version"] = proposed_version
+
+        # Step 3: Validate policy
+        if diff:
+            enforcement = self.enforcer.enforce(current_version, proposed_version, diff)
+
+            if not enforcement["approved"]:
+                result["error"] = "Policy violation"
+                result["violations"] = enforcement.get("violations", [])
+                return result
+
+            result["steps_completed"].append("policy_validation")
+
+        # Step 4: Generate changelog
+        if diff:
+            changelog = self.manager.changelog_generator.generate(diff, current_version, proposed_version)
+            result["changelog"] = changelog.to_dict()
+            result["steps_completed"].append("changelog_generation")
+
+        # Step 5: Create metadata
+        metadata = VersionMetadata(
+            version=proposed_version, created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), author=author
+        )
+        result["metadata"] = metadata.to_dict()
+        result["steps_completed"].append("metadata_creation")
+
+        result["success"] = True
+        result["proposed_version"] = proposed_version
+
+        return result
+
+    def finalize_release(self, version: str, metadata: VersionMetadata, fingerprint: str) -> Dict[str, Any]:
+        """Finalize version release."""
+        # Add metadata
+        self.manager.metadata_manager.add_metadata(metadata)
+
+        # Create provenance
+        provenance = VersionProvenance(
+            version=version,
+            fingerprint=fingerprint,
+            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            metadata=metadata,
+        )
+        self.manager.provenance_tracker.add_provenance(provenance)
+
+        # Create lifecycle
+        lifecycle = VersionLifecycle(
+            version=version,
+            stage=LifecycleStage.STABLE,
+            support_tier=SupportTier.FULL,
+            released_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+        self.manager.lifecycle_manager.add_version(lifecycle)
+
+        return {"success": True, "version": version, "released_at": lifecycle.released_at}
+
+
+class UpgradeWorkflow:
+    """Orchestrates version upgrade workflow."""
+
+    def __init__(self, version_manager: VersionManager):
+        self.manager = version_manager
+        self.compatibility_matrix = CompatibilityMatrix()
+        self.compatibility_tester = CompatibilityTester(version_manager.version_history)
+
+    def plan_upgrade(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Plan version upgrade."""
+        plan = {"from_version": from_version, "to_version": to_version, "checks": [], "warnings": [], "safe_to_proceed": True}
+
+        # Check 1: Lifecycle status
+        from_lifecycle = self.manager.lifecycle_manager.get_lifecycle(from_version)
+        to_lifecycle = self.manager.lifecycle_manager.get_lifecycle(to_version)
+
+        if from_lifecycle and from_lifecycle.stage == LifecycleStage.END_OF_LIFE:
+            plan["warnings"].append("Upgrading from end-of-life version")
+
+        if to_lifecycle and to_lifecycle.stage == LifecycleStage.DEPRECATED:
+            plan["warnings"].append("Upgrading to deprecated version")
+
+        plan["checks"].append({"check": "lifecycle_status", "result": "PASS"})
+
+        # Check 2: Compatibility
+        compat = self.compatibility_tester.test_compatibility(from_version, to_version)
+
+        if not compat.is_compatible():
+            plan["safe_to_proceed"] = False
+            plan["checks"].append({"check": "compatibility", "result": "FAIL", "details": compat.to_dict()})
+        else:
+            plan["checks"].append({"check": "compatibility", "result": "PASS"})
+
+        return plan
+
+    def execute_upgrade(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Execute version upgrade."""
+        # Simplified execution
+        return {
+            "success": True,
+            "from_version": from_version,
+            "to_version": to_version,
+            "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+
+
+class RollbackWorkflow:
+    """Orchestrates version rollback workflow."""
+
+    def __init__(self, version_manager: VersionManager):
+        self.manager = version_manager
+        self.safety_analyzer = RollbackSafetyAnalyzer(version_manager.version_history)
+        self.simulator = RollbackSimulator(self.safety_analyzer)
+
+    def plan_rollback(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Plan version rollback."""
+        # Analyze safety
+        analysis = self.safety_analyzer.analyze_rollback(from_version, to_version)
+
+        # Simulate
+        simulation = self.simulator.simulate_rollback(from_version, to_version)
+
+        return {
+            "from_version": from_version,
+            "to_version": to_version,
+            "safety_analysis": analysis.to_dict(),
+            "simulation": simulation,
+            "recommended": analysis.is_safe(),
+        }
+
+    def execute_rollback(self, from_version: str, to_version: str, force: bool = False) -> Dict[str, Any]:
+        """Execute version rollback."""
+        if not force:
+            analysis = self.safety_analyzer.analyze_rollback(from_version, to_version)
+            if not analysis.is_safe():
+                return {
+                    "success": False,
+                    "error": "Unsafe rollback (use force=True to override)",
+                    "risks": [r.to_dict() for r in analysis.risks],
+                }
+
+        # Execute rollback (simplified)
+        return {
+            "success": True,
+            "from_version": from_version,
+            "to_version": to_version,
+            "rolled_back_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+
+
+class QueryWorkflow:
+    """Provides version query capabilities."""
+
+    def __init__(self, version_manager: VersionManager):
+        self.manager = version_manager
+        self.compatibility_matrix = CompatibilityMatrix()
+
+    def find_compatible_versions(self, contract: str, version: str, target_contract: str) -> List[str]:
+        """Find compatible versions."""
+        return self.compatibility_matrix.get_compatible_versions(contract, version, target_contract)
+
+    def get_deprecation_info(self, version: str) -> Optional[Dict[str, Any]]:
+        """Get deprecation information."""
+        lifecycle = self.manager.lifecycle_manager.get_lifecycle(version)
+
+        if not lifecycle:
+            return None
+
+        if lifecycle.stage != LifecycleStage.DEPRECATED:
+            return {"deprecated": False, "stage": lifecycle.stage.value}
+
+        if lifecycle.deprecation_notice:
+            return {"deprecated": True, "notice": lifecycle.deprecation_notice.to_dict()}
+
+        return {"deprecated": True, "notice": None}
+
+    def verify_provenance(self, version: str) -> Dict[str, Any]:
+        """Verify version provenance."""
+        provenance = self.manager.provenance_tracker.get_provenance(version)
+
+        if not provenance:
+            return {"verified": False, "reason": "No provenance data"}
+
+        # Check signature
+        if not provenance.is_signed():
+            return {"verified": False, "reason": "Not signed"}
+
+        # Verify signature
+        verification = self.manager.signature_manager.verify_signature(provenance.signature, version, provenance.fingerprint)
+
+        return {"verified": verification["valid"], "signature": provenance.signature.to_dict(), "verification_result": verification}
+
+
+class IntegratedVersioningSystem:
+    """Complete integrated versioning system."""
+
+    def __init__(self):
+        self.version_manager = VersionManager()
+        self.release_workflow = ReleaseWorkflow(self.version_manager)
+        self.upgrade_workflow = UpgradeWorkflow(self.version_manager)
+        self.rollback_workflow = RollbackWorkflow(self.version_manager)
+        self.query_workflow = QueryWorkflow(self.version_manager)
+
+    def release_version(
+        self, current_version: str, candidate_contract: Any, author: Author, baseline_contract: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Complete version release workflow."""
+        # Prepare
+        preparation = self.release_workflow.prepare_release(current_version, candidate_contract, author, baseline_contract)
+
+        if not preparation["success"]:
+            return preparation
+
+        # Finalize
+        if "metadata" in preparation:
+            metadata_dict = preparation["metadata"]
+            metadata = VersionMetadata(version=metadata_dict["version"], created_at=metadata_dict["created_at"])
+
+            finalization = self.release_workflow.finalize_release(preparation["proposed_version"], metadata, "fingerprint_placeholder")
+
+            preparation["finalization"] = finalization
+
+        return preparation
+
+    def upgrade_version(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Complete version upgrade workflow."""
+        # Plan
+        plan = self.upgrade_workflow.plan_upgrade(from_version, to_version)
+
+        if not plan["safe_to_proceed"]:
+            return {"success": False, "plan": plan, "error": "Upgrade plan checks failed"}
+
+        # Execute
+        execution = self.upgrade_workflow.execute_upgrade(from_version, to_version)
+
+        return {"success": execution["success"], "plan": plan, "execution": execution}
+
+    def rollback_version(self, from_version: str, to_version: str, force: bool = False) -> Dict[str, Any]:
+        """Complete version rollback workflow."""
+        # Plan
+        plan = self.rollback_workflow.plan_rollback(from_version, to_version)
+
+        if not plan["recommended"] and not force:
+            return {"success": False, "plan": plan, "error": "Rollback not recommended (use force=True to override)"}
+
+        # Execute
+        execution = self.rollback_workflow.execute_rollback(from_version, to_version, force)
+
+        return {"success": execution["success"], "plan": plan, "execution": execution}
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -6592,4 +6907,11 @@ __all__ = [
     "ComplianceChecker",
     "MetadataValidator",
     "ProvenanceExporter",
+    # From Prompt 19
+    "VersionManager",
+    "ReleaseWorkflow",
+    "UpgradeWorkflow",
+    "RollbackWorkflow",
+    "QueryWorkflow",
+    "IntegratedVersioningSystem",
 ]
