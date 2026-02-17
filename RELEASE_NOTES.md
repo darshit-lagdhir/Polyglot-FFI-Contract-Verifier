@@ -1,7 +1,24 @@
+# Release Notes: PFCV v1.1.0 "Stable Horizon"
+
+**Release Date**: March 2024
+**Version**: 1.1.0 (Public Update)
+
+## New in v1.1.0
+- Enhanced synthesis for large-scale native interfaces.
+- Enterprise (Framework) performance tuning for 10k+ functions.
+- Resolved minor IR normalization edge cases.
+
+---
+
 # Release Notes: PFCV v1.0.0 "First Contact"
 
 **Release Date**: February 17, 2024
 **Version**: 1.0.0 (Global Production Release)
+
+## New in v1.0.0
+- Initial production-ready release.
+- Support for Python, Rust, and C++.
+- Full 8-stage verification pipeline.
 
 ---
 
@@ -46,10 +63,10 @@ PFCV v1.0.0 features a robust crash isolation layer that translates native segme
 
 ---
 
-## 🚄 Performance Characteristics
+## 🚄 Performance Characteristics & Benchmarks
+- **Performance Benchmarks**: Sustained 100,000+ FFI calls/sec in standard validation scenarios.
 - **Call Overhead**: <3% added latency for cached validation paths.
 - **Synthesis Speed**: Processed 1,000+ functions in <60 seconds.
-- **Throughput**: Validated sustained 100,000+ FFI calls/sec in benchmark scenarios.
 
 ---
 

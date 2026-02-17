@@ -137,6 +137,8 @@ from .contract_versioning import (
     ChangeType,
     ContractChange,
     ContractDiff,
+    ContractDiffer,
+    CompatibilityImpact,
     ContractVersionSnapshot,
     ContractEvolutionTimeline,
     ABICompatibilityDetector,

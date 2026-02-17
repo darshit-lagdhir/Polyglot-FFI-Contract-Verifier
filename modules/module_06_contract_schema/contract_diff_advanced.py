@@ -12,7 +12,7 @@ from enum import Enum
 from datetime import datetime
 
 from .contract_entities import ContractDocument, ContractClause, ClauseType
-from .contract_versioning import SemanticVersion #, ContractDiff, ContractDiffer, CompatibilityImpact
+from .contract_versioning import SemanticVersion, ContractDiff, ContractDiffer, CompatibilityImpact
 
 
 class ChangeCategory(Enum):
@@ -243,8 +243,20 @@ class AdvancedContractDiffer:
     Ownership). It identifies breaking changes and produces migration guides.
     """
 
-    def __init__(self):
-        self.basic_differ = ContractDiffer()
+    def __init__(self, basic_differ: Optional[Any] = None):
+        if basic_differ is None:
+            # Avoid circular import by delaying import or using a fallback
+            try:
+                from .contract_versioning import ContractDiffer
+                # If we're inside ContractDiffer.diff, it'll still be a loop if we're not careful
+                # Let's use a specialized basic differ instead.
+                from .contract_versioning import BasicContractDiffer
+                basic_differ = BasicContractDiffer()
+            except ImportError:
+                # Fallback if BasicContractDiffer is not yet available/defined
+                basic_differ = None 
+                
+        self.basic_differ = basic_differ
         self.null_analyzer = NullabilityChangeAnalyzer()
         self.size_analyzer = SizeChangeAnalyzer()
         self.own_analyzer = OwnershipChangeAnalyzer()
@@ -252,6 +264,11 @@ class AdvancedContractDiffer:
     def compute_diff(
         self, old_doc: ContractDocument, new_doc: ContractDocument
     ) -> AdvancedDiffResult:
+        if self.basic_differ is None:
+             # Last resort fallback if still none
+             from .contract_versioning import BasicContractDiffer
+             self.basic_differ = BasicContractDiffer()
+             
         basic = self.basic_differ.diff(old_doc, new_doc)
         result = AdvancedDiffResult(basic.old_version, basic.new_version)
 

@@ -2,6 +2,9 @@
 
 This guide helps resolve common issues with IR normalization.
 
+## Common Issues
+Below are the most frequently encountered errors during IR normalization and how to solve them.
+
 ## Table of Contents
 
 - [E1001: Type Conversion Error](#e1001)

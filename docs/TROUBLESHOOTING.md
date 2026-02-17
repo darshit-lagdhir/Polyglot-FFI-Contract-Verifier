@@ -2,6 +2,12 @@
 
 Common issues, their causes, and recommended solutions for the Language Adapter.
 
+## Common Issues
+Below are some frequently encountered issues and their solutions.
+
+## IR Validation Failures
+Errors encountered during IR normalization or cross-language validation are documented in our [Detailed Diagnostics Guide](module_05/troubleshooting.md).
+
 ## Contract Violations
 
 ### Issue: `ContractViolationError` raised

@@ -19,14 +19,14 @@ PFCV is built as a modular, 8-stage pipeline where each component performs a spe
 
 | Module | Name | Status | Purpose |
 | :--- | :--- | :--- | :--- |
-| **01** | [Architecture](modules/module_01_ffi_verifier/) | ✅ 1.0.0 | Formal system design and architectural constraints. |
-| **02** | [Pipeline](modules/module_02_verification_pipeline/) | ✅ 1.0.0 | Orchestration of the end-to-end verification workflow. |
-| **03** | [Build Process](modules/module_03_build_process/) | ✅ 1.0.0 | Native build system integration (CMake/Make/Cargo). |
-| **04** | [Ingestion](modules/module_04_native_interface_ingestion/) | ✅ 1.0.0 | Clang-based metadata extraction from native source. |
-| **05** | [IR Normalization](modules/module_05_ir_normalization/) | ✅ 1.0.0 | Universal IR projection (scalar, pointer, struct). |
-| **06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ 1.0.0 | Formal schema for FFI safety contracts. |
-| **07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ 1.0.0 | Contextual pattern detection & contract generation. |
-| **08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ 1.0.0 | Multi-language runtime enforcement (Python, Rust, C++). |
+| **Module 01** | [Architecture](modules/module_01_ffi_verifier/) | ✅ Complete 1.0.0 | Formal system design and architectural constraints. |
+| **Module 02** | [Pipeline](modules/module_02_verification_pipeline/) | ✅ Complete 1.0.0 | Orchestration of the end-to-end verification workflow. |
+| **Module 03** | [Build Process](modules/module_03_build_process/) | ✅ Complete 1.0.0 | Native build system integration (CMake/Make/Cargo). |
+| **Module 04** | [Ingestion](modules/module_04_native_interface_ingestion/) | ✅ Complete 1.0.0 | Clang-based metadata extraction from native source. |
+| **Module 05** | [IR Normalization](modules/module_05_ir_normalization/) | ✅ Complete 1.0.0 | Universal IR projection (scalar, pointer, struct). |
+| **Module 06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ Complete 1.0.0 | Formal schema for FFI safety contracts. |
+| **Module 07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ Complete 1.0.0 | Contextual pattern detection & contract generation. |
+| **Module 08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ Complete 1.0.0 | Multi-language runtime enforcement (Python, Rust, C++). |
 
 ---
 

@@ -2,6 +2,9 @@
 
 Thank you for your interest in contributing to the **Polyglot FFI Contract Verifier (PFCV)**! We are building a high-assurance bridge for the multi-language ecosystem, and we welcome your expertise.
 
+## 🚀 Getting Started
+Before you start contributing, please ensure you have read the project's [ARCHITECTURE_DEEP_DIVE.md](docs/ARCHITECTURE_DEEP_DIVE.md) and understand the 8-stage verification pipeline.
+
 ---
 
 ## 🧭 Project Navigation

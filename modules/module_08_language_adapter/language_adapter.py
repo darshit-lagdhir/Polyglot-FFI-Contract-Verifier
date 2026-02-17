@@ -1152,7 +1152,7 @@ class LanguageAdapter:
         self.contract_fingerprint: Optional[str] = None
         self.validation_graphs: Dict[str, ValidationGraph] = {}
     
-    def load_contract(self, contract_path: Union[str, Path]) -> None:
+    def load_contract(self, contract_path: Union[str, Path]) -> Dict[str, Any]:
         """Load contract artifact."""
         contract = self.projector.load_contract(contract_path)
         self.contract_fingerprint = self.projector._compute_fingerprint(contract)
@@ -1160,6 +1160,7 @@ class LanguageAdapter:
         for func_name in contract.get('functions', {}).keys():
             graph = self.projector.project_function(contract, func_name)
             self.validation_graphs[func_name] = graph
+        return contract
     
     def get_validation_graph(self, function_name: str) -> Optional[ValidationGraph]:
         """Get validation graph for function."""
@@ -7126,10 +7127,11 @@ class ValidationCache:
         return {
             'entries': len(self.cache),
             'max_entries': self.max_entries,
+            'ttl_seconds': self.ttl_seconds,
+            'enabled': self.enabled,
             'hit_count': self.hit_count,
             'miss_count': self.miss_count,
             'hit_rate': hit_rate,
-            'enabled': self.enabled
         }
 
 
