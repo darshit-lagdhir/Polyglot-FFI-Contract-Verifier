@@ -2,41 +2,44 @@
 
 ## Supported Versions
 
-| Module | Version | Supported |
-| :--- | :--- | :--- |
-| **Module 05** | 1.0.x | ✅ Yes |
-| **Module 06** | 1.0.x | ✅ Yes |
-| **Module 07** | 1.0.x | ✅ Yes |
-| **All Modules** | < 1.0 | ❌ No |
+The following versions of **Polyglot FFI Contract Verifier (PFCV)** are currently supported with security updates:
+
+| Module | Branch | Supported Versions | Status |
+| :--- | :--- | :--- | :--- |
+| **All Modules** | `main` | 1.0.x | ✅ Active |
+| **BETA Versions** | `legacy` | 0.9.x | ❌ End of Life |
 
 ---
 
 ## Reporting a Vulnerability
 
-We take the security of FFI interfaces seriously. If you discover a vulnerability in PFCV itself or a way to bypass synthesis safety, please:
+We take the security of FFI boundaries and contract synthesis extremely seriously. If you discover a vulnerability in PFCV—especially one that could lead to a contract bypass or unsafe code generation—please:
 
-1.  **DO NOT** open a public issue.
-2.  Email `security@pfcv.dev` with a detailed description.
-3.  Include reproduction steps and potential impact.
+1.  **Do NOT** open a public GitHub issue.
+2.  Email a detailed report to **security@pfcv.dev**.
+3.  Include a brief description, reproduction steps, and potential impact.
 
-We will respond within 48 hours and work with you on a patch before public disclosure.
-
----
-
-## Security Best Practices
-
-To ensure the highest level of FFI safety when using PFCV:
-1.  **Validate Inputs**: Always validate native artifacts from untrusted sources using `pfcv-ir validate`.
-2.  **Strict Mode**: Enable `strict_mode=True` in production synthesis to treat warnings as errors.
-3.  **Review Contracts**: While synthesis is deterministic, always manually review critical security contracts before deployment.
-4.  **Sandbox Synthesis**: Run contract synthesis in a sandboxed environment when processing untrusted IR artifacts.
+We will acknowledge your report within **48 hours** and provide a timeline for a patch. We follow coordinated disclosure and will credit you for the discovery in our release notes.
 
 ---
 
-## Security Features
-- **Deterministic Synthesis**: Prevents tampered outputs through reproducible builds.
-- **Cryptographic Fingerprinting**: Every contract includes an SHA-256 fingerprint for integrity verification.
-- **Input Validation**: Multi-stage validation for IR and Schema artifacts at every module boundary.
+## Security Best Practices for PFCV Users
+
+To maintain maximum safety when using synthesized contracts:
+
+1.  **Enable Strict Mode**: Always run synthesis with `strict_mode=True` (default) to ensure no malformed IR generates unsafe clauses.
+2.  **Verify Fingerprints**: Use the cryptographic fingerprints in the contract metadata to detect tampering in your CI/CD pipeline.
+3.  **Audit Relational Clauses**: While our engine is 99% accurate, always manually audit generated `buffer-size` relational clauses for mission-critical security boundaries.
+4.  **Sandbox Synthesis**: If you are synthesizing contracts from untrusted third-party IR, run the synthesis engine in an isolated container.
 
 ---
-© 2026 PFCV Team.
+
+## Secure Infrastructure
+
+PFCV is designed with security in mind:
+- **Deterministic Synthesis**: Prevents hidden "backdoors" in contract generation.
+- **No Remote Calls**: The synthesis engine operates entirely locally; no code or IR is ever transmitted to external servers.
+- **Immutable Rules**: Our rule registry is version-pinned and immutable to prevent runtime logic hijacking.
+
+---
+© 2026 PFCV Security Team.

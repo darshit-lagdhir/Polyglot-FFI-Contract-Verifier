@@ -1,70 +1,45 @@
-# Troubleshooting Guide: Module 07 Contract Synthesis
+# PFCV Troubleshooting Guide
 
-This guide helps you resolve common issues encountered while using the Contract Synthesis Engine.
+This guide helps you resolve common issues encountered while using the **Polyglot FFI Contract Verifier (PFCV)** pipeline.
 
-## Common Issues and Solutions
+## Pipeline-Wide Issues
 
-### 1. IR Validation Failures
+### 1. IR Extraction Failures (Module 04/05)
+**Error**: `Clang error: cannot find header`
+**Solution**: Ensure your include paths are correctly passed to the IR extractor. Check your `CPATH` environment variable or use the `-I` flag.
 
+### 2. Contract Schema Mismatches (Module 06)
+**Error**: `ContractBridgeError: Schema validation failed`
+**Solution**: This usually occurs if an older contract is being used with a newer version of the pipeline. Regenerate the contract using Module 07.
+
+## Synthesis-Specific Issues (Module 07)
+
+### 3. IR Validation Failures
 **Error**: `IRBridgeError: IR validation failed: Type completeness violation`
-
 **Cause**: The input IR references a type ID that is not defined in the `types` list.
+**Solution**: Use `pfcv-ir validate` to check the integrity of your IR artifact before synthesis.
+
+### 4. Determinism Violations
+**Symptoms**: Identical IR produces slightly different contract JSON.
+**Solution**: Ensure you are using a pinned `synthesis_version` in your configuration. Use `pfcv-synth verify-determinism` to debug.
+
+### 5. Performance Bottlenecks
+**Symptoms**: Synthesis taking more than a few seconds for large interfaces.
 **Solution**:
-- Check the `type_reference` fields in your IR parameters or fields.
-- Ensure every referenced type exists in the `InterfaceUnit.types` collection.
-- Use `IRValidator.validate(ir_unit)` manually to get a detailed list of missing types.
+- **Enable Caching**: Ensure `SynthesisCache` is properly configured.
+- **Parallel Synthesis**: Use the `batch --parallel` CLI command.
 
-### 2. Unexpected Synthesis Errors
+## Infrastructure Issues
 
-**Error**: `Contract assembly failed`
-
-**Cause**: The synthesized clauses violate the Module 06 Contract Schema (e.g., missing ID, invalid parameters).
-**Solution**:
-- If you are using custom rule logic, ensure it complies with the schema.
-- Run synthesis in `strict_mode=False` within `SynthesisConfig` to see if it bypasses the error (not recommended for production).
-- Check the log output for specific schema validation errors.
-
-### 3. Performance is Slow
-
-**Symptoms**: Synthesis taking $> 1s$ for large interfaces.
-
-**Solutions**:
-- **Enable Caching**: Use the `SynthesisCache` to store and retrieve results for unchanged interfaces.
-- **Profiling**: Use `PhaseProfiler` to identify which synthesis phase (e.g., Relational, Layout) is taking the most time.
-- **Batch Processing**: If processing many small files, reuse the same `SynthesisEngine` instance to avoid initialization overhead.
-
-### 4. Determinism Issues
-
-**Symptoms**: Identical IR produces slightly different contract JSON (e.g., clause ordering).
-
-**Solution**:
-- Ensure you are using the same `synthesis_version` in your `SynthesisConfig`.
-- Use the `pfcv-synth verify-determinism` CLI tool to isolate the issue.
-- Verify that your IR generation process (Module 05) is deterministic.
-
-### 5. Infinite Loops or Stack Overflows
-
-**Symptoms**: Python hangs during "Relational Clause Generation".
-
-**Possible Cause**: Cyclic dependencies or flawed logic in relational clause derivation (fixed in recent versions, but check your implementation).
-**Solution**:
-- Update to the latest version of Module 07.
-- Check for extremely large recursive structures in the IR.
+### 6. Memory Limits
+**Symptoms**: `Process finished with exit code 137` (OOM Killer).
+**Solution**: Processing extremely large headers (>5,000 functions) may require up to 4GB of RAM. Increase container memory limits.
 
 ## Debugging Tips
 
-1. **Enable Debug Logs**:
-   Add `logging.basicConfig(level=logging.DEBUG)` to see detailed trace of synthesis phases.
+1. **Enable Verbose Logging**: Use the `--verbose` flag on CLI commands or set `logging.basicConfig(level=logging.DEBUG)`.
+2. **Inspect Provenance**: Every generated clause includes a `provenance` field. Inspect this to see *why* a specific constraint was generated.
+3. **Verify Installation**: Run `pfcv --version` to ensure all modules are correctly installed and visible.
 
-2. **Inspect Provenance**:
-   Every clause has a `metadata['provenance']` field. Inspecting this tells you exactly which IR entity and which synthesis rule caused the clause to appear.
-
-3. **Use the Completeness Validator**:
-   Run `python -m module_07_contract_synthesis.completion_check` to ensure your environment is set up correctly.
-
-## Getting Help
-
-If you still encounter issues:
-- Review the `examples/module_07` scripts for reference implementations.
-- Consult the `SYNTHESIS_ENGINE.md` for API details.
-- Check the unit tests in `tests/` to see how specific edge cases are handled.
+---
+© 2026 PFCV Team.

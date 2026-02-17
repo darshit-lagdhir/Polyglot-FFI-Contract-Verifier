@@ -1,3 +1,4 @@
+# Root files
 include README.md
 include LICENSE
 include CHANGELOG.md
@@ -5,16 +6,25 @@ include RELEASE_NOTES.md
 include CONTRIBUTING.md
 include CODE_OF_CONDUCT.md
 include SECURITY.md
-include setup.py
 include pyproject.toml
+include setup.py
 include pytest.ini
+include .pfcv_version
 
-recursive-include docs *.md
-recursive-include examples *.py *.md *.h *.c
-recursive-include modules *.py *.md *.typed
+# Documentation
+recursive-include docs *.md *.png *.jpg *.gif *.svg
+recursive-include modules *.md
+
+# Examples
+recursive-include examples *.py *.h *.c *.cpp *.md *.json *.yaml
+
+# Core Implementation
+recursive-include modules *.py *.typed
+
+# Tests
 recursive-include tests *.py
 
-global-exclude *.pyc
-global-exclude __pycache__
-global-exclude *.so
-global-exclude .DS_Store
+# Exclude compiled artifacts and metadata
+global-exclude *.py[cod] __pycache__ *.so *.dylib *.dll
+global-exclude .DS_Store .git .pytest_cache .coverage
+global-exclude *.egg-info

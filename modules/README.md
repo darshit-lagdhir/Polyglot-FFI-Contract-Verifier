@@ -1,84 +1,51 @@
-# Modules Directory
+# PFCV Modules
 
-This directory contains all 28 modules of the project. Each module is self-contained with its own implementation and documentation.
+This directory contains the core implementation of the **Polyglot FFI Contract Verifier**. The project is structured into 7 primary modules, each responsible for a specific stage of the high-assurance verification pipeline.
 
-## Module Structure
+## 🏗️ Module Architecture
 
-Each module follows this structure:
-```
-modules/
-├── module_01_ffi_verifier/
-│   ├── system_architecture.py      # Module implementation
-│   └── SYSTEM_ARCHITECTURE.md      # Module documentation
-├── module_02_<name>/
-│   ├── <name>.py
-│   └── <NAME>.md
-...
-└── module_28_<name>/
-    ├── <name>.py
-    └── <NAME>.md
-```
-
-## Modules Overview
-
-### ✅ Module 01: FFI Contract Verifier (COMPLETE)
-**Status:** 100% Complete  
-**Lines:** 5,671 (Python) + 3,501 (Markdown)  
-**Description:** Complete 12-phase FFI contract verification system
-
-**Files:**
-- `system_architecture.py` - All 12 phases consolidated
-- `SYSTEM_ARCHITECTURE.md` - Complete technical specification
-
-### ✅ Module 02: Verification Pipeline (COMPLETE)
-**Status:** Complete (100%)
-**Description:** Formal verification pipeline architecture foundation
-
-**Files:**
-- `verification_pipeline.py` - Core pipeline orchestrator
-- `VERIFICATION_PIPELINE.md` - Technical specification
-- `verification_pipeline_test.py` - Incremental verification tests
-
-### 📋 Module 03-28: Coming Soon
-**Status:** Planned  
-**Expected:** 26 additional modules  
-**Format:** ~2,000 words documentation + implementation per module
-
-## Usage
-
-### Running Module 01:
-```bash
-# From project root
-python modules/module_01_ffi_verifier/system_architecture.py verify interface.h library.dll
-
-# Or import in Python
-import sys
-sys.path.insert(0, 'modules/module_01_ffi_verifier')
-import system_architecture
-```
-
-### Adding New Modules:
-1. Create directory: `modules/module_XX_<name>/`
-2. Add implementation: `<name>.py`
-3. Add documentation: `<NAME>.md`
-4. Update this README
-
-## Module Guidelines
-
-Each module should:
-- ✅ Be self-contained (minimal dependencies on other modules)
-- ✅ Include comprehensive documentation (~2,000 words)
-- ✅ Have complete implementation
-- ✅ Include tests (if applicable)
-- ✅ Follow project coding standards
-
-## Total Project Scope
-
-- **Total Modules:** 28
-- **Completed:** 1 (Module 01)
-- **Remaining:** 27
-- **Estimated Total:** ~56,000 words documentation + implementations
+| Module | Identifier | Status | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **Module 01** | `ffi_verifier` | ✅ 1.0.0 | System-level architecture and formal safety constraints. |
+| **Module 02** | `verification_pipeline` | ✅ 1.0.0 | End-to-end orchestration and reporting infrastructure. |
+| **Module 03** | `build_process` | ✅ 1.0.0 | Native build system hooks (Make, CMake, Cargo). |
+| **Module 04** | `native_ingestion` | ✅ 1.0.0 | Clang-based symbol and type extraction from native source. |
+| **Module 05** | `ir_normalization` | ✅ 1.0.0 | Universal IR projection and language-agnostic type safety. |
+| **Module 06** | `contract_schema` | ✅ 1.0.0 | Formal schema definition and runtime enforcement adapters. |
+| **Module 07** | `contract_synthesis` | ✅ 1.0.0 | Intelligence layer for automated contract generation. |
 
 ---
 
-**Last Updated:** 2026-02-03
+## 🛠️ Module Development Guidelines
+
+Each module in this directory follows a strict layout:
+- `modules/module_XX_<name>/`: Root directory for the module.
+- `modules/module_XX_<name>/__init__.py`: Public API exports.
+- `modules/module_XX_<name>/<name>.py`: Core logic implementation.
+- `modules/module_XX_<name>/<NAME>.md`: Technical specification and documentation.
+
+### Standards
+1.  **Isolation**: Modules should interact via clearly defined bridges (e.g., Module 05 -> Module 07 bridge).
+2.  **Type Safety**: All public APIs must utilize Python type hints.
+3.  **Documentation**: Every module must maintain a `CODE_SPEC.md` or equivalent technical reference.
+
+---
+
+## 🚀 Working with Modules
+
+### Installation
+You can install the entire suite from the project root:
+```bash
+pip install -e .
+```
+
+### Direct Usage (Internal)
+If you are developing a specific module, you can add it to your path:
+```python
+import sys
+from pathlib import Path
+sys.path.append(str(Path("modules/module_05_ir_normalization")))
+```
+
+---
+© 2026 PFCV Team.
