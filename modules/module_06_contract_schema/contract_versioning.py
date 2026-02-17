@@ -4881,6 +4881,404 @@ class StabilityGuaranteeChecker:
         return {"checked": True, "compliant": len(violations) == 0, "violations": violations, "warnings": warnings}
 
 
+class RollbackSafety(Enum):
+    """Rollback safety level."""
+
+    SAFE = "safe"
+    CONDITIONAL = "conditional"
+    UNSAFE = "unsafe"
+    UNKNOWN = "unknown"
+
+
+class RollbackStrategy(Enum):
+    """Rollback execution strategy."""
+
+    EMERGENCY = "emergency"
+    PLANNED = "planned"
+    CANARY = "canary"
+    SNAPSHOT = "snapshot"
+
+
+@dataclass
+class RollbackRisk:
+    """Individual rollback risk."""
+
+    risk_type: str
+    severity: str  # LOW, MEDIUM, HIGH, CRITICAL
+    description: str
+    affected_entities: List[str] = field(default_factory=list)
+    mitigation: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "risk_type": self.risk_type,
+            "severity": self.severity,
+            "description": self.description,
+            "affected_entities": self.affected_entities,
+            "mitigation": self.mitigation,
+        }
+
+
+@dataclass
+class RollbackAnalysis:
+    """Analysis of rollback safety."""
+
+    from_version: str
+    to_version: str
+    safety: RollbackSafety
+    risks: List[RollbackRisk] = field(default_factory=list)
+    required_actions: List[str] = field(default_factory=list)
+    data_at_risk: bool = False
+    feature_loss: bool = False
+    breaking_changes_reversed: int = 0
+
+    def is_safe(self) -> bool:
+        """Check if rollback is safe."""
+        return self.safety == RollbackSafety.SAFE
+
+    def get_critical_risks(self) -> List[RollbackRisk]:
+        """Get critical risks."""
+        return [r for r in self.risks if r.severity == "CRITICAL"]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "safety": self.safety.value,
+            "risks": [r.to_dict() for r in self.risks],
+            "required_actions": self.required_actions,
+            "data_at_risk": self.data_at_risk,
+            "feature_loss": self.feature_loss,
+            "breaking_changes_reversed": self.breaking_changes_reversed,
+            "critical_risks": len(self.get_critical_risks()),
+        }
+
+
+class RollbackSafetyAnalyzer:
+    """Analyzes rollback safety."""
+
+    def __init__(self, version_history: VersionHistory):
+        self.history = version_history
+
+    def analyze_rollback(self, from_version: str, to_version: str) -> RollbackAnalysis:
+        """Analyze rollback safety from one version to another."""
+        # Get diff between versions (reversed direction)
+        diff = self.history.diff_between(to_version, from_version)
+
+        if diff is None:
+            return RollbackAnalysis(
+                from_version=from_version,
+                to_version=to_version,
+                safety=RollbackSafety.UNKNOWN,
+                risks=[RollbackRisk("unknown", "CRITICAL", "Unable to analyze rollback safety (no diff data)")],
+            )
+
+        analysis = RollbackAnalysis(from_version=from_version, to_version=to_version, safety=RollbackSafety.SAFE)
+
+        # Analyze breaking changes
+        breaking_changes = diff.get_breaking_changes()
+        analysis.breaking_changes_reversed = len(breaking_changes)
+
+        if breaking_changes:
+            analysis.safety = RollbackSafety.UNSAFE
+            analysis.risks.append(
+                RollbackRisk(
+                    "breaking_changes",
+                    "CRITICAL",
+                    f"Rolling back {len(breaking_changes)} breaking changes may cause incompatibilities",
+                    affected_entities=[c.entity_id for c in breaking_changes],
+                )
+            )
+
+        # Check for additions (become removals on rollback)
+        stats = diff.get_statistics()
+        extensions = stats["by_severity"].get("extension", 0)
+
+        if extensions > 0:
+            analysis.feature_loss = True
+            analysis.risks.append(
+                RollbackRisk("feature_loss", "MEDIUM", f"{extensions} features added in newer version will be lost on rollback")
+            )
+
+            if analysis.safety == RollbackSafety.SAFE:
+                analysis.safety = RollbackSafety.CONDITIONAL
+
+        # Check strengthening (becomes relaxation on rollback)
+        strengthening = stats["by_severity"].get("strengthening", 0)
+
+        if strengthening > 0:
+            analysis.data_at_risk = True
+            analysis.risks.append(
+                RollbackRisk(
+                    "constraint_relaxation",
+                    "HIGH",
+                    f"{strengthening} constraints will be relaxed on rollback",
+                    mitigation="Validate data before rollback",
+                )
+            )
+
+            if analysis.safety == RollbackSafety.SAFE:
+                analysis.safety = RollbackSafety.CONDITIONAL
+
+        # Generate required actions
+        if analysis.data_at_risk:
+            analysis.required_actions.append("Backup all data before rollback")
+            analysis.required_actions.append("Validate data compatibility")
+
+        if analysis.feature_loss:
+            analysis.required_actions.append("Ensure no dependencies on removed features")
+
+        if analysis.breaking_changes_reversed > 0:
+            analysis.required_actions.append("Regenerate bindings for target version")
+            analysis.required_actions.append("Test all affected code paths")
+
+        return analysis
+
+    def find_safe_rollback_path(self, from_version: str, target_version: str) -> Optional[List[str]]:
+        """Find safe rollback path through intermediate versions."""
+        # Get version timeline
+        timeline = self.history.timeline_between(target_version, from_version)
+
+        if not timeline:
+            return None
+
+        # Reverse timeline for rollback
+        rollback_path = [from_version]
+
+        for baseline, candidate in reversed(timeline):
+            rollback_path.append(baseline)
+
+        return rollback_path
+
+
+class DowngradePathGenerator:
+    """Generates downgrade paths."""
+
+    def __init__(self, version_history: VersionHistory, safety_analyzer: RollbackSafetyAnalyzer):
+        self.history = version_history
+        self.analyzer = safety_analyzer
+
+    def generate_downgrade_path(
+        self, from_version: str, to_version: str, strategy: RollbackStrategy = RollbackStrategy.PLANNED
+    ) -> Dict[str, Any]:
+        """Generate downgrade path."""
+        # Direct downgrade analysis
+        direct_analysis = self.analyzer.analyze_rollback(from_version, to_version)
+
+        path = {"from_version": from_version, "to_version": to_version, "strategy": strategy.value, "steps": []}
+
+        if strategy == RollbackStrategy.EMERGENCY:
+            # Emergency: direct rollback, skip safety checks
+            path["steps"].append(
+                {
+                    "step": 1,
+                    "action": f"Emergency rollback to {to_version}",
+                    "safety_check": "SKIPPED",
+                    "warnings": ["Safety checks bypassed", "Data loss possible"],
+                }
+            )
+
+        elif strategy == RollbackStrategy.PLANNED:
+            # Planned: include safety analysis
+            if direct_analysis.is_safe():
+                path["steps"].append(
+                    {
+                        "step": 1,
+                        "action": f"Direct rollback to {to_version}",
+                        "safety": "SAFE",
+                        "required_actions": direct_analysis.required_actions,
+                    }
+                )
+            else:
+                # Find incremental path
+                rollback_versions = self.analyzer.find_safe_rollback_path(from_version, to_version)
+
+                if rollback_versions:
+                    for i in range(len(rollback_versions) - 1):
+                        path["steps"].append(
+                            {
+                                "step": i + 1,
+                                "from": rollback_versions[i],
+                                "to": rollback_versions[i + 1],
+                                "action": f"Rollback to {rollback_versions[i + 1]}",
+                            }
+                        )
+
+        elif strategy == RollbackStrategy.SNAPSHOT:
+            # Snapshot: restore from backup
+            path["steps"].append(
+                {
+                    "step": 1,
+                    "action": "Restore from snapshot",
+                    "snapshot_version": to_version,
+                    "data_loss": "Changes after snapshot will be lost",
+                }
+            )
+
+        path["total_steps"] = len(path["steps"])
+        path["analysis"] = direct_analysis.to_dict()
+
+        return path
+
+
+class RollbackSimulator:
+    """Simulates rollback scenarios."""
+
+    def __init__(self, safety_analyzer: RollbackSafetyAnalyzer):
+        self.analyzer = safety_analyzer
+
+    def simulate_rollback(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Simulate rollback and predict issues."""
+        analysis = self.analyzer.analyze_rollback(from_version, to_version)
+
+        simulation = {
+            "from_version": from_version,
+            "to_version": to_version,
+            "predicted_outcome": "SUCCESS" if analysis.is_safe() else "FAILURE",
+            "issues": [],
+            "warnings": [],
+        }
+
+        # Predict issues based on risks
+        for risk in analysis.risks:
+            issue = {"type": risk.risk_type, "severity": risk.severity, "description": risk.description}
+
+            if risk.severity in ["CRITICAL", "HIGH"]:
+                simulation["issues"].append(issue)
+            else:
+                simulation["warnings"].append(issue)
+
+        # Predict data compatibility
+        if analysis.data_at_risk:
+            simulation["issues"].append(
+                {
+                    "type": "data_compatibility",
+                    "severity": "HIGH",
+                    "description": "Data written by newer version may not be readable by older version",
+                }
+            )
+
+        # Predict feature availability
+        if analysis.feature_loss:
+            simulation["warnings"].append(
+                {
+                    "type": "feature_availability",
+                    "severity": "MEDIUM",
+                    "description": "Some features will no longer be available after rollback",
+                }
+            )
+
+        return simulation
+
+
+class RollbackPreflightChecker:
+    """Performs preflight checks before rollback."""
+
+    def __init__(self, safety_analyzer: RollbackSafetyAnalyzer):
+        self.analyzer = safety_analyzer
+
+    def run_preflight_checks(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Run preflight checks for rollback."""
+        analysis = self.analyzer.analyze_rollback(from_version, to_version)
+
+        checks = {"passed": [], "failed": [], "warnings": []}
+
+        # Check 1: Safety level
+        if analysis.is_safe():
+            checks["passed"].append({"check": "safety_level", "result": "PASS", "message": "Rollback is safe"})
+        elif analysis.safety == RollbackSafety.CONDITIONAL:
+            checks["warnings"].append(
+                {"check": "safety_level", "result": "WARNING", "message": "Rollback requires preparation"}
+            )
+        else:
+            checks["failed"].append({"check": "safety_level", "result": "FAIL", "message": "Rollback is unsafe"})
+
+        # Check 2: Critical risks
+        critical_risks = analysis.get_critical_risks()
+        if not critical_risks:
+            checks["passed"].append({"check": "critical_risks", "result": "PASS", "message": "No critical risks detected"})
+        else:
+            checks["failed"].append(
+                {"check": "critical_risks", "result": "FAIL", "message": f"{len(critical_risks)} critical risks detected"}
+            )
+
+        # Check 3: Data compatibility
+        if not analysis.data_at_risk:
+            checks["passed"].append({"check": "data_compatibility", "result": "PASS", "message": "Data is compatible"})
+        else:
+            checks["warnings"].append(
+                {
+                    "check": "data_compatibility",
+                    "result": "WARNING",
+                    "message": "Data compatibility requires verification",
+                }
+            )
+
+        # Overall result
+        checks["overall"] = "PASS" if not checks["failed"] else "FAIL"
+        checks["safe_to_proceed"] = len(checks["failed"]) == 0
+
+        return checks
+
+
+class RollbackRecoveryPlanner:
+    """Plans recovery from failed rollbacks."""
+
+    def create_recovery_plan(
+        self, failed_rollback_from: str, failed_rollback_to: str, failure_reason: str
+    ) -> Dict[str, Any]:
+        """Create plan to recover from failed rollback."""
+        plan = {
+            "failed_rollback": {
+                "from_version": failed_rollback_from,
+                "to_version": failed_rollback_to,
+                "reason": failure_reason,
+            },
+            "recovery_options": [],
+        }
+
+        # Option 1: Roll forward to original version
+        plan["recovery_options"].append(
+            {
+                "option": 1,
+                "strategy": "roll_forward",
+                "action": f"Upgrade back to {failed_rollback_from}",
+                "description": "Return to version before rollback",
+                "risk": "LOW",
+                "time_estimate": "Quick",
+            }
+        )
+
+        # Option 2: Restore from backup
+        plan["recovery_options"].append(
+            {
+                "option": 2,
+                "strategy": "restore_backup",
+                "action": "Restore from backup snapshot",
+                "description": "Restore complete state from backup",
+                "risk": "MEDIUM",
+                "time_estimate": "Medium",
+                "data_loss": "Changes after backup will be lost",
+            }
+        )
+
+        # Option 3: Manual intervention
+        plan["recovery_options"].append(
+            {
+                "option": 3,
+                "strategy": "manual_fix",
+                "action": "Manual data repair",
+                "description": "Manually fix data inconsistencies",
+                "risk": "HIGH",
+                "time_estimate": "Long",
+            }
+        )
+
+        return plan
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -4899,6 +5297,16 @@ __all__ = [
     "SchemaMigrationPath",
     "SchemaMigrationRegistry",
     "SchemaUpgradeChecker",
+    # From Prompt 15
+    "RollbackSafety",
+    "RollbackStrategy",
+    "RollbackRisk",
+    "RollbackAnalysis",
+    "RollbackSafetyAnalyzer",
+    "DowngradePathGenerator",
+    "RollbackSimulator",
+    "RollbackPreflightChecker",
+    "RollbackRecoveryPlanner",
     # From Prompt 3
     "SynthesisCompatibility",
     "RuleCategory",
