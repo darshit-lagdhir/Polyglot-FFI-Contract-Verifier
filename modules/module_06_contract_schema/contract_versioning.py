@@ -5565,6 +5565,433 @@ class RollbackRecoveryPlanner:
         return plan
 
 
+class ChangelogFormat(Enum):
+    """Changelog output format."""
+
+    MARKDOWN = "markdown"
+    HTML = "html"
+    JSON = "json"
+    TEXT = "text"
+
+
+@dataclass
+class ChangelogEntry:
+    """Single changelog entry."""
+
+    category: str
+    description: str
+    entity_id: Optional[str] = None
+    severity: Optional[str] = None
+    migration_hint: Optional[str] = None
+    details: Optional[str] = None
+
+    def to_markdown(self) -> str:
+        """Convert to markdown format."""
+        parts = []
+
+        # Main description
+        if self.entity_id:
+            parts.append(f"- **{self.entity_id}**: {self.description}")
+        else:
+            parts.append(f"- {self.description}")
+
+        # Add severity badge if present
+        if self.severity and self.severity != "NEUTRAL":
+            parts[0] += f" `[{self.severity}]`"
+
+        # Add migration hint if present
+        if self.migration_hint:
+            parts.append(f"  - *Migration:* {self.migration_hint}")
+
+        return "\n".join(parts)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "category": self.category,
+            "description": self.description,
+            "entity_id": self.entity_id,
+            "severity": self.severity,
+            "migration_hint": self.migration_hint,
+            "details": self.details,
+        }
+
+
+@dataclass
+class Changelog:
+    """Version changelog."""
+
+    from_version: str
+    to_version: str
+    release_date: Optional[str] = None
+    entries: List[ChangelogEntry] = field(default_factory=list)
+    summary: Optional[str] = None
+
+    def add_entry(self, entry: ChangelogEntry) -> None:
+        """Add changelog entry."""
+        self.entries.append(entry)
+
+    def get_entries_by_category(self, category: str) -> List[ChangelogEntry]:
+        """Get entries by category."""
+        return [e for e in self.entries if e.category == category]
+
+    def to_markdown(self) -> str:
+        """Convert to markdown format."""
+        lines = []
+
+        # Header
+        lines.append(f"# Changelog: {self.from_version} → {self.to_version}")
+        if self.release_date:
+            lines.append(f"**Release Date:** {self.release_date}")
+        lines.append("")
+
+        # Summary
+        if self.summary:
+            lines.append(self.summary)
+            lines.append("")
+
+        # Categories in priority order
+        categories = [
+            ("Breaking Changes", "breaking"),
+            ("Deprecations", "deprecation"),
+            ("New Features", "feature"),
+            ("Enhancements", "enhancement"),
+            ("Bug Fixes", "bugfix"),
+            ("Internal Changes", "internal"),
+        ]
+
+        for title, category in categories:
+            entries = self.get_entries_by_category(category)
+            if entries:
+                lines.append(f"## {title}")
+                lines.append("")
+                for entry in entries:
+                    lines.append(entry.to_markdown())
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "from_version": self.from_version,
+            "to_version": self.to_version,
+            "release_date": self.release_date,
+            "summary": self.summary,
+            "entries": [e.to_dict() for e in self.entries],
+        }
+
+
+class ChangelogGenerator:
+    """Generates changelogs from diffs."""
+
+    def generate(self, diff: Any, from_version: str, to_version: str) -> Changelog:
+        """Generate changelog from diff."""
+        changelog = Changelog(from_version, to_version)
+
+        # Generate summary
+        stats = diff.get_statistics()
+        breaking_count = stats["by_severity"].get("breaking", 0)
+        extension_count = stats["by_severity"].get("extension", 0)
+
+        summary_parts = []
+        if breaking_count > 0:
+            summary_parts.append(f"{breaking_count} breaking change(s)")
+        if extension_count > 0:
+            summary_parts.append(f"{extension_count} new feature(s)")
+
+        if summary_parts:
+            changelog.summary = "This release includes: " + ", ".join(summary_parts) + "."
+
+        # Process entity diffs
+        for entity_diff in diff.entity_diffs:
+            for change in entity_diff.changes:
+                entry = self._change_to_entry(change, entity_diff)
+                if entry:
+                    changelog.add_entry(entry)
+
+        return changelog
+
+    def _change_to_entry(self, change: Any, entity_diff: Any) -> Optional[ChangelogEntry]:
+        """Convert change to changelog entry."""
+        category = self._determine_category(change)
+        description = self._format_description(change, entity_diff)
+        migration_hint = self._generate_migration_hint(change)
+
+        return ChangelogEntry(
+            category=category,
+            description=description,
+            entity_id=entity_diff.entity_id,
+            severity=change.severity.value if hasattr(change.severity, "value") else str(change.severity),
+            migration_hint=migration_hint,
+        )
+
+    def _determine_category(self, change: Any) -> str:
+        """Determine changelog category."""
+        change_type = change.change_type
+        severity = str(change.severity).upper()
+
+        if "BREAKING" in severity:
+            return "breaking"
+        elif "EXTENSION" in severity or "added" in change_type:
+            return "feature"
+        elif "removed" in change_type:
+            return "breaking"
+        elif "deprecated" in change_type:
+            return "deprecation"
+        elif "fix" in change_type.lower():
+            return "bugfix"
+        elif "STRENGTHENING" in severity or "RELAXATION" in severity:
+            return "enhancement"
+        else:
+            return "internal"
+
+    def _format_description(self, change: Any, entity_diff: Any) -> str:
+        """Format change description."""
+        if change.description:
+            return change.description
+
+        # Generate description from change type
+        change_type = change.change_type
+        entity_type = entity_diff.entity_type
+
+        if change_type == "function_added":
+            return f"Added new {entity_type}"
+        elif change_type == "function_removed":
+            return f"Removed {entity_type}"
+        elif "type_changed" in change_type:
+            return f"Changed {entity_type} type"
+        else:
+            return f"{change_type.replace('_', ' ').title()}"
+
+    def _generate_migration_hint(self, change: Any) -> Optional[str]:
+        """Generate migration hint."""
+        if hasattr(change, "severity") and "BREAKING" in str(change.severity).upper():
+            if "removed" in change.change_type:
+                return "Remove references to this entity"
+            elif "type_changed" in change.change_type:
+                return "Update type declarations"
+            elif "parameter" in change.change_type:
+                return "Update function calls"
+
+        return None
+
+
+class ReleaseNotesGenerator:
+    """Generates user-facing release notes."""
+
+    def generate(self, changelog: Changelog, template: Optional[str] = None) -> str:
+        """Generate release notes."""
+        if template:
+            return self._apply_template(changelog, template)
+
+        # Default template
+        lines = []
+
+        # Header
+        lines.append(f"# Release Notes: Version {changelog.to_version}")
+        if changelog.release_date:
+            lines.append(f"*Released: {changelog.release_date}*")
+        lines.append("")
+
+        # Highlights
+        breaking = changelog.get_entries_by_category("breaking")
+        features = changelog.get_entries_by_category("feature")
+
+        if breaking or features:
+            lines.append("## Highlights")
+            lines.append("")
+
+            if features:
+                lines.append("### New Features")
+                for entry in features[:3]:  # Top 3
+                    lines.append(f"- {entry.description}")
+                lines.append("")
+
+            if breaking:
+                lines.append("### Important Changes")
+                lines.append(f"⚠️ This release includes {len(breaking)} breaking change(s).")
+                lines.append("Please review the migration guide below.")
+                lines.append("")
+
+        # Migration guide for breaking changes
+        if breaking:
+            lines.append("## Migration Guide")
+            lines.append("")
+            for entry in breaking:
+                lines.append(f"### {entry.entity_id or 'Change'}")
+                lines.append(f"{entry.description}")
+                if entry.migration_hint:
+                    lines.append(f"**Action Required:** {entry.migration_hint}")
+                lines.append("")
+
+        # Full changelog reference
+        lines.append("---")
+        lines.append(f"For a complete list of changes, see the [full changelog](#changelog).")
+
+        return "\n".join(lines)
+
+    def _apply_template(self, changelog: Changelog, template: str) -> str:
+        """Apply template to changelog."""
+        replacements = {
+            "{version}": changelog.to_version,
+            "{from_version}": changelog.from_version,
+            "{date}": changelog.release_date or "TBD",
+            "{breaking_count}": str(len(changelog.get_entries_by_category("breaking"))),
+            "{feature_count}": str(len(changelog.get_entries_by_category("feature"))),
+        }
+
+        result = template
+        for key, value in replacements.items():
+            result = result.replace(key, value)
+
+        return result
+
+
+class MigrationGuideGenerator:
+    """Generates migration guides."""
+
+    def generate(self, changelog: Changelog) -> str:
+        """Generate migration guide."""
+        breaking_changes = changelog.get_entries_by_category("breaking")
+
+        if not breaking_changes:
+            return "# Migration Guide\n\nNo breaking changes in this release."
+
+        lines = []
+        lines.append(f"# Migration Guide: {changelog.from_version} → {changelog.to_version}")
+        lines.append("")
+        lines.append(f"This guide helps you migrate from version {changelog.from_version} to {changelog.to_version}.")
+        lines.append("")
+
+        # Overview
+        lines.append("## Overview")
+        lines.append(f"This release includes {len(breaking_changes)} breaking change(s).")
+        lines.append("")
+
+        # Individual changes
+        lines.append("## Breaking Changes")
+        lines.append("")
+
+        for i, entry in enumerate(breaking_changes, 1):
+            lines.append(f"### {i}. {entry.entity_id or 'Change'}")
+            lines.append("")
+            lines.append(f"**Description:** {entry.description}")
+            lines.append("")
+
+            if entry.migration_hint:
+                lines.append(f"**Migration Steps:**")
+                lines.append(f"1. {entry.migration_hint}")
+                lines.append("")
+
+            if entry.details:
+                lines.append(f"**Details:**")
+                lines.append(entry.details)
+                lines.append("")
+
+        return "\n".join(lines)
+
+
+class ChangelogFormatter:
+    """Formats changelogs in different formats."""
+
+    def format(self, changelog: Changelog, format_type: ChangelogFormat) -> str:
+        """Format changelog."""
+        if format_type == ChangelogFormat.MARKDOWN:
+            return changelog.to_markdown()
+        elif format_type == ChangelogFormat.JSON:
+            import json
+
+            return json.dumps(changelog.to_dict(), indent=2)
+        elif format_type == ChangelogFormat.TEXT:
+            return self._to_plain_text(changelog)
+        elif format_type == ChangelogFormat.HTML:
+            return self._to_html(changelog)
+        else:
+            return changelog.to_markdown()
+
+    def _to_plain_text(self, changelog: Changelog) -> str:
+        """Convert to plain text."""
+        lines = []
+        lines.append(f"CHANGELOG: {changelog.from_version} -> {changelog.to_version}")
+        lines.append("=" * 60)
+
+        if changelog.release_date:
+            lines.append(f"Release Date: {changelog.release_date}")
+
+        lines.append("")
+
+        categories = ["breaking", "feature", "bugfix", "internal"]
+        category_names = {
+            "breaking": "BREAKING CHANGES",
+            "feature": "NEW FEATURES",
+            "bugfix": "BUG FIXES",
+            "internal": "INTERNAL CHANGES",
+        }
+
+        for cat in categories:
+            entries = changelog.get_entries_by_category(cat)
+            if entries:
+                lines.append(category_names[cat])
+                lines.append("-" * 40)
+                for entry in entries:
+                    lines.append(f"* {entry.description}")
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _to_html(self, changelog: Changelog) -> str:
+        """Convert to HTML."""
+        html = []
+        html.append("<div class='changelog'>")
+        html.append(f"<h1>Changelog: {changelog.from_version} → {changelog.to_version}</h1>")
+
+        if changelog.release_date:
+            html.append(f"<p class='date'>{changelog.release_date}</p>")
+
+        if changelog.summary:
+            html.append(f"<p class='summary'>{changelog.summary}</p>")
+
+        categories = [("Breaking Changes", "breaking"), ("New Features", "feature"), ("Bug Fixes", "bugfix")]
+
+        for title, cat in categories:
+            entries = changelog.get_entries_by_category(cat)
+            if entries:
+                html.append(f"<h2>{title}</h2>")
+                html.append("<ul>")
+                for entry in entries:
+                    html.append(f"<li>{entry.description}</li>")
+                html.append("</ul>")
+
+        html.append("</div>")
+        return "\n".join(html)
+
+
+class ChangelogComparer:
+    """Compares changelogs across versions."""
+
+    def compare(self, changelog1: Changelog, changelog2: Changelog) -> Dict[str, Any]:
+        """Compare two changelogs."""
+        return {
+            "changelog1": {
+                "version": changelog1.to_version,
+                "entry_count": len(changelog1.entries),
+                "breaking_count": len(changelog1.get_entries_by_category("breaking")),
+            },
+            "changelog2": {
+                "version": changelog2.to_version,
+                "entry_count": len(changelog2.entries),
+                "breaking_count": len(changelog2.get_entries_by_category("breaking")),
+            },
+            "differences": {
+                "entry_count_diff": len(changelog2.entries) - len(changelog1.entries),
+                "breaking_count_diff": (
+                    len(changelog2.get_entries_by_category("breaking")) - len(changelog1.get_entries_by_category("breaking"))
+                ),
+            },
+        }
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -5695,4 +6122,13 @@ __all__ = [
     "VersionRecommendationEngine",
     "VersionPolicyEnforcer",
     "VersionRangeParser",
+    # From Prompt 17
+    "ChangelogFormat",
+    "ChangelogEntry",
+    "Changelog",
+    "ChangelogGenerator",
+    "ReleaseNotesGenerator",
+    "MigrationGuideGenerator",
+    "ChangelogFormatter",
+    "ChangelogComparer",
 ]
