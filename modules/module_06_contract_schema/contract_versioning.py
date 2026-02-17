@@ -3303,6 +3303,231 @@ DetailedDiffAnalyzer._analyze_clauses = _analyze_clauses_implementation
 
 
 # ============================================================================
+# VERSION HISTORY TRACKING
+# ============================================================================
+@dataclass
+class VersionSnapshot:
+    """Snapshot of a contract version at a specific point in time.
+    Captures state, ancestry, and metadata.
+    """
+
+    version: str
+    timestamp: str
+    fingerprint: str
+    parent_version: Optional[str] = None
+    contract_data: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "timestamp": self.timestamp,
+            "fingerprint": self.fingerprint,
+            "parent_version": self.parent_version,
+            "metadata": self.metadata,
+        }
+
+
+class VersionHistory:
+    """Manages version history and temporal diff queries.
+    Allows traversing the evolution of a contract and computing diffs
+    between any two points in the version graph.
+    """
+
+    def __init__(self):
+        self.snapshots: Dict[str, VersionSnapshot] = {}
+        self.diff_analyzer = DetailedDiffAnalyzer()
+
+    def add_snapshot(self, snapshot: VersionSnapshot) -> None:
+        """Add version snapshot to history."""
+        self.snapshots[snapshot.version] = snapshot
+
+    def get_snapshot(self, version: str) -> Optional[VersionSnapshot]:
+        """Get snapshot by version."""
+        return self.snapshots.get(version)
+
+    def get_all_versions(self) -> List[str]:
+        """Get all version identifiers."""
+        return list(self.snapshots.keys())
+
+    def get_parent_version(self, version: str) -> Optional[str]:
+        """Get parent version of a specific version."""
+        snapshot = self.snapshots.get(version)
+        return snapshot.parent_version if snapshot else None
+
+    def get_ancestry_chain(self, version: str) -> List[str]:
+        """Get ancestry chain from root to the specified version."""
+        chain = []
+        current = version
+
+        while current and current in self.snapshots:
+            chain.insert(0, current)
+            current = self.get_parent_version(current)
+
+        return chain
+
+    def diff_between(self, baseline_version: str, candidate_version: str) -> Optional[DetailedDiff]:
+        """Compute the detailed diff between any two versions in history."""
+        baseline_snap = self.snapshots.get(baseline_version)
+        candidate_snap = self.snapshots.get(candidate_version)
+
+        if not baseline_snap or not candidate_snap:
+            return None
+
+        if baseline_snap.contract_data is None or candidate_snap.contract_data is None:
+            return None
+
+        # internal helper for analysis compatibility
+        class MockContract:
+            def __init__(self, data):
+                self.contract_version = data.get("version", "unknown")
+                self.contract_fingerprint = data.get("fingerprint", "")
+                self.functions = data.get("functions", {})
+                self.clauses = data.get("clauses", {})
+
+        baseline_contract = MockContract(baseline_snap.contract_data)
+        candidate_contract = MockContract(candidate_snap.contract_data)
+
+        return self.diff_analyzer.analyze(baseline_contract, candidate_contract)
+
+    def timeline_between(self, start_version: str, end_version: str) -> List[Tuple[str, str]]:
+        """Get timeline of version transitions between two versions."""
+        if start_version == end_version:
+            return []
+
+        start_chain = self.get_ancestry_chain(start_version)
+        end_chain = self.get_ancestry_chain(end_version)
+
+        if not start_chain or not end_chain:
+            return []
+
+        # Find common ancestor
+        common_idx = -1
+        for i, (v1, v2) in enumerate(zip(start_chain, end_chain)):
+            if v1 == v2:
+                common_idx = i
+            else:
+                break
+
+        if common_idx == -1:
+            return []
+
+        # Build timeline: skip versions before start_version and build path to end_version
+        try:
+            start_pos = end_chain.index(start_version)
+            timeline_versions = end_chain[start_pos:]
+        except ValueError:
+            # If start_version is not an ancestor of end_version, use common ancestor to end
+            timeline_versions = end_chain[common_idx:]
+
+        timeline = []
+        for i in range(len(timeline_versions) - 1):
+            timeline.append((timeline_versions[i], timeline_versions[i + 1]))
+
+        return timeline
+
+    def find_breaking_changes_between(self, start_version: str, end_version: str) -> List[str]:
+        """Find versions in the timeline that introduce breaking changes."""
+        timeline = self.timeline_between(start_version, end_version)
+        breaking_versions = []
+
+        for baseline, candidate in timeline:
+            diff = self.diff_between(baseline, candidate)
+            if diff and len(diff.get_breaking_changes()) > 0:
+                breaking_versions.append(candidate)
+
+        return breaking_versions
+
+    def is_ancestor(self, ancestor: str, descendant: str) -> bool:
+        """Check if one version is an ancestor of another."""
+        chain = self.get_ancestry_chain(descendant)
+        return ancestor in chain
+
+    def common_ancestor(self, version1: str, version2: str) -> Optional[str]:
+        """Find the most recent common ancestor of two versions."""
+        chain1 = self.get_ancestry_chain(version1)
+        chain2 = self.get_ancestry_chain(version2)
+
+        common = None
+        for v1, v2 in zip(chain1, chain2):
+            if v1 == v2:
+                common = v1
+            else:
+                break
+
+        return common
+
+
+class VersionHistoryBuilder:
+    """Builds version history from contract snapshots."""
+
+    def __init__(self):
+        self.history = VersionHistory()
+
+    def add_version(
+        self,
+        version: str,
+        fingerprint: str,
+        contract_data: Dict[str, Any],
+        parent_version: Optional[str] = None,
+        timestamp: Optional[str] = None,
+    ) -> VersionSnapshot:
+        """Add a version to the history graph."""
+        if timestamp is None:
+            timestamp = datetime.utcnow().isoformat() + "Z"
+
+        snapshot = VersionSnapshot(
+            version=version,
+            timestamp=timestamp,
+            fingerprint=fingerprint,
+            parent_version=parent_version,
+            contract_data=contract_data,
+        )
+
+        self.history.add_snapshot(snapshot)
+        return snapshot
+
+    def build(self) -> VersionHistory:
+        """Finalize and return the version history."""
+        return self.history
+
+
+class ChangeAggregator:
+    """Aggregates changes across multiple version transitions."""
+
+    def aggregate_changes(self, diffs: List[DetailedDiff]) -> Dict[str, Any]:
+        """Aggregate changes from multiple diff objects."""
+        aggregated = {
+            "total_changes": 0,
+            "breaking_changes": 0,
+            "extensions": 0,
+            "strengthening": 0,
+            "relaxation": 0,
+            "notable": 0,
+            "neutral": 0,
+            "affected_entities": set(),
+        }
+
+        for diff in diffs:
+            stats = diff.get_statistics()
+            aggregated["total_changes"] += stats["total_changes"]
+            aggregated["breaking_changes"] += stats["by_severity"].get("breaking", 0)
+            aggregated["extensions"] += stats["by_severity"].get("extension", 0)
+            aggregated["strengthening"] += stats["by_severity"].get("strengthening", 0)
+            aggregated["relaxation"] += stats["by_severity"].get("relaxation", 0)
+            aggregated["notable"] += stats["by_severity"].get("notable", 0)
+            aggregated["neutral"] += stats["by_severity"].get("neutral", 0)
+
+            for entity_diff in diff.entity_diffs:
+                aggregated["affected_entities"].add(entity_diff.entity_id)
+
+        # Convert set to sorted list for deterministic JSON output
+        aggregated["affected_entities"] = sorted(list(aggregated["affected_entities"]))
+        return aggregated
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -3377,4 +3602,9 @@ __all__ = [
     # From Prompt 9
     "ClauseAnalyzer",
     "ClauseCatalogAnalyzer",
+    # From Prompt 10
+    "VersionSnapshot",
+    "VersionHistory",
+    "VersionHistoryBuilder",
+    "ChangeAggregator",
 ]
