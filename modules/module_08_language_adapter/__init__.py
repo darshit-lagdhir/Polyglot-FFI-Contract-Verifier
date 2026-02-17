@@ -14,6 +14,8 @@ from .language_adapter import (
     OwnershipRegistry,
     AdapterConfig,
     LanguageAdapter,
+    PredicateFactory,
+    ValidationEngine,
     __version__,
 )
 
@@ -31,5 +33,7 @@ __all__ = [
     'OwnershipRegistry',
     'AdapterConfig',
     'LanguageAdapter',
+    'PredicateFactory',
+    'ValidationEngine',
     '__version__',
 ]

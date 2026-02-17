@@ -628,6 +628,314 @@ class AdapterConfig:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# SECTION 11: PREDICATE FACTORY
+# ════════════════════════════════════════════════════════════════════════════
+
+class PredicateFactory:
+    """
+    Factory for creating validation predicates from clause metadata.
+    
+    Generates callable predicate functions dynamically based on clause types
+    and metadata, enabling contract-driven validation without manual coding.
+    """
+    
+    @staticmethod
+    def create_range_predicate(
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create numeric range validation predicate.
+        
+        Args:
+            min_value: Minimum allowed value (inclusive)
+            max_value: Maximum allowed value (inclusive)
+            
+        Returns:
+            Predicate function validating numeric range
+        """
+        def predicate(inputs: List[Any], param_indices: List[int]) -> bool:
+            if not param_indices:
+                return True
+            
+            value = inputs[param_indices[0]]
+            
+            # Handle None/null
+            if value is None:
+                return False
+            
+            # Convert to numeric
+            try:
+                num_value = float(value)
+            except (TypeError, ValueError):
+                return False
+            
+            # Check bounds
+            if min_value is not None and num_value < min_value:
+                return False
+            if max_value is not None and num_value > max_value:
+                return False
+            
+            return True
+        
+        return predicate
+    
+    @staticmethod
+    def create_nullability_predicate(
+        allow_null: bool = False
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create pointer nullability validation predicate.
+        
+        Args:
+            allow_null: Whether null pointers are allowed
+            
+        Returns:
+            Predicate function validating nullability
+        """
+        def predicate(inputs: List[Any], param_indices: List[int]) -> bool:
+            if not param_indices:
+                return True
+            
+            value = inputs[param_indices[0]]
+            
+            if allow_null:
+                return True  # Null allowed
+            else:
+                return value is not None  # Null not allowed
+        
+        return predicate
+    
+    @staticmethod
+    def create_type_predicate(
+        expected_type: type
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create type validation predicate.
+        
+        Args:
+            expected_type: Expected Python type
+            
+        Returns:
+            Predicate function validating type
+        """
+        def predicate(inputs: List[Any], param_indices: List[int]) -> bool:
+            if not param_indices:
+                return True
+            
+            value = inputs[param_indices[0]]
+            return isinstance(value, expected_type)
+        
+        return predicate
+    
+    @staticmethod
+    def create_string_length_predicate(
+        min_length: Optional[int] = None,
+        max_length: Optional[int] = None
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create string length validation predicate.
+        
+        Args:
+            min_length: Minimum string length
+            max_length: Maximum string length
+            
+        Returns:
+            Predicate function validating string length
+        """
+        def predicate(inputs: List[Any], param_indices: List[int]) -> bool:
+            if not param_indices:
+                return True
+            
+            value = inputs[param_indices[0]]
+            
+            if not isinstance(value, str):
+                return False
+            
+            length = len(value)
+            
+            if min_length is not None and length < min_length:
+                return False
+            if max_length is not None and length > max_length:
+                return False
+            
+            return True
+        
+        return predicate
+    
+    @staticmethod
+    def create_buffer_length_predicate(
+        size_param_index: int
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create buffer-length relational predicate.
+        
+        Validates that buffer length matches size parameter.
+        
+        Args:
+            size_param_index: Index of size parameter
+            
+        Returns:
+            Predicate function validating buffer-size relationship
+        """
+        def predicate(inputs: List[Any], param_indices: List[int]) -> bool:
+            if len(param_indices) < 1:
+                return True
+            
+            buffer_idx = param_indices[0]
+            
+            if buffer_idx >= len(inputs) or size_param_index >= len(inputs):
+                return False
+            
+            buffer = inputs[buffer_idx]
+            size = inputs[size_param_index]
+            
+            # Handle None buffer with zero size
+            if buffer is None and size == 0:
+                return True
+            
+            if buffer is None:
+                return False
+            
+            # Check buffer has required length
+            try:
+                buffer_len = len(buffer)
+                return buffer_len >= size
+            except TypeError:
+                return False
+        
+        return predicate
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 12: VALIDATION ENGINE
+# ════════════════════════════════════════════════════════════════════════════
+
+class ValidationEngine:
+    """
+    Executes validation graphs against runtime values.
+    
+    Traverses validation graphs in topological order, evaluates predicates,
+    and collects results. Supports fail-fast and aggregate violation modes.
+    """
+    
+    def __init__(self):
+        self.violation_handlers: List[Callable] = []
+        self.predicate_factory = PredicateFactory()
+    
+    def register_violation_handler(self, handler: Callable) -> None:
+        """
+        Register violation callback.
+        
+        Args:
+            handler: Callable receiving (node, inputs) on violation
+        """
+        self.violation_handlers.append(handler)
+    
+    def validate(
+        self,
+        graph: ValidationGraph,
+        inputs: List[Any],
+        context: EnforcementContext
+    ) -> bool:
+        """
+        Execute validation graph.
+        
+        Args:
+            graph: Validation graph to execute
+            inputs: Normalized input values
+            context: Enforcement context for recording results
+            
+        Returns:
+            True if all validations pass, False otherwise
+        """
+        execution_order = graph.get_execution_order()
+        
+        for node in execution_order:
+            # Skip if predicate not set
+            if node.predicate is None:
+                context.record_validation(
+                    node.clause_id,
+                    ValidationStatus.SKIPPED,
+                    "Predicate not implemented"
+                )
+                continue
+            
+            # Execute predicate
+            start_time = datetime.utcnow()
+            
+            try:
+                result = node.predicate(inputs, node.parameters)
+                
+                # Calculate elapsed time in ms
+                # (Not recorded in this basic validate method, but variable assigned)
+                exec_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                
+                if result:
+                    context.record_validation(
+                        node.clause_id,
+                        ValidationStatus.PASS
+                    )
+                else:
+                    context.record_validation(
+                        node.clause_id,
+                        ValidationStatus.FAIL,
+                        node.failure_message
+                    )
+                    
+                    # Notify handlers
+                    for handler in self.violation_handlers:
+                        handler(node, inputs)
+                    
+                    # Fail fast for mandatory clauses
+                    if node.severity == ClauseSeverity.MANDATORY:
+                        return False
+                
+            except Exception as e:
+                context.record_validation(
+                    node.clause_id,
+                    ValidationStatus.ERROR,
+                    f"Predicate exception: {e}"
+                )
+                return False
+        
+        return True
+    
+    def validate_with_metrics(
+        self,
+        graph: ValidationGraph,
+        inputs: List[Any],
+        context: EnforcementContext
+    ) -> Dict[str, Any]:
+        """
+        Execute validation with detailed metrics.
+        
+        Returns:
+            Dictionary with validation result and performance metrics
+        """
+        start_time = datetime.utcnow()
+        
+        result = self.validate(graph, inputs, context)
+        
+        end_time = datetime.utcnow()
+        duration_ms = (end_time - start_time).total_seconds() * 1000
+        
+        return {
+            'valid': result,
+            'duration_ms': duration_ms,
+            'total_validations': len(graph.nodes),
+            'validations_passed': len([
+                r for r in context.validation_results
+                if r['status'] == 'pass'
+            ]),
+            'validations_failed': len([
+                r for r in context.validation_results
+                if r['status'] == 'fail'
+            ])
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # SECTION 10: LANGUAGE ADAPTER
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -638,6 +946,7 @@ class LanguageAdapter:
         self.config = config or AdapterConfig()
         self.projector = ContractProjector()
         self.ownership_registry = OwnershipRegistry()
+        self.validation_engine = ValidationEngine()
         self.contract_fingerprint: Optional[str] = None
         self.validation_graphs: Dict[str, ValidationGraph] = {}
     
@@ -662,6 +971,41 @@ class LanguageAdapter:
             start_time=datetime.utcnow().isoformat() + 'Z'
         )
     
+    def validate_invocation(
+        self,
+        function_name: str,
+        inputs: List[Any],
+        context: Optional[EnforcementContext] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate function invocation against contract.
+        
+        Args:
+            function_name: Name of function
+            inputs: Normalized input values
+            context: Optional enforcement context (created if not provided)
+            
+        Returns:
+            Validation result dictionary
+        """
+        if context is None:
+            context = self.create_enforcement_context(function_name)
+        
+        graph = self.get_validation_graph(function_name)
+        if not graph:
+            raise ValueError(f"No validation graph for function: {function_name}")
+        
+        context.normalized_inputs = inputs
+        result = self.validation_engine.validate_with_metrics(graph, inputs, context)
+        
+        # context.finalize() if implemented, or just update status
+        
+        return {
+            'valid': result['valid'],
+            'context': context.to_dict(),
+            'metrics': result
+        }
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get adapter statistics."""
         return {
