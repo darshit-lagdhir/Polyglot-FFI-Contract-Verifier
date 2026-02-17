@@ -2454,6 +2454,401 @@ class CICDCompatibilityChecker:
 
 
 # ============================================================================
+# CHANGE SEVERITY
+# ============================================================================
+class ChangeSeverity(Enum):
+    """Severity of individual changes."""
+
+    BREAKING = "breaking"
+    EXTENSION = "extension"
+    STRENGTHENING = "strengthening"
+    RELAXATION = "relaxation"
+    NOTABLE = "notable"
+    NEUTRAL = "neutral"
+
+
+# ============================================================================
+# DETAILED CHANGE ENTITIES
+# ============================================================================
+@dataclass
+class DetailedChange:
+    """Detailed description of a single change.
+    Captures what changed, where, and why it matters.
+    """
+
+    change_type: str
+    entity_id: str
+    severity: ChangeSeverity
+    description: str
+    old_value: Optional[Any] = None
+    new_value: Optional[Any] = None
+    location: Optional[str] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "change_type": self.change_type,
+            "entity_id": self.entity_id,
+            "severity": self.severity.value,
+            "description": self.description,
+            "old_value": str(self.old_value) if self.old_value is not None else None,
+            "new_value": str(self.new_value) if self.new_value is not None else None,
+            "location": self.location,
+            "details": self.details,
+        }
+
+
+@dataclass
+class EntityDiff:
+    """Diff for a single entity (function, struct, etc.).
+    Groups all changes for one entity.
+    """
+
+    entity_id: str
+    entity_type: str
+    changes: List[DetailedChange] = field(default_factory=list)
+
+    def has_breaking_changes(self) -> bool:
+        """Check if entity has breaking changes."""
+        return any(c.severity == ChangeSeverity.BREAKING for c in self.changes)
+
+    def get_most_severe_change(self) -> Optional[DetailedChange]:
+        """Get most severe change for this entity."""
+        if not self.changes:
+            return None
+
+        priority = {
+            ChangeSeverity.BREAKING: 0,
+            ChangeSeverity.RELAXATION: 1,
+            ChangeSeverity.STRENGTHENING: 2,
+            ChangeSeverity.EXTENSION: 3,
+            ChangeSeverity.NOTABLE: 4,
+            ChangeSeverity.NEUTRAL: 5,
+        }
+
+        return min(self.changes, key=lambda c: priority.get(c.severity, 99))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "entity_id": self.entity_id,
+            "entity_type": self.entity_type,
+            "changes": [c.to_dict() for c in self.changes],
+            "has_breaking_changes": self.has_breaking_changes(),
+        }
+
+
+# ============================================================================
+# DETAILED DIFF RESULT
+# ============================================================================
+@dataclass
+class DetailedDiff:
+    """Complete detailed diff between two contracts.
+    Contains granular change analysis at all levels.
+    """
+
+    baseline_version: str
+    candidate_version: str
+    baseline_fingerprint: str
+    candidate_fingerprint: str
+    entity_diffs: List[EntityDiff] = field(default_factory=list)
+
+    def get_all_changes(self) -> List[DetailedChange]:
+        """Get all changes across all entities."""
+        all_changes = []
+        for entity_diff in self.entity_diffs:
+            all_changes.extend(entity_diff.changes)
+        return all_changes
+
+    def filter_by_severity(self, severity: ChangeSeverity) -> List[DetailedChange]:
+        """Get all changes with specific severity."""
+        return [c for c in self.get_all_changes() if c.severity == severity]
+
+    def filter_by_entity_type(self, entity_type: str) -> List[EntityDiff]:
+        """Get all entity diffs of specific type."""
+        return [e for e in self.entity_diffs if e.entity_type == entity_type]
+
+    def get_breaking_changes(self) -> List[DetailedChange]:
+        """Get all breaking changes."""
+        return self.filter_by_severity(ChangeSeverity.BREAKING)
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get diff statistics."""
+        all_changes = self.get_all_changes()
+
+        by_severity = {}
+        for severity in ChangeSeverity:
+            count = len([c for c in all_changes if c.severity == severity])
+            by_severity[severity.value] = count
+
+        by_entity_type = {}
+        for entity_diff in self.entity_diffs:
+            entity_type = entity_diff.entity_type
+            by_entity_type[entity_type] = by_entity_type.get(entity_type, 0) + 1
+
+        return {
+            "total_changes": len(all_changes),
+            "total_entities_changed": len(self.entity_diffs),
+            "by_severity": by_severity,
+            "by_entity_type": by_entity_type,
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "baseline_version": self.baseline_version,
+            "candidate_version": self.candidate_version,
+            "baseline_fingerprint": self.baseline_fingerprint,
+            "candidate_fingerprint": self.candidate_fingerprint,
+            "entity_diffs": [e.to_dict() for e in self.entity_diffs],
+            "statistics": self.get_statistics(),
+        }
+
+    def to_json(self) -> str:
+        """Convert to JSON string."""
+        return json.dumps(self.to_dict(), indent=2)
+
+
+# ============================================================================
+# DIFF ANALYZER
+# ============================================================================
+class DetailedDiffAnalyzer:
+    """Computes detailed diffs between contracts.
+    Performs granular comparison at all levels.
+    """
+
+    def analyze(self, baseline_contract: Any, candidate_contract: Any) -> DetailedDiff:
+        """
+        Compute detailed diff.
+        Args:
+            baseline_contract: Old contract
+            candidate_contract: New contract
+        Returns:
+            DetailedDiff with granular changes
+        """
+        diff = DetailedDiff(
+            baseline_version=getattr(baseline_contract, "contract_version", "unknown"),
+            candidate_version=getattr(candidate_contract, "contract_version", "unknown"),
+            baseline_fingerprint=getattr(baseline_contract, "contract_fingerprint", ""),
+            candidate_fingerprint=getattr(candidate_contract, "contract_fingerprint", ""),
+        )
+
+        # Analyze functions (placeholder)
+        function_diffs = self._analyze_functions(baseline_contract, candidate_contract)
+        diff.entity_diffs.extend(function_diffs)
+
+        # Analyze types (placeholder)
+        type_diffs = self._analyze_types(baseline_contract, candidate_contract)
+        diff.entity_diffs.extend(type_diffs)
+
+        # Analyze clauses (placeholder)
+        clause_diffs = self._analyze_clauses(baseline_contract, candidate_contract)
+        diff.entity_diffs.extend(clause_diffs)
+
+        return diff
+
+    def _analyze_functions(self, baseline: Any, candidate: Any) -> List[EntityDiff]:
+        """Analyze function changes."""
+        return []
+
+    def _analyze_types(self, baseline: Any, candidate: Any) -> List[EntityDiff]:
+        """Analyze type changes."""
+        return []
+
+    def _analyze_clauses(self, baseline: Any, candidate: Any) -> List[EntityDiff]:
+        """Analyze clause changes."""
+        return []
+
+
+# ============================================================================
+# STRUCT LAYOUT ANALYZER
+# ============================================================================
+class StructLayoutAnalyzer:
+    """Analyzes struct layout changes in detail.
+    Detects size, alignment, and field offset changes.
+    """
+
+    def analyze_struct(self, baseline_struct: Dict[str, Any], candidate_struct: Dict[str, Any], struct_id: str) -> EntityDiff:
+        """
+        Analyze struct changes.
+        Args:
+            baseline_struct: Old struct definition
+            candidate_struct: New struct definition
+            struct_id: Struct identifier
+        Returns:
+            EntityDiff for struct
+        """
+        entity_diff = EntityDiff(entity_id=struct_id, entity_type="struct")
+
+        # Check size change
+        baseline_size = baseline_struct.get("size_bytes", 0)
+        candidate_size = candidate_struct.get("size_bytes", 0)
+
+        if baseline_size != candidate_size:
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="size_changed",
+                    entity_id=struct_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Struct size changed from {baseline_size} to {candidate_size} bytes",
+                    old_value=baseline_size,
+                    new_value=candidate_size,
+                )
+            )
+
+        # Check alignment change
+        baseline_align = baseline_struct.get("alignment", 0)
+        candidate_align = candidate_struct.get("alignment", 0)
+
+        if baseline_align != candidate_align:
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="alignment_changed",
+                    entity_id=struct_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Struct alignment changed from {baseline_align} to {candidate_align}",
+                    old_value=baseline_align,
+                    new_value=candidate_align,
+                )
+            )
+
+        # Analyze field changes
+        baseline_fields = {f["name"]: f for f in baseline_struct.get("fields", [])}
+        candidate_fields = {f["name"]: f for f in candidate_struct.get("fields", [])}
+
+        # Added fields
+        for name in candidate_fields.keys() - baseline_fields.keys():
+            field_info = candidate_fields[name]
+            offset = field_info.get("offset", 0)
+
+            severity = ChangeSeverity.EXTENSION if offset >= baseline_size else ChangeSeverity.BREAKING
+
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="field_added",
+                    entity_id=struct_id,
+                    severity=severity,
+                    description=f"Field '{name}' added at offset {offset}",
+                    location=f"field '{name}'",
+                    new_value=field_info,
+                )
+            )
+
+        # Removed fields
+        for name in baseline_fields.keys() - candidate_fields.keys():
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="field_removed",
+                    entity_id=struct_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Field '{name}' removed",
+                    location=f"field '{name}'",
+                )
+            )
+
+        # Modified fields
+        for name in baseline_fields.keys() & candidate_fields.keys():
+            baseline_field = baseline_fields[name]
+            candidate_field = candidate_fields[name]
+
+            baseline_offset = baseline_field.get("offset", 0)
+            candidate_offset = candidate_field.get("offset", 0)
+
+            if baseline_offset != candidate_offset:
+                entity_diff.changes.append(
+                    DetailedChange(
+                        change_type="field_offset_changed",
+                        entity_id=struct_id,
+                        severity=ChangeSeverity.BREAKING,
+                        description=f"Field '{name}' offset changed from {baseline_offset} to {candidate_offset}",
+                        location=f"field '{name}'",
+                        old_value=baseline_offset,
+                        new_value=candidate_offset,
+                    )
+                )
+
+        return entity_diff
+
+
+# ============================================================================
+# DIFF FORMATTER
+# ============================================================================
+class DiffFormatter:
+    """Formats detailed diffs for various output formats.
+    Supports text, JSON, and Markdown.
+    """
+
+    def format_text(self, diff: DetailedDiff) -> str:
+        """Format diff as plain text."""
+        lines = []
+
+        lines.append(f"Contract Diff: {diff.baseline_version} → {diff.candidate_version}")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for entity_diff in diff.entity_diffs:
+            if not entity_diff.changes:
+                continue
+
+            severity_badge = self._get_severity_badge(entity_diff.get_most_severe_change())
+            lines.append(f"[{severity_badge}] {entity_diff.entity_id}")
+
+            for change in entity_diff.changes:
+                lines.append(f"  - {change.description}")
+
+            lines.append("")
+
+        stats = diff.get_statistics()
+        lines.append("Summary:")
+        lines.append(f"  Total changes: {stats['total_changes']}")
+        lines.append(f"  Breaking: {stats['by_severity'].get('breaking', 0)}")
+        lines.append(f"  Extensions: {stats['by_severity'].get('extension', 0)}")
+
+        return "\n".join(lines)
+
+    def format_markdown(self, diff: DetailedDiff) -> str:
+        """Format diff as Markdown."""
+        lines = []
+
+        lines.append(f"# Contract Diff: {diff.baseline_version} → {diff.candidate_version}")
+        lines.append("")
+
+        breaking = diff.get_breaking_changes()
+        if breaking:
+            lines.append("## 🚨 Breaking Changes")
+            lines.append("")
+            for change in breaking:
+                lines.append(f"- **{change.entity_id}**: {change.description}")
+            lines.append("")
+
+        stats = diff.get_statistics()
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(f"- Total changes: {stats['total_changes']}")
+        lines.append(f"- Breaking: {stats['by_severity'].get('breaking', 0)}")
+        lines.append(f"- Extensions: {stats['by_severity'].get('extension', 0)}")
+
+        return "\n".join(lines)
+
+    def _get_severity_badge(self, change: Optional[DetailedChange]) -> str:
+        """Get severity badge text."""
+        if not change:
+            return "UNKNOWN"
+
+        badges = {
+            ChangeSeverity.BREAKING: "BREAKING",
+            ChangeSeverity.EXTENSION: "EXTENSION",
+            ChangeSeverity.STRENGTHENING: "STRENGTHENING",
+            ChangeSeverity.RELAXATION: "RELAXATION",
+            ChangeSeverity.NOTABLE: "NOTABLE",
+            ChangeSeverity.NEUTRAL: "NEUTRAL",
+        }
+
+        return badges.get(change.severity, "UNKNOWN")
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -2514,4 +2909,12 @@ __all__ = [
     "BaselineManager",
     "CompatibilityCheckResult",
     "CICDCompatibilityChecker",
+    # From Prompt 7
+    "ChangeSeverity",
+    "DetailedChange",
+    "EntityDiff",
+    "DetailedDiff",
+    "DetailedDiffAnalyzer",
+    "StructLayoutAnalyzer",
+    "DiffFormatter",
 ]
