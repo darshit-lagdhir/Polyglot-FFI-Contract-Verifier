@@ -2026,6 +2026,434 @@ class DependencyResolver:
 
 
 # ============================================================================
+# POLICY FRAMEWORK
+# ============================================================================
+class PolicyLevel(Enum):
+    """Policy enforcement levels."""
+
+    STRICT = "strict"
+    MODERATE = "moderate"
+    PERMISSIVE = "permissive"
+
+
+class AdvisorySeverity(Enum):
+    """Advisory severity levels."""
+
+    PASS = "pass"
+    WARNING = "warning"
+    ERROR = "error"
+    BLOCK = "block"
+
+
+@dataclass
+class CompatibilityPolicy:
+    """Compatibility enforcement policy.
+    Defines what changes are allowed and what requires approval.
+    """
+
+    level: PolicyLevel
+    allow_breaking_changes: bool = False
+    allow_relaxation: bool = False
+    allow_strengthening: bool = True
+    require_approval_for_breaking: bool = True
+    require_approval_for_relaxation: bool = True
+    block_on_unknown: bool = True
+
+    @classmethod
+    def strict(cls) -> "CompatibilityPolicy":
+        """Create strict policy (production)."""
+        return cls(
+            level=PolicyLevel.STRICT,
+            allow_breaking_changes=False,
+            allow_relaxation=False,
+            allow_strengthening=True,
+            require_approval_for_breaking=True,
+            require_approval_for_relaxation=True,
+            block_on_unknown=True,
+        )
+
+    @classmethod
+    def moderate(cls) -> "CompatibilityPolicy":
+        """Create moderate policy (development)."""
+        return cls(
+            level=PolicyLevel.MODERATE,
+            allow_breaking_changes=True,
+            allow_relaxation=True,
+            allow_strengthening=True,
+            require_approval_for_breaking=True,
+            require_approval_for_relaxation=True,
+            block_on_unknown=True,
+        )
+
+    @classmethod
+    def permissive(cls) -> "CompatibilityPolicy":
+        """Create permissive policy (feature branches)."""
+        return cls(
+            level=PolicyLevel.PERMISSIVE,
+            allow_breaking_changes=True,
+            allow_relaxation=True,
+            allow_strengthening=True,
+            require_approval_for_breaking=False,
+            require_approval_for_relaxation=False,
+            block_on_unknown=False,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "level": self.level.value,
+            "allow_breaking_changes": self.allow_breaking_changes,
+            "allow_relaxation": self.allow_relaxation,
+            "allow_strengthening": self.allow_strengthening,
+            "require_approval_for_breaking": self.require_approval_for_breaking,
+            "require_approval_for_relaxation": self.require_approval_for_relaxation,
+            "block_on_unknown": self.block_on_unknown,
+        }
+
+
+# ============================================================================
+# COMPATIBILITY ADVISORY
+# ============================================================================
+@dataclass
+class CompatibilityAdvisory:
+    """Compatibility advisory with recommendations.
+    Provides actionable guidance based on compatibility analysis.
+    """
+
+    severity: AdvisorySeverity
+    title: str
+    summary: str
+    details: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+    affected_entities: List[str] = field(default_factory=list)
+    approval_required: bool = False
+    upgrade_path: Optional[UpgradePath] = None
+
+    def is_blocking(self) -> bool:
+        """Check if advisory should block CI."""
+        return self.severity in [AdvisorySeverity.ERROR, AdvisorySeverity.BLOCK]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "severity": self.severity.value,
+            "title": self.title,
+            "summary": self.summary,
+            "details": self.details,
+            "recommendations": self.recommendations,
+            "affected_entities": self.affected_entities,
+            "approval_required": self.approval_required,
+            "upgrade_path": self.upgrade_path.to_dict() if self.upgrade_path else None,
+        }
+
+    def to_markdown(self) -> str:
+        """Format as Markdown for GitHub comments."""
+        severity_icons = {
+            AdvisorySeverity.PASS: "✓",
+            AdvisorySeverity.WARNING: "⚠",
+            AdvisorySeverity.ERROR: "✗",
+            AdvisorySeverity.BLOCK: "⛔",
+        }
+
+        icon = severity_icons.get(self.severity, "•")
+
+        md = f"## {icon} {self.title}\n\n"
+        md += f"{self.summary}\n\n"
+
+        if self.details:
+            md += "### Changes\n"
+            for detail in self.details:
+                md += f"- {detail}\n"
+            md += "\n"
+
+        if self.recommendations:
+            md += "### Recommendations\n"
+            for rec in self.recommendations:
+                md += f"- {rec}\n"
+            md += "\n"
+
+        if self.approval_required:
+            md += "**⚠ Approval Required**: YES\n"
+
+        return md
+
+
+# ============================================================================
+# ADVISORY GENERATOR
+# ============================================================================
+class AdvisoryGenerator:
+    """Generates compatibility advisories from diff analysis.
+    Produces human-readable recommendations.
+    """
+
+    def generate(self, diff: ContractDiff, policy: CompatibilityPolicy) -> CompatibilityAdvisory:
+        """
+        Generate advisory from diff and policy.
+        Args:
+            diff: Contract diff
+            policy: Compatibility policy
+        Returns:
+            CompatibilityAdvisory
+        """
+        # Check for breaking changes
+        if diff.has_breaking_changes():
+            return self._generate_breaking_advisory(diff, policy)
+
+        # Check for relaxation
+        if self._has_relaxation(diff):
+            return self._generate_relaxation_advisory(diff, policy)
+
+        # Check for strengthening
+        if self._has_strengthening(diff):
+            return self._generate_strengthening_advisory(diff, policy)
+
+        # No significant changes
+        return self._generate_pass_advisory(diff)
+
+    def _generate_breaking_advisory(self, diff: ContractDiff, policy: CompatibilityPolicy) -> CompatibilityAdvisory:
+        """Generate advisory for breaking changes."""
+        breaking = diff.get_breaking_changes()
+
+        severity = AdvisorySeverity.ERROR
+        if not policy.allow_breaking_changes:
+            severity = AdvisorySeverity.BLOCK
+
+        details = [f"BREAKING: {change.description}" for change in breaking]
+
+        recommendations = ["Migration required", "Update all bindings", "Bump major version"]
+
+        if policy.require_approval_for_breaking:
+            recommendations.append("Obtain approval before merging")
+
+        return CompatibilityAdvisory(
+            severity=severity,
+            title="Breaking Changes Detected",
+            summary=f"{len(breaking)} ABI-breaking change(s) detected",
+            details=details,
+            recommendations=recommendations,
+            affected_entities=[c.entity_id for c in breaking],
+            approval_required=policy.require_approval_for_breaking,
+        )
+
+    def _generate_relaxation_advisory(self, diff: ContractDiff, policy: CompatibilityPolicy) -> CompatibilityAdvisory:
+        """Generate advisory for constraint relaxation."""
+        relaxed = [c for c in diff.changes if c.abi_impact == ABICompatibility.ABI_COMPATIBLE_RELAXATION]
+
+        severity = AdvisorySeverity.WARNING
+
+        details = [f"RELAXED: {c.description}" for c in relaxed]
+
+        recommendations = ["Review runtime impact", "Ensure backward compatibility", "Consider security implications"]
+
+        return CompatibilityAdvisory(
+            severity=severity,
+            title="Constraints Relaxed",
+            summary=f"{len(relaxed)} constraint(s) relaxed",
+            details=details,
+            recommendations=recommendations,
+            approval_required=policy.require_approval_for_relaxation,
+        )
+
+    def _generate_strengthening_advisory(self, diff: ContractDiff, policy: CompatibilityPolicy) -> CompatibilityAdvisory:
+        """Generate advisory for strengthened constraints."""
+        strengthened = [c for c in diff.changes if c.abi_impact == ABICompatibility.ABI_COMPATIBLE_STRENGTHENING]
+
+        details = [f"STRENGTHENED: {c.description}" for c in strengthened]
+
+        recommendations = ["Review runtime validation impact", "Ensure clients provide valid data", "Safe to merge"]
+
+        return CompatibilityAdvisory(
+            severity=AdvisorySeverity.WARNING,
+            title="Constraints Strengthened",
+            summary=f"{len(strengthened)} constraint(s) strengthened",
+            details=details,
+            recommendations=recommendations,
+            approval_required=False,
+        )
+
+    def _generate_pass_advisory(self, diff: ContractDiff) -> CompatibilityAdvisory:
+        """Generate pass advisory (no issues)."""
+        compatible = diff.get_compatible_changes()
+
+        details = [c.description for c in compatible]
+
+        return CompatibilityAdvisory(
+            severity=AdvisorySeverity.PASS,
+            title="Fully Compatible",
+            summary="All changes are backward compatible",
+            details=details,
+            recommendations=["Safe to merge", "No migration required"],
+            approval_required=False,
+        )
+
+    def _has_relaxation(self, diff: ContractDiff) -> bool:
+        """Check if diff contains relaxation."""
+        return any(c.abi_impact == ABICompatibility.ABI_COMPATIBLE_RELAXATION for c in diff.changes)
+
+    def _has_strengthening(self, diff: ContractDiff) -> bool:
+        """Check if diff contains strengthening."""
+        return any(c.abi_impact == ABICompatibility.ABI_COMPATIBLE_STRENGTHENING for c in diff.changes)
+
+
+# ============================================================================
+# BASELINE MANAGER
+# ============================================================================
+class BaselineSource(Enum):
+    """Sources for baseline contracts."""
+
+    BRANCH = "branch"
+    TAG = "tag"
+    FILE = "file"
+    EXPLICIT = "explicit"
+
+
+@dataclass
+class BaselineConfig:
+    """Configuration for baseline selection."""
+
+    source: BaselineSource
+    value: str  # Branch name, tag, file path, or explicit contract
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {"source": self.source.value, "value": self.value}
+
+
+class BaselineManager:
+    """Manages baseline contract selection.
+    Handles different baseline strategies.
+    """
+
+    def get_baseline(self, config: BaselineConfig) -> Optional[Any]:
+        """
+        Get baseline contract from configuration.
+        Args:
+            config: Baseline configuration
+        Returns:
+            Baseline contract object or None
+        """
+        if config.source == BaselineSource.BRANCH:
+            return self._get_from_branch(config.value)
+        elif config.source == BaselineSource.TAG:
+            return self._get_from_tag(config.value)
+        elif config.source == BaselineSource.FILE:
+            return self._get_from_file(config.value)
+        elif config.source == BaselineSource.EXPLICIT:
+            return self._get_explicit(config.value)
+        else:
+            return None
+
+    def _get_from_branch(self, branch: str) -> Optional[Any]:
+        """Get baseline from git branch."""
+        # Placeholder - real implementation would:
+        # 1. Checkout branch
+        # 2. Load contract from branch
+        # 3. Return to current branch
+        return None
+
+    def _get_from_tag(self, tag: str) -> Optional[Any]:
+        """Get baseline from git tag."""
+        # Placeholder - real implementation would:
+        # 1. Checkout tag
+        # 2. Load contract from tag
+        # 3. Return to current state
+        return None
+
+    def _get_from_file(self, path: str) -> Optional[Any]:
+        """Get baseline from file path."""
+        # Placeholder - real implementation would load from file
+        return None
+
+    def _get_explicit(self, contract_json: str) -> Optional[Any]:
+        """Get baseline from explicit JSON string."""
+        # Placeholder - real implementation would parse JSON
+        return None
+
+
+# ============================================================================
+# CI/CD COMPATIBILITY CHECKER
+# ============================================================================
+@dataclass
+class CompatibilityCheckResult:
+    """Result of CI/CD compatibility check."""
+
+    passed: bool
+    advisory: CompatibilityAdvisory
+    diff: ContractDiff
+    policy: CompatibilityPolicy
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "passed": self.passed,
+            "advisory": self.advisory.to_dict(),
+            "diff": self.diff.to_dict(),
+            "policy": self.policy.to_dict(),
+        }
+
+    def to_json(self) -> str:
+        """Convert to JSON string."""
+        return json.dumps(self.to_dict(), indent=2)
+
+
+class CICDCompatibilityChecker:
+    """CI/CD integration for compatibility checking.
+    Orchestrates baseline loading, comparison, policy application, and
+    advisory generation.
+    """
+
+    def __init__(self):
+        self.abi_detector = ABICompatibilityDetector()
+        self.advisory_generator = AdvisoryGenerator()
+        self.baseline_manager = BaselineManager()
+
+    def check(
+        self, baseline_config: BaselineConfig, candidate_contract: Any, policy: CompatibilityPolicy
+    ) -> CompatibilityCheckResult:
+        """
+        Perform CI/CD compatibility check.
+        Args:
+            baseline_config: How to get baseline
+            candidate_contract: New contract to check
+            policy: Enforcement policy
+        Returns:
+            CompatibilityCheckResult
+        """
+        # Get baseline
+        baseline = self.baseline_manager.get_baseline(baseline_config)
+
+        if baseline is None:
+            # No baseline available
+            advisory = CompatibilityAdvisory(
+                severity=AdvisorySeverity.BLOCK,
+                title="Baseline Not Found",
+                summary="Unable to load baseline contract",
+                recommendations=["Verify baseline configuration", "Ensure baseline source exists"],
+            )
+
+            # Create empty diff
+            diff = ContractDiff(
+                baseline_version="unknown",
+                candidate_version=getattr(candidate_contract, "contract_version", "unknown"),
+                baseline_fingerprint="",
+                candidate_fingerprint=getattr(candidate_contract, "contract_fingerprint", ""),
+            )
+
+            return CompatibilityCheckResult(passed=False, advisory=advisory, diff=diff, policy=policy)
+
+        # Compute diff
+        diff = self.abi_detector.detect_compatibility(baseline, candidate_contract)
+
+        # Generate advisory
+        advisory = self.advisory_generator.generate(diff, policy)
+
+        # Determine pass/fail
+        passed = not advisory.is_blocking()
+
+        return CompatibilityCheckResult(passed=passed, advisory=advisory, diff=diff, policy=policy)
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -2075,4 +2503,15 @@ __all__ = [
     "UpgradePath",
     "UpgradePathFinder",
     "DependencyResolver",
+    # From Prompt 6
+    "PolicyLevel",
+    "AdvisorySeverity",
+    "CompatibilityPolicy",
+    "CompatibilityAdvisory",
+    "AdvisoryGenerator",
+    "BaselineSource",
+    "BaselineConfig",
+    "BaselineManager",
+    "CompatibilityCheckResult",
+    "CICDCompatibilityChecker",
 ]
