@@ -32,6 +32,13 @@ from .language_adapter import (
     EnumPredicate,
     BitwisePredicate,
     PredicateRegistry,
+    ReturnValueConstraint,
+    ReturnValueValidator,
+    OutputParameterConstraint,
+    OutputParameterValidator,
+    ErrorCodeInterpreter,
+    MemoryInspector,
+    PostCallValidator,
     __version__,
 )
 
@@ -67,5 +74,12 @@ __all__ = [
     'EnumPredicate',
     'BitwisePredicate',
     'PredicateRegistry',
+    'ReturnValueConstraint',
+    'ReturnValueValidator',
+    'OutputParameterConstraint',
+    'OutputParameterValidator',
+    'ErrorCodeInterpreter',
+    'MemoryInspector',
+    'PostCallValidator',
     '__version__',
 ]

@@ -14,6 +14,7 @@ This file contains the foundational architecture:
 - ContractProjector
 - LanguageAdapter main class
 """
+from __future__ import annotations
 
 import json
 import hashlib
@@ -1346,6 +1347,7 @@ class InvocationOrchestrator:
         self.normalizer = NormalizationInterface()
         self.crash_boundary = CrashIsolationBoundary()
         self.exception_translator = ExceptionTranslator()
+        self.post_call_validator = PostCallValidator()
         self.phase_results: List[PhaseResult] = []
     
     def execute_pipeline(
@@ -1561,6 +1563,38 @@ class InvocationOrchestrator:
                     'recoverable': self.crash_boundary.is_crash_recoverable(crash_ctx)
                 }
             )
+    
+    def _phase_post_validation_enhanced(
+        self,
+        return_value: Any,
+        output_params: Dict[int, Any],
+        return_constraint: Optional[ReturnValueConstraint] = None,
+        output_constraints: Optional[List[OutputParameterConstraint]] = None
+    ) -> PhaseResult:
+        """Execute enhanced post-call validation phase."""
+        start = datetime.utcnow()
+        
+        validation_result = self.post_call_validator.validate_post_call(
+            return_value,
+            output_params,
+            return_constraint,
+            output_constraints
+        )
+        
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        return PhaseResult(
+            phase_name='post_validation',
+            success=validation_result['valid'],
+            duration_ms=duration,
+            diagnostics={
+                'return_valid': validation_result['return_valid'],
+                'outputs_valid': validation_result['outputs_valid'],
+                'function_succeeded': validation_result['function_succeeded'],
+                'violations_count': len(validation_result['violations']),
+                'violations': validation_result['violations']
+            }
+        )
     
     def _phase_post_validation(self, result: Any) -> PhaseResult:
         """Execute post-call validation phase."""
@@ -2378,4 +2412,427 @@ class PredicateRegistry:
     
     def list_predicates(self) -> List[str]:
         """Get list of registered predicate names."""
-        return list(self.predicates.keys())
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 29: RETURN VALUE VALIDATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ReturnValueConstraint:
+    """
+    Constraints for return value validation.
+    
+    Defines expected type, range, nullability, and ownership for
+    function return values.
+    """
+    
+    expected_type: Optional[type] = None
+    allow_null: bool = True
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    allowed_values: Optional[List[Any]] = None
+    ownership: Optional[OwnershipKind] = None
+    alignment: Optional[int] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'expected_type': self.expected_type.__name__ if self.expected_type else None,
+            'allow_null': self.allow_null,
+            'min_value': self.min_value,
+            'max_value': self.max_value,
+            'allowed_values': self.allowed_values,
+            'ownership': self.ownership.value if self.ownership else None,
+            'alignment': self.alignment
+        }
+
+
+class ReturnValueValidator:
+    """
+    Validates function return values against constraints.
+    
+    Checks type, range, nullability, and ownership of return values.
+    """
+    
+    def __init__(self):
+        self.predicate_factory = PredicateFactory()
+    
+    def validate(
+        self,
+        return_value: Any,
+        constraint: ReturnValueConstraint
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate return value against constraint.
+        
+        Args:
+            return_value: Returned value from function
+            constraint: Return value constraint
+            
+        Returns:
+            Tuple of (valid, error_message)
+        """
+        # Type validation
+        if constraint.expected_type is not None:
+            if not isinstance(return_value, constraint.expected_type):
+                return (False, f"Expected type {constraint.expected_type.__name__}, got {type(return_value).__name__}")
+        
+        # Nullability validation
+        if not constraint.allow_null and return_value is None:
+            return (False, "Return value must not be null")
+        
+        # Skip further validation if null
+        if return_value is None:
+            return (True, None)
+        
+        # Range validation
+        if constraint.min_value is not None or constraint.max_value is not None:
+            try:
+                num_value = float(return_value)
+                if constraint.min_value is not None and num_value < constraint.min_value:
+                    return (False, f"Return value {num_value} below minimum {constraint.min_value}")
+                if constraint.max_value is not None and num_value > constraint.max_value:
+                    return (False, f"Return value {num_value} above maximum {constraint.max_value}")
+            except (TypeError, ValueError):
+                return (False, f"Cannot validate range for non-numeric value")
+        
+        # Enum validation
+        if constraint.allowed_values is not None:
+            if return_value not in constraint.allowed_values:
+                return (False, f"Return value {return_value} not in allowed values")
+        
+        # Alignment validation
+        if constraint.alignment is not None:
+            if isinstance(return_value, int):
+                if (return_value % constraint.alignment) != 0:
+                    return (False, f"Return value {hex(return_value)} not aligned to {constraint.alignment} bytes")
+        
+        return (True, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 30: OUTPUT PARAMETER VALIDATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class OutputParameterConstraint:
+    """
+    Constraints for output parameter validation.
+    
+    Defines requirements for parameters that callee writes to.
+    """
+    
+    param_index: int
+    required: bool = True  # Must be written to
+    expected_type: Optional[type] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    max_bytes_written: Optional[int] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'param_index': self.param_index,
+            'required': self.required,
+            'expected_type': self.expected_type.__name__ if self.expected_type else None,
+            'min_value': self.min_value,
+            'max_value': self.max_value,
+            'max_bytes_written': self.max_bytes_written
+        }
+
+
+class OutputParameterValidator:
+    """
+    Validates output parameters after function returns.
+    
+    Checks that callee properly initialized output parameters.
+    """
+    
+    def validate(
+        self,
+        param_value: Any,
+        constraint: OutputParameterConstraint
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate output parameter.
+        
+        Args:
+            param_value: Parameter value after call
+            constraint: Output parameter constraint
+            
+        Returns:
+            Tuple of (valid, error_message)
+        """
+        # Required check
+        if constraint.required and param_value is None:
+            return (False, f"Required output parameter {constraint.param_index} not initialized")
+        
+        if param_value is None:
+            return (True, None)
+        
+        # Type validation
+        if constraint.expected_type is not None:
+            if not isinstance(param_value, constraint.expected_type):
+                return (False, f"Output parameter type mismatch")
+        
+        # Range validation
+        if constraint.min_value is not None or constraint.max_value is not None:
+            try:
+                num_value = float(param_value)
+                if constraint.min_value is not None and num_value < constraint.min_value:
+                    return (False, f"Output value {num_value} below minimum")
+                if constraint.max_value is not None and num_value > constraint.max_value:
+                    return (False, f"Output value {num_value} above maximum")
+            except (TypeError, ValueError):
+                pass
+        
+        return (True, None)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 31: ERROR CODE INTERPRETER
+# ════════════════════════════════════════════════════════════════════════════
+
+class ErrorCodeInterpreter:
+    """
+    Interprets function return values as error codes.
+    
+    Determines if function succeeded or failed based on return value.
+    """
+    
+    def __init__(self):
+        self.error_patterns: Dict[str, Callable[[Any], bool]] = {
+            'negative_is_error': lambda val: isinstance(val, int) and val < 0,
+            'zero_is_success': lambda val: val == 0,
+            'null_is_error': lambda val: val is None,
+            'false_is_error': lambda val: val is False
+        }
+    
+    def register_pattern(
+        self,
+        name: str,
+        pattern: Callable[[Any], bool]
+    ) -> None:
+        """
+        Register custom error pattern.
+        
+        Args:
+            name: Pattern name
+            pattern: Function returning True if value indicates error
+        """
+        self.error_patterns[name] = pattern
+    
+    def is_error(
+        self,
+        return_value: Any,
+        pattern_name: str = 'negative_is_error'
+    ) -> bool:
+        """
+        Check if return value indicates error.
+        
+        Args:
+            return_value: Return value to check
+            pattern_name: Error pattern to use
+            
+        Returns:
+            True if return value indicates error
+        """
+        pattern = self.error_patterns.get(pattern_name)
+        if pattern is None:
+            return False
+        
+        return pattern(return_value)
+    
+    def is_success(
+        self,
+        return_value: Any,
+        pattern_name: str = 'zero_is_success'
+    ) -> bool:
+        """
+        Check if return value indicates success.
+        
+        Args:
+            return_value: Return value to check
+            pattern_name: Success pattern to use
+            
+        Returns:
+            True if return value indicates success
+        """
+        pattern = self.error_patterns.get(pattern_name)
+        if pattern is None:
+            return True
+        
+        return pattern(return_value)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 32: MEMORY INSPECTOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class MemoryInspector:
+    """
+    Inspects memory regions for correctness.
+    
+    Provides basic memory inspection capabilities for output validation.
+    """
+    
+    def __init__(self):
+        self.snapshots: Dict[int, bytes] = {}
+    
+    def take_snapshot(
+        self,
+        address: int,
+        size: int,
+        data: Any
+    ) -> str:
+        """
+        Take memory snapshot before call.
+        
+        Args:
+            address: Memory address (identifier)
+            size: Size in bytes
+            data: Data to snapshot
+            
+        Returns:
+            Snapshot identifier
+        """
+        snapshot_id = f"{address}_{size}"
+        
+        # Convert data to bytes for comparison
+        if isinstance(data, bytes):
+            self.snapshots[address] = data
+        elif isinstance(data, (bytearray, memoryview)):
+            self.snapshots[address] = bytes(data)
+        
+        return snapshot_id
+    
+    def compare_snapshot(
+        self,
+        address: int,
+        current_data: Any
+    ) -> Dict[str, Any]:
+        """
+        Compare current data with snapshot.
+        
+        Args:
+            address: Memory address
+            current_data: Current data
+            
+        Returns:
+            Comparison result dictionary
+        """
+        if address not in self.snapshots:
+            return {
+                'has_snapshot': False,
+                'modified': False
+            }
+        
+        original = self.snapshots[address]
+        
+        # Convert current data
+        if isinstance(current_data, bytes):
+            current = current_data
+        elif isinstance(current_data, (bytearray, memoryview)):
+            current = bytes(current_data)
+        else:
+            return {'has_snapshot': True, 'modified': False}
+        
+        return {
+            'has_snapshot': True,
+            'modified': original != current,
+            'bytes_changed': sum(1 for a, b in zip(original, current) if a != b)
+        }
+    
+    def clear_snapshots(self) -> None:
+        """Clear all snapshots."""
+        self.snapshots.clear()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 33: POST-CALL VALIDATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class PostCallValidator:
+    """
+    Orchestrates post-call validation.
+    
+    Coordinates return value validation, output parameter validation,
+    and error code interpretation.
+    """
+    
+    def __init__(self):
+        self.return_validator = ReturnValueValidator()
+        self.output_validator = OutputParameterValidator()
+        self.error_interpreter = ErrorCodeInterpreter()
+        self.memory_inspector = MemoryInspector()
+    
+    def validate_post_call(
+        self,
+        return_value: Any,
+        output_params: Dict[int, Any],
+        return_constraint: Optional[ReturnValueConstraint] = None,
+        output_constraints: Optional[List[OutputParameterConstraint]] = None,
+        error_pattern: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate post-call outputs.
+        
+        Args:
+            return_value: Function return value
+            output_params: Dictionary mapping param index to value
+            return_constraint: Return value constraint
+            output_constraints: List of output parameter constraints
+            error_pattern: Error code pattern name
+            
+        Returns:
+            Validation result dictionary
+        """
+        result = {
+            'valid': True,
+            'return_valid': True,
+            'outputs_valid': True,
+            'function_succeeded': True,
+            'violations': []
+        }
+        
+        # Check for error
+        if error_pattern:
+            if self.error_interpreter.is_error(return_value, error_pattern):
+                result['function_succeeded'] = False
+                result['error_code'] = return_value
+                # Skip output validation if function failed
+                return result
+        
+        # Validate return value
+        if return_constraint:
+            valid, error_msg = self.return_validator.validate(
+                return_value,
+                return_constraint
+            )
+            result['return_valid'] = valid
+            if not valid:
+                result['valid'] = False
+                result['violations'].append({
+                    'type': 'return_value',
+                    'message': error_msg
+                })
+        
+        # Validate output parameters
+        if output_constraints:
+            for constraint in output_constraints:
+                param_value = output_params.get(constraint.param_index)
+                valid, error_msg = self.output_validator.validate(
+                    param_value,
+                    constraint
+                )
+                
+                if not valid:
+                    result['outputs_valid'] = False
+                    result['valid'] = False
+                    result['violations'].append({
+                        'type': 'output_parameter',
+                        'param_index': constraint.param_index,
+                        'message': error_msg
+                    })
+        
+        return result
