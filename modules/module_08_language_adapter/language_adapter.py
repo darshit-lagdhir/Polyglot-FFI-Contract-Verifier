@@ -1201,6 +1201,16 @@ class LanguageAdapter:
         result = self.validation_engine.validate_with_metrics(graph, inputs, context)
         
         # context.finalize() if implemented, or just update status
+        return result
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get adapter statistics."""
+        return {
+            'config': self.config.to_dict() if hasattr(self.config, 'to_dict') else str(self.config),
+            'contract_fingerprint': self.contract_fingerprint,
+            'loaded_functions': len(self.validation_graphs),
+            'ownership': self.ownership_registry.get_statistics()
+        }
         
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 13: PHASE RESULT
