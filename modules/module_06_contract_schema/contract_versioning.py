@@ -73,78 +73,142 @@ class ContractVersionMetadata:
 # ============================================================================
 # SEMANTIC VERSION COMPARISON
 # ============================================================================
+@dataclass
 class SemanticVersion:
-    """Semantic version parser and comparator.
+    """Semantic version representation."""
 
-    Supports MAJOR.MINOR.PATCH format with comparison operations.
-    """
+    major: int = 0
+    minor: int = 0
+    patch: int = 0
+    prerelease: Optional[str] = None
+    build_metadata: Optional[str] = None
 
-    def __init__(self, version_string: str):
-        """
-        Initialize semantic version.
-
-        Args:
-            version_string: Version in "MAJOR.MINOR.PATCH" format
-        """
-        parsed = self.parse(version_string)
-        self.major = parsed.major
-        self.minor = parsed.minor
-        self.patch = parsed.patch
-        self.version_string = version_string
+    def __init__(
+        self,
+        major: Any = 0,
+        minor: int = 0,
+        patch: int = 0,
+        prerelease: Optional[str] = None,
+        build_metadata: Optional[str] = None,
+    ):
+        if isinstance(major, str):
+            # Backward compatibility: parse from string
+            parsed = self.parse(major)
+            self.major = parsed.major
+            self.minor = parsed.minor
+            self.patch = parsed.patch
+            self.prerelease = parsed.prerelease
+            self.build_metadata = parsed.build_metadata
+        else:
+            self.major = major
+            self.minor = minor
+            self.patch = patch
+            self.prerelease = prerelease
+            self.build_metadata = build_metadata
 
     @staticmethod
     def parse(version_str: str) -> "SemanticVersion":
-        """Parse version string into SemanticVersion object."""
-        pattern = r"^(\d+)\.(\d+)\.(\d+)$"
+        """Parse semantic version string."""
+        # Pattern: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
+        pattern = r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z\-\.]+))?(?:\+([0-9A-Za-z\-\.]+))?$"
         match = re.match(pattern, version_str)
+
         if not match:
             raise ValueError(f"Invalid semantic version: {version_str}")
 
-        # This is a bit recursive in the actual implementation to support both static and instance use
-        # but for internal use, we just return a temporary object for the __init__ to copy
-        class Temp:
-            pass
+        major, minor, patch, prerelease, build = match.groups()
 
-        t = Temp()
-        t.major = int(match.group(1))
-        t.minor = int(match.group(2))
-        t.patch = int(match.group(3))
-        return t
+        return SemanticVersion(major=int(major), minor=int(minor), patch=int(patch), prerelease=prerelease, build_metadata=build)
 
     def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
+        """Convert to string."""
+        version = f"{self.major}.{self.minor}.{self.patch}"
+        if self.prerelease:
+            version += f"-{self.prerelease}"
+        if self.build_metadata:
+            version += f"+{self.build_metadata}"
+        return version
 
     def __repr__(self) -> str:
+        """Convert to representation."""
         return f"SemanticVersion('{str(self)}')"
 
+    def __lt__(self, other: "SemanticVersion") -> bool:
+        """Compare versions (less than)."""
+        # Compare MAJOR.MINOR.PATCH
+        if (self.major, self.minor, self.patch) != (other.major, other.minor, other.patch):
+            return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+        # Pre-release version < release version
+        if self.prerelease and not other.prerelease:
+            return True
+        if not self.prerelease and other.prerelease:
+            return False
+
+        # Compare pre-release versions
+        if self.prerelease and other.prerelease:
+            return self._compare_prerelease(self.prerelease, other.prerelease) < 0
+
+        # Equal versions
+        return False
+
     def __eq__(self, other: object) -> bool:
+        """Compare versions (equality)."""
         if not isinstance(other, SemanticVersion):
             return False
-        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
-
-    def __lt__(self, other: "SemanticVersion") -> bool:
-        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+        return (
+            self.major == other.major
+            and self.minor == other.minor
+            and self.patch == other.patch
+            and self.prerelease == other.prerelease
+        )
 
     def __le__(self, other: "SemanticVersion") -> bool:
-        return self == other or self < other
+        """Compare versions (less than or equal)."""
+        return self < other or self == other
 
     def __gt__(self, other: "SemanticVersion") -> bool:
+        """Compare versions (greater than)."""
         return not self <= other
 
     def __ge__(self, other: "SemanticVersion") -> bool:
+        """Compare versions (greater than or equal)."""
         return not self < other
 
-    def is_major_bump(self, other: "SemanticVersion") -> bool:
-        """Check if this version is a major bump from other."""
-        return self.major > other.major
+    def _compare_prerelease(self, pre1: str, pre2: str) -> int:
+        """Compare pre-release versions."""
+        parts1 = pre1.split(".")
+        parts2 = pre2.split(".")
 
-    def is_minor_bump(self, other: "SemanticVersion") -> bool:
-        """Check if this version is a minor bump from other."""
-        return self.major == other.major and self.minor > other.minor
+        for p1, p2 in zip(parts1, parts2):
+            # Try numeric comparison
+            try:
+                n1, n2 = int(p1), int(p2)
+                if n1 != n2:
+                    return -1 if n1 < n2 else 1
+            except ValueError:
+                # Lexical comparison
+                if p1 != p2:
+                    return -1 if p1 < p2 else 1
 
-    def is_patch_bump(self, other: "SemanticVersion") -> bool:
-        """Check if this version is a patch bump from other."""
-        return self.major == other.major and self.minor == other.minor and self.patch > other.patch
+        # Shorter is less
+        return len(parts1) - len(parts2)
+
+    def is_prerelease(self) -> bool:
+        """Check if this is a pre-release version."""
+        return self.prerelease is not None
+
+    def bump_major(self) -> "SemanticVersion":
+        """Bump major version."""
+        return SemanticVersion(self.major + 1, 0, 0)
+
+    def bump_minor(self) -> "SemanticVersion":
+        """Bump minor version."""
+        return SemanticVersion(self.major, self.minor + 1, 0)
+
+    def bump_patch(self) -> "SemanticVersion":
+        """Bump patch version."""
+        return SemanticVersion(self.major, self.minor, self.patch + 1)
 
 
 # ============================================================================
@@ -1624,8 +1688,8 @@ class VersionConstraintComponent:
             True if constraint satisfied
         """
         try:
-            v = SemanticVersion(version)
-            constraint_v = SemanticVersion(self.version)
+            v = SemanticVersion.parse(version)
+            constraint_v = SemanticVersion.parse(self.version)
         except ValueError:
             return False
 
@@ -2022,7 +2086,7 @@ class VersionResolver:
             return None
 
         # Return latest
-        return max(candidates, key=lambda v: SemanticVersion(v))
+        return max(candidates, key=lambda v: SemanticVersion.parse(v))
 
 
 # ============================================================================
@@ -4769,6 +4833,228 @@ class DeprecationPolicy:
         }
 
 
+class VersionValidator:
+    """Validates semantic versions."""
+
+    def validate_format(self, version_str: str) -> Dict[str, Any]:
+        """Validate version string format."""
+        try:
+            SemanticVersion.parse(version_str)
+            return {"valid": True}
+        except ValueError as e:
+            return {"valid": False, "error": str(e), "issues": ["Invalid semantic version format"]}
+
+    def validate_transition(self, from_version: str, to_version: str) -> Dict[str, Any]:
+        """Validate version transition."""
+        try:
+            v_from = SemanticVersion.parse(from_version)
+            v_to = SemanticVersion.parse(to_version)
+        except ValueError as e:
+            return {"valid": False, "error": f"Invalid version format: {e}"}
+
+        issues = []
+
+        # Check if version is moving forward
+        if v_to <= v_from:
+            issues.append(f"Version must increase: {from_version} → {to_version}")
+
+        # Check for invalid transitions
+        if v_to.major < v_from.major:
+            issues.append("Major version cannot decrease")
+
+        if v_to.major == v_from.major and v_to.minor < v_from.minor:
+            issues.append("Minor version cannot decrease within same major version")
+
+        return {"valid": len(issues) == 0, "issues": issues}
+
+    def is_valid_next_version(self, current: str, proposed: str) -> bool:
+        """Check if proposed is valid next version."""
+        result = self.validate_transition(current, proposed)
+        return result["valid"]
+
+
+class VersionPolicy:
+    """Version policy rules."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.rules: List[str] = []
+
+    def add_rule(self, rule: str) -> None:
+        """Add policy rule."""
+        self.rules.append(rule)
+
+    def check_compliance(self, current_version: str, proposed_version: str, diff: Any) -> Dict[str, Any]:
+        """Check if version change complies with policy."""
+        try:
+            v_current = SemanticVersion.parse(current_version)
+            v_proposed = SemanticVersion.parse(proposed_version)
+        except ValueError as e:
+            return {"compliant": False, "violations": [f"Invalid version format: {e}"]}
+
+        violations = []
+        warnings = []
+
+        # Rule: Breaking changes require major version bump
+        breaking_changes = len(diff.get_breaking_changes())
+
+        if breaking_changes > 0:
+            if v_proposed.major == v_current.major:
+                violations.append(
+                    f"{breaking_changes} breaking changes require major version bump "
+                    f"(expected v{v_current.major + 1}.0.0, got v{proposed_version})"
+                )
+
+        # Rule: No breaking changes in minor/patch bumps
+        if v_proposed.major == v_current.major and v_proposed.minor > v_current.minor:
+            if breaking_changes > 0:
+                violations.append(
+                    f"Minor version bump cannot include breaking changes " f"({breaking_changes} breaking changes found)"
+                )
+
+        # Rule: Patch bumps should be minimal changes
+        if v_proposed.major == v_current.major and v_proposed.minor == v_current.minor and v_proposed.patch > v_current.patch:
+            stats = diff.get_statistics()
+            total_changes = stats["total_changes"]
+
+            if total_changes > 5:
+                warnings.append(f"Patch version bump with {total_changes} changes " f"(consider minor bump instead)")
+
+        # Pre-release versions are exempt from strict rules
+        if v_proposed.is_prerelease():
+            violations.clear()
+            warnings.append("Pre-release version: strict rules not enforced")
+
+        return {"compliant": len(violations) == 0, "violations": violations, "warnings": warnings}
+
+
+class VersionRecommendationEngine:
+    """Recommends next version based on changes."""
+
+    def recommend_version(self, current_version: str, diff: Any) -> Dict[str, Any]:
+        """Recommend next version based on diff."""
+        try:
+            v_current = SemanticVersion.parse(current_version)
+        except ValueError as e:
+            return {"success": False, "error": f"Invalid current version: {e}"}
+
+        stats = diff.get_statistics()
+        breaking = stats["by_severity"].get("breaking", 0)
+        extensions = stats["by_severity"].get("extension", 0)
+
+        # Determine recommendation
+        if breaking > 0:
+            recommended = v_current.bump_major()
+            reason = f"{breaking} breaking changes require major version bump"
+        elif extensions > 0:
+            recommended = v_current.bump_minor()
+            reason = f"{extensions} new features suggest minor version bump"
+        else:
+            recommended = v_current.bump_patch()
+            reason = "Only bug fixes or internal changes, patch version bump"
+
+        # Alternative recommendations
+        alternatives = []
+
+        if breaking == 0:
+            if extensions > 0:
+                alternatives.append({"version": str(v_current.bump_patch()), "reason": "If features are considered bug fixes"})
+
+            alternatives.append({"version": str(v_current.bump_major()), "reason": "If planning breaking changes in near future"})
+
+        return {
+            "success": True,
+            "current_version": current_version,
+            "recommended_version": str(recommended),
+            "reason": reason,
+            "alternatives": alternatives,
+            "change_summary": {"breaking_changes": breaking, "extensions": extensions, "total_changes": stats["total_changes"]},
+        }
+
+
+class VersionPolicyEnforcer:
+    """Enforces version policies."""
+
+    def __init__(self, policy: VersionPolicy):
+        self.policy = policy
+        self.validator = VersionValidator()
+
+    def enforce(self, current_version: str, proposed_version: str, diff: Any) -> Dict[str, Any]:
+        """Enforce version policy."""
+        # Validate format
+        format_check = self.validator.validate_format(proposed_version)
+        if not format_check["valid"]:
+            return {"approved": False, "reason": "Invalid version format", "issues": format_check.get("issues", [])}
+
+        # Validate transition
+        transition_check = self.validator.validate_transition(current_version, proposed_version)
+        if not transition_check["valid"]:
+            return {"approved": False, "reason": "Invalid version transition", "issues": transition_check["issues"]}
+
+        # Check policy compliance
+        compliance = self.policy.check_compliance(current_version, proposed_version, diff)
+
+        if not compliance["compliant"]:
+            return {
+                "approved": False,
+                "reason": "Version policy violations",
+                "violations": compliance["violations"],
+                "warnings": compliance.get("warnings", []),
+            }
+
+        return {"approved": True, "version": proposed_version, "warnings": compliance.get("warnings", [])}
+
+
+class VersionRangeParser:
+    """Parses and evaluates version ranges."""
+
+    def parse_range(self, range_spec: str) -> Dict[str, Any]:
+        """Parse version range specification."""
+        # Simple range patterns
+        if range_spec.startswith(">="):
+            return {"type": "greater_equal", "version": range_spec[2:].strip()}
+        elif range_spec.startswith(">"):
+            return {"type": "greater", "version": range_spec[1:].strip()}
+        elif range_spec.startswith("<="):
+            return {"type": "less_equal", "version": range_spec[2:].strip()}
+        elif range_spec.startswith("<"):
+            return {"type": "less", "version": range_spec[1:].strip()}
+        elif range_spec.startswith("=="):
+            return {"type": "equal", "version": range_spec[2:].strip()}
+        elif range_spec.startswith("^"):
+            return {"type": "caret", "version": range_spec[1:].strip()}
+        else:
+            return {"type": "exact", "version": range_spec}
+
+    def satisfies_range(self, version: str, range_spec: str) -> bool:
+        """Check if version satisfies range."""
+        range_info = self.parse_range(range_spec)
+
+        try:
+            v = SemanticVersion.parse(version)
+            v_range = SemanticVersion.parse(range_info["version"])
+        except ValueError:
+            return False
+
+        range_type = range_info["type"]
+
+        if range_type == "greater_equal":
+            return v >= v_range
+        elif range_type == "greater":
+            return v > v_range
+        elif range_type == "less_equal":
+            return v <= v_range
+        elif range_type == "less":
+            return v < v_range
+        elif range_type == "equal" or range_type == "exact":
+            return v == v_range
+        elif range_type == "caret":
+            # ^1.5.0 means >=1.5.0, <2.0.0
+            return v >= v_range and v.major == v_range.major
+
+        return False
+
+
 class VersionRetirementPlanner:
     """Plans version retirements."""
 
@@ -5403,4 +5689,10 @@ __all__ = [
     "DeprecationPolicy",
     "VersionRetirementPlanner",
     "StabilityGuaranteeChecker",
+    # From Prompt 16
+    "VersionValidator",
+    "VersionPolicy",
+    "VersionRecommendationEngine",
+    "VersionPolicyEnforcer",
+    "VersionRangeParser",
 ]
