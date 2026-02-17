@@ -3101,6 +3101,208 @@ DetailedDiffAnalyzer._analyze_functions = _analyze_functions_implementation
 
 
 # ============================================================================
+# CLAUSE ANALYZER
+# ============================================================================
+class ClauseAnalyzer:
+    """Analyzes clause changes in detail.
+    Detects semantic shifts in nullability, ownership, and numeric bounds.
+    """
+
+    def analyze_clause(
+        self, baseline_clause: Dict[str, Any], candidate_clause: Dict[str, Any], clause_id: str
+    ) -> EntityDiff:
+        """
+        Analyze changes in a single clause.
+        Args:
+            baseline_clause: Old clause definition
+            candidate_clause: New clause definition
+            clause_id: Unique ID of the clause
+        Returns:
+            EntityDiff containing detected changes
+        """
+        entity_diff = EntityDiff(entity_id=clause_id, entity_type="clause")
+
+        # Check severity change
+        baseline_sev = baseline_clause.get("severity", "advisory")
+        candidate_sev = candidate_clause.get("severity", "advisory")
+
+        if baseline_sev != candidate_sev:
+            severity_order = {"advisory": 0, "warning": 1, "error": 2, "fatal": 3}
+            # Handle unknown severities gracefully
+            b_val = severity_order.get(baseline_sev, 0)
+            c_val = severity_order.get(candidate_sev, 0)
+
+            change_severity = ChangeSeverity.STRENGTHENING if c_val > b_val else ChangeSeverity.RELAXATION
+
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="severity_changed",
+                    entity_id=clause_id,
+                    severity=change_severity,
+                    description=f"Severity changed from '{baseline_sev}' to '{candidate_sev}'",
+                    old_value=baseline_sev,
+                    new_value=candidate_sev,
+                )
+            )
+
+        # Analyze constraint parameters
+        baseline_params = baseline_clause.get("constraint_parameters", {})
+        candidate_params = candidate_clause.get("constraint_parameters", {})
+
+        param_changes = self._analyze_constraint_parameters(baseline_params, candidate_params, clause_id)
+        entity_diff.changes.extend(param_changes)
+
+        return entity_diff
+
+    def _analyze_constraint_parameters(
+        self, baseline_params: Dict[str, Any], candidate_params: Dict[str, Any], clause_id: str
+    ) -> List[DetailedChange]:
+        """Analyze changes in clause constraint parameters."""
+        changes = []
+
+        all_keys = set(baseline_params.keys()) | set(candidate_params.keys())
+
+        for key in all_keys:
+            baseline_val = baseline_params.get(key)
+            candidate_val = candidate_params.get(key)
+
+            if baseline_val != candidate_val:
+                change_sev = self._classify_constraint_change(key, baseline_val, candidate_val)
+
+                changes.append(
+                    DetailedChange(
+                        change_type="constraint_parameter_changed",
+                        entity_id=clause_id,
+                        severity=change_sev,
+                        description=f"Constraint '{key}' changed from {baseline_val} to {candidate_val}",
+                        location=f"constraint '{key}'",
+                        old_value=baseline_val,
+                        new_value=candidate_val,
+                    )
+                )
+
+        return changes
+
+    def _classify_constraint_change(self, key: str, old_val: Any, new_val: Any) -> ChangeSeverity:
+        """
+        Classify the severity of a constraint parameter change.
+        Follows strengthening/relaxation logic for semantic contracts.
+        """
+        # Nullability changes
+        if key == "nullable":
+            if old_val is True and new_val is False:
+                return ChangeSeverity.STRENGTHENING  # Becomes non-null (stricter)
+            elif old_val is False and new_val is True:
+                return ChangeSeverity.RELAXATION  # Becomes null (looser)
+
+        # Numeric constraints (min/max bounds)
+        if key.startswith("min_") and old_val is not None and new_val is not None:
+            return ChangeSeverity.STRENGTHENING if new_val > old_val else ChangeSeverity.RELAXATION
+
+        if key.startswith("max_") and old_val is not None and new_val is not None:
+            return ChangeSeverity.STRENGTHENING if new_val < old_val else ChangeSeverity.RELAXATION
+
+        # Ownership changes are fundamentally breaking (ABI/Memory management)
+        if key == "ownership":
+            return ChangeSeverity.BREAKING
+
+        # Default classification for other parameters (e.g., confidence, notes)
+        return ChangeSeverity.NOTABLE
+
+
+# ============================================================================
+# CLAUSE CATALOG ANALYZER
+# ============================================================================
+class ClauseCatalogAnalyzer:
+    """Analyzes clause catalog changes (additions/removals).
+    Compares entire sets of semantic constraints.
+    """
+
+    def __init__(self):
+        self.clause_analyzer = ClauseAnalyzer()
+
+    def analyze_clauses(
+        self, baseline_clauses: Dict[str, Dict[str, Any]], candidate_clauses: Dict[str, Dict[str, Any]]
+    ) -> List[EntityDiff]:
+        """
+        Analyze clause catalog changes.
+        Args:
+            baseline_clauses: Dict of clause_id -> clause_definition
+            candidate_clauses: Dict of clause_id -> clause_definition
+        Returns:
+            List of EntityDiff for all changed clauses
+        """
+        entity_diffs = []
+
+        baseline_ids = set(baseline_clauses.keys())
+        candidate_ids = set(candidate_clauses.keys())
+
+        # Added clauses: Usually STRENGTHENING as they introduce new constraints
+        for clause_id in candidate_ids - baseline_ids:
+            clause = candidate_clauses[clause_id]
+            entity_diff = EntityDiff(
+                entity_id=clause_id,
+                entity_type="clause",
+                changes=[
+                    DetailedChange(
+                        change_type="clause_added",
+                        entity_id=clause_id,
+                        severity=ChangeSeverity.STRENGTHENING,
+                        description=f"Clause '{clause_id}' added",
+                        new_value=clause,
+                    )
+                ],
+            )
+            entity_diffs.append(entity_diff)
+
+        # Removed clauses: Usually RELAXATION as constraints are lifted
+        for clause_id in baseline_ids - candidate_ids:
+            clause = baseline_clauses[clause_id]
+            entity_diff = EntityDiff(
+                entity_id=clause_id,
+                entity_type="clause",
+                changes=[
+                    DetailedChange(
+                        change_type="clause_removed",
+                        entity_id=clause_id,
+                        severity=ChangeSeverity.RELAXATION,
+                        description=f"Clause '{clause_id}' removed",
+                        old_value=clause,
+                    )
+                ],
+            )
+            entity_diffs.append(entity_diff)
+
+        # Modified clauses: Compare internal parameters
+        for clause_id in baseline_ids & candidate_ids:
+            entity_diff = self.clause_analyzer.analyze_clause(
+                baseline_clauses[clause_id], candidate_clauses[clause_id], clause_id
+            )
+            if entity_diff.changes:
+                entity_diffs.append(entity_diff)
+
+        return entity_diffs
+
+
+# ============================================================================
+# DIFF ANALYZER (UPDATE)
+# ============================================================================
+def _analyze_clauses_implementation(self, baseline_contract: Any, candidate_contract: Any) -> List[EntityDiff]:
+    """Analyze clause changes (implementation of placeholder)."""
+    # Extract clauses from contracts
+    baseline_clauses = getattr(baseline_contract, "clauses", {})
+    candidate_clauses = getattr(candidate_contract, "clauses", {})
+
+    # Use clause catalog analyzer
+    catalog_analyzer = ClauseCatalogAnalyzer()
+    return catalog_analyzer.analyze_clauses(baseline_clauses, candidate_clauses)
+
+
+# Patch DetailedDiffAnalyzer
+DetailedDiffAnalyzer._analyze_clauses = _analyze_clauses_implementation
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -3172,4 +3374,7 @@ __all__ = [
     # From Prompt 8
     "FunctionSignatureAnalyzer",
     "FunctionCatalogAnalyzer",
+    # From Prompt 9
+    "ClauseAnalyzer",
+    "ClauseCatalogAnalyzer",
 ]
