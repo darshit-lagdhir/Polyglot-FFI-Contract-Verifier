@@ -12,7 +12,7 @@ from enum import Enum
 from datetime import datetime
 
 from .contract_entities import ContractDocument, ContractClause, ClauseType
-from .contract_versioning import SemanticVersion, ContractDiff, ContractDiffer, CompatibilityImpact
+from .contract_versioning import SemanticVersion #, ContractDiff, ContractDiffer, CompatibilityImpact
 
 
 class ChangeCategory(Enum):

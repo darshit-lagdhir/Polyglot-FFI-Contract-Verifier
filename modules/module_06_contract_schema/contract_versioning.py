@@ -1,481 +1,358 @@
-"""
-Module 06: Contract Schema - Versioning & Evolution
+""" Module 06: Contract Versioning System (Prompt 1/20)
 
-Contract versioning system supporting:
-    - Semantic versioning for contracts and schema
-- Version history and changelog
-- Compatibility assessment
-- Contract diffing
-- Deprecation support
-"""
+Version identity model and cryptographic fingerprinting foundation.
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Set, Tuple
-from enum import Enum
-from datetime import datetime
+This module implements the three-version identity system:
+- schema_version: Structural format version
+- synthesis_version: Rule set version
+- contract_version: Interface evolution version
+
+Plus cryptographic fingerprinting for deterministic identity. """
+
+import hashlib
+import json
 import re
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from .contract_entities import ContractDocument, ContractClause, ClauseType
 
 # ============================================================================
-# VERSION TYPES
+# VERSION METADATA
 # ============================================================================
-
-
 @dataclass
+class ContractVersionMetadata:
+    """Version metadata for contract artifacts.
+
+    Contains three independent version identifiers plus fingerprint.
+    """
+
+    schema_version: str
+    synthesis_version: str
+    contract_version: str
+    contract_fingerprint: str
+    ir_fingerprint: str
+    generation_timestamp: str
+    generator_tool_version: str = "contract-schema-1.0.0"
+
+    def __post_init__(self):
+        """Validate version formats after initialization."""
+        self._validate_version_format(self.schema_version, "schema_version")
+        self._validate_version_format(self.synthesis_version, "synthesis_version")
+        self._validate_version_format(self.contract_version, "contract_version")
+        self._validate_fingerprint_format(self.contract_fingerprint, "contract_fingerprint")
+        self._validate_fingerprint_format(self.ir_fingerprint, "ir_fingerprint")
+
+    def _validate_version_format(self, version: str, field_name: str):
+        """Validate semantic version format (MAJOR.MINOR.PATCH)."""
+        pattern = r"^\d+\.\d+\.\d+$"
+        if not re.match(pattern, version):
+            raise ValueError(
+                f"{field_name} must be semantic version (MAJOR.MINOR.PATCH), " f"got: {version}"
+            )
+
+    def _validate_fingerprint_format(self, fingerprint: str, field_name: str):
+        """Validate fingerprint is valid SHA-256 hex digest."""
+        pattern = r"^[a-f0-9]{64}$"
+        if not re.match(pattern, fingerprint.lower()):
+            raise ValueError(
+                f"{field_name} must be 64-character hex SHA-256 digest, " f"got: {fingerprint}"
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ContractVersionMetadata":
+        """Create from dictionary."""
+        return cls(**data)
+
+
+# ============================================================================
+# SEMANTIC VERSION COMPARISON
+# ============================================================================
 class SemanticVersion:
-    """
-    Semantic version (MAJOR.MINOR.PATCH).
+    """Semantic version parser and comparator.
 
-    Supports comparison and compatibility checking.
+    Supports MAJOR.MINOR.PATCH format with comparison operations.
     """
 
-    major: int
-    minor: int
-    patch: int
+    def __init__(self, version_string: str):
+        """
+        Initialize semantic version.
+
+        Args:
+            version_string: Version in "MAJOR.MINOR.PATCH" format
+        """
+        pattern = r"^(\d+)\.(\d+)\.(\d+)$"
+        match = re.match(pattern, version_string)
+        if not match:
+            raise ValueError(f"Invalid semantic version: {version_string}")
+
+        self.major = int(match.group(1))
+        self.minor = int(match.group(2))
+        self.patch = int(match.group(3))
+        self.version_string = version_string
 
     def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
+        return self.version_string
 
-    def __eq__(self, other) -> bool:
+    def __repr__(self) -> str:
+        return f"SemanticVersion('{self.version_string}')"
+
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, SemanticVersion):
             return False
-        return self.major == other.major and self.minor == other.minor and self.patch == other.patch
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
 
     def __lt__(self, other: "SemanticVersion") -> bool:
-        if self.major != other.major:
-            return self.major < other.major
-        if self.minor != other.minor:
-            return self.minor < other.minor
-        return self.patch < other.patch
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
 
     def __le__(self, other: "SemanticVersion") -> bool:
         return self == other or self < other
 
     def __gt__(self, other: "SemanticVersion") -> bool:
-        return not (self <= other)
+        return not self <= other
 
     def __ge__(self, other: "SemanticVersion") -> bool:
-        return not (self < other)
+        return not self < other
 
-    def is_compatible_with(self, other: "SemanticVersion") -> bool:
-        """
-        Check if this version is backward compatible with other.
+    def is_major_bump(self, other: "SemanticVersion") -> bool:
+        """Check if this version is a major bump from other."""
+        return self.major > other.major
 
-        Compatible if same MAJOR, and this >= other.
-        """
-        return self.major == other.major and self >= other
+    def is_minor_bump(self, other: "SemanticVersion") -> bool:
+        """Check if this version is a major bump from other or minor bump."""
+        return self.major == other.major and self.minor > other.minor
 
-    @staticmethod
-    def parse(version_str: str) -> "SemanticVersion":
-        """Parse version string to SemanticVersion."""
-        match = re.match(r"^(\d+)\.(\d+)\.(\d+)$", version_str)
-        if not match:
-            raise ValueError(f"Invalid semantic version: {version_str}")
-
-        return SemanticVersion(
-            major=int(match.group(1)), minor=int(match.group(2)), patch=int(match.group(3))
-        )
-
-    def bump_major(self) -> "SemanticVersion":
-        """Create new version with MAJOR bumped."""
-        return SemanticVersion(self.major + 1, 0, 0)
-
-    def bump_minor(self) -> "SemanticVersion":
-        """Create new version with MINOR bumped."""
-        return SemanticVersion(self.major, self.minor + 1, 0)
-
-    def bump_patch(self) -> "SemanticVersion":
-        """Create new version with PATCH bumped."""
-        return SemanticVersion(self.major, self.minor, self.patch + 1)
+    def is_patch_bump(self, other: "SemanticVersion") -> bool:
+        """Check if this version is a patch bump from other."""
+        return self.major == other.major and self.minor == other.minor and self.patch > other.patch
 
 
 # ============================================================================
-# CHANGE TYPES
+# CRYPTOGRAPHIC FINGERPRINTING
 # ============================================================================
+class ContractFingerprintComputer:
+    """Computes cryptographic fingerprints for contract identity.
 
-
-class ChangeType(Enum):
-    """Type of change in contract version."""
-
-    CLAUSE_ADDED = "clause_added"
-    CLAUSE_REMOVED = "clause_removed"
-    CLAUSE_MODIFIED = "clause_modified"
-    METADATA_UPDATED = "metadata_updated"
-
-
-class CompatibilityImpact(Enum):
-    """Impact of change on compatibility."""
-
-    BREAKING = "breaking"  # Requires recompilation
-    COMPATIBLE = "compatible"  # Backward compatible
-    NEUTRAL = "neutral"  # No impact (metadata only)
-
-
-@dataclass
-class ContractChange:
-    """Single change in contract version."""
-
-    change_type: ChangeType
-    impact: CompatibilityImpact
-    clause_id: Optional[str] = None
-    description: str = ""
-
-    def is_breaking(self) -> bool:
-        """Check if change is breaking."""
-        return self.impact == CompatibilityImpact.BREAKING
-
-
-# ============================================================================
-# VERSION HISTORY
-# ============================================================================
-
-
-@dataclass
-class VersionMetadata:
-    """Metadata for contract version."""
-
-    version: SemanticVersion
-    created_timestamp: str
-    author: Optional[str] = None
-    commit_hash: Optional[str] = None
-    release_notes: str = ""
-
-    def __post_init__(self):
-        """Initialize timestamp if not provided."""
-        if not self.created_timestamp:
-            self.created_timestamp = datetime.utcnow().isoformat()
-
-
-@dataclass
-class VersionHistoryEntry:
-    """Entry in contract version history."""
-
-    metadata: VersionMetadata
-    changes: List[ContractChange] = field(default_factory=list)
-    previous_version: Optional[SemanticVersion] = None
-    compatibility_declaration: Optional[str] = None
-    deprecated: bool = False
-    deprecation_notice: Optional[str] = None
-
-    def is_breaking_change(self) -> bool:
-        """Check if any changes are breaking."""
-        return any(c.is_breaking() for c in self.changes)
-
-    def get_compatibility_impact(self) -> CompatibilityImpact:
-        """Get overall compatibility impact."""
-        if any(c.impact == CompatibilityImpact.BREAKING for c in self.changes):
-            return CompatibilityImpact.BREAKING
-        if any(c.impact == CompatibilityImpact.COMPATIBLE for c in self.changes):
-            return CompatibilityImpact.COMPATIBLE
-        return CompatibilityImpact.NEUTRAL
-
-
-@dataclass
-class VersionHistory:
-    """Complete version history for contract."""
-
-    entries: List[VersionHistoryEntry] = field(default_factory=list)
-
-    def add_version(self, entry: VersionHistoryEntry):
-        """Add version to history."""
-        self.entries.append(entry)
-        # Keep sorted by version
-        self.entries.sort(key=lambda e: e.metadata.version)
-
-    def get_version(self, version: SemanticVersion) -> Optional[VersionHistoryEntry]:
-        """Get specific version entry."""
-        for entry in self.entries:
-            if entry.metadata.version == version:
-                return entry
-        return None
-
-    def get_latest_version(self) -> Optional[VersionHistoryEntry]:
-        """Get latest version."""
-        if not self.entries:
-            return None
-        return self.entries[-1]
-
-    def get_versions_between(
-        self, start: SemanticVersion, end: SemanticVersion
-    ) -> List[VersionHistoryEntry]:
-        """Get all versions between start and end (inclusive)."""
-        return [e for e in self.entries if start <= e.metadata.version <= end]
-
-
-# ============================================================================
-# CONTRACT DIFF
-# ============================================================================
-
-
-@dataclass
-class ClauseComparison:
-    """Comparison of single clause between versions."""
-
-    clause_id: str
-    old_clause: Optional[ContractClause]
-    new_clause: Optional[ContractClause]
-    change_type: ChangeType
-    impact: CompatibilityImpact
-    differences: List[str] = field(default_factory=list)
-
-
-@dataclass
-class ContractDiff:
-    """Diff between two contract versions."""
-
-    old_version: SemanticVersion
-    new_version: SemanticVersion
-
-    added_clauses: List[str] = field(default_factory=list)
-    removed_clauses: List[str] = field(default_factory=list)
-    modified_clauses: List[ClauseComparison] = field(default_factory=list)
-
-    overall_impact: CompatibilityImpact = CompatibilityImpact.NEUTRAL
-
-    def has_breaking_changes(self) -> bool:
-        if self.removed_clauses:
-            return True
-
-        for comparison in self.modified_clauses:
-            if comparison.impact == CompatibilityImpact.BREAKING:
-                return True
-
-        return False
-
-    def get_change_summary(self) -> str:
-        """Generate human-readable summary."""
-        lines = [f"Contract Diff: {self.old_version} → {self.new_version}", "=" * 80, ""]
-
-        lines.append(f"Overall Impact: {self.overall_impact.value}")
-        lines.append("")
-
-        if self.added_clauses:
-            lines.append(f"Added Clauses ({len(self.added_clauses)}):")
-            for clause_id in self.added_clauses:
-                lines.append(f"  + {clause_id}")
-
-        if self.removed_clauses:
-            lines.append(f"Removed Clauses ({len(self.removed_clauses)}):")
-            for clause_id in self.removed_clauses:
-                lines.append(f"  - {clause_id}")
-
-        if self.modified_clauses:
-            lines.append(f"Modified Clauses ({len(self.modified_clauses)}):")
-            for comparison in self.modified_clauses:
-                lines.append(f"  ~ {comparison.clause_id} ({comparison.impact.value})")
-
-        return "\n".join(lines)
-
-
-# ============================================================================
-# CONTRACT DIFFER
-# ============================================================================
-
-
-class ContractDiffer:
-    """
-    Computes structural differences between contract versions.
-
-    The ContractDiffer compares two ContractDocument instances to identify
-    added, removed, and modified clauses. It performs initial impact
-    assessment for simple parameter changes (e.g., nullability relaxation).
+    Fingerprint is SHA-256 hash over:
+    - IR fingerprint
+    - schema_version
+    - synthesis_version
+    - Canonicalized clause content
     """
 
-    def diff(self, old_contract: ContractDocument, new_contract: ContractDocument) -> ContractDiff:
+    def compute_fingerprint(
+        self, ir_fingerprint: str, schema_version: str, synthesis_version: str, clauses: List[Any]
+    ) -> str:
         """
-        Compute diff between two contracts.
+        Compute deterministic contract fingerprint.
 
         Args:
-            old_contract: Older contract version
-            new_contract: Newer contract version
+            ir_fingerprint: IR fingerprint from Module 05
+            schema_version: Schema version string
+            synthesis_version: Synthesis version string
+            clauses: List of contract clauses
 
         Returns:
-            ContractDiff with changes
+            64-character hex SHA-256 digest
         """
-        old_version = SemanticVersion.parse(old_contract.header.contract_version)
-        new_version = SemanticVersion.parse(new_contract.header.contract_version)
+        # Step 1: Validate inputs
+        self._validate_fingerprint(ir_fingerprint)
+        self._validate_version(schema_version)
+        self._validate_version(synthesis_version)
 
-        diff = ContractDiff(old_version=old_version, new_version=new_version)
+        # Step 2: Canonicalize clause content
+        canonical_clauses = self._canonicalize_clauses(clauses)
 
-        # Build clause maps
-        old_clauses = {c.clause_id: c for c in old_contract.clauses}
-        new_clauses = {c.clause_id: c for c in new_contract.clauses}
+        # Step 3: Construct fingerprint input
+        fingerprint_data = {
+            "ir_fingerprint": ir_fingerprint,
+            "schema_version": schema_version,
+            "synthesis_version": synthesis_version,
+            "clauses": canonical_clauses,
+        }
 
-        # Detect additions
-        for clause_id in new_clauses:
-            if clause_id not in old_clauses:
-                diff.added_clauses.append(clause_id)
-
-        # Detect removals
-        for clause_id in old_clauses:
-            if clause_id not in new_clauses:
-                diff.removed_clauses.append(clause_id)
-
-        # Detect modifications
-        for clause_id in old_clauses:
-            if clause_id in new_clauses:
-                old_clause = old_clauses[clause_id]
-                new_clause = new_clauses[clause_id]
-
-                comparison = self._compare_clauses(old_clause, new_clause)
-                if comparison.differences:
-                    diff.modified_clauses.append(comparison)
-
-        # Assess overall impact
-        diff.overall_impact = self._assess_impact(diff)
-
-        return diff
-
-    def _compare_clauses(
-        self, old_clause: ContractClause, new_clause: ContractClause
-    ) -> ClauseComparison:
-        """Compare two clauses with same ID."""
-        comparison = ClauseComparison(
-            clause_id=old_clause.clause_id,
-            old_clause=old_clause,
-            new_clause=new_clause,
-            change_type=ChangeType.CLAUSE_MODIFIED,
-            impact=CompatibilityImpact.NEUTRAL,
+        # Step 4: Serialize to canonical JSON
+        canonical_json = json.dumps(
+            fingerprint_data, sort_keys=True, separators=(",", ":"), ensure_ascii=True
         )
 
-        # Compare clause types
-        if old_clause.clause_type != new_clause.clause_type:
-            comparison.differences.append("Clause type changed")
-            comparison.impact = CompatibilityImpact.BREAKING
+        # Step 5: Compute SHA-256
+        fingerprint_bytes = canonical_json.encode("utf-8")
+        sha256_hash = hashlib.sha256(fingerprint_bytes)
 
-        # Compare parameters
-        old_params = {p.name: p for p in old_clause.constraint_parameters}
-        new_params = {p.name: p for p in new_clause.constraint_parameters}
+        return sha256_hash.hexdigest()
 
-        for param_name in old_params:
-            if param_name not in new_params:
-                comparison.differences.append(f"Parameter '{param_name}' removed")
-                comparison.impact = CompatibilityImpact.BREAKING
-            elif old_params[param_name].value != new_params[param_name].value:
-                comparison.differences.append(f"Parameter '{param_name}' value changed")
-                # Assess if breaking based on clause type and parameter
-                comparison.impact = self._assess_parameter_change_impact(
-                    old_clause.clause_type,
-                    param_name,
-                    old_params[param_name].value,
-                    new_params[param_name].value,
-                )
+    def _validate_fingerprint(self, fingerprint: str):
+        """Validate fingerprint format."""
+        pattern = r"^[a-f0-9]{64}$"
+        if not re.match(pattern, fingerprint.lower()):
+            raise ValueError(f"Invalid fingerprint format: {fingerprint}")
 
-        return comparison
+    def _validate_version(self, version: str):
+        """Validate semantic version format."""
+        pattern = r"^\d+\.\d+\.\d+$"
+        if not re.match(pattern, version):
+            raise ValueError(f"Invalid version format: {version}")
 
-    def _assess_parameter_change_impact(
-        self, clause_type: ClauseType, param_name: str, old_value: any, new_value: any
-    ) -> CompatibilityImpact:
-        """Assess impact of parameter change."""
-        # Nullability: nullable → non-nullable is breaking
-        if clause_type == ClauseType.NULLABILITY and param_name == "nullable":
-            if old_value is True and new_value is False:
-                return CompatibilityImpact.BREAKING
-            # non-nullable → nullable is compatible (relaxed)
-            return CompatibilityImpact.COMPATIBLE
-
-        # Size: minimum increased is breaking
-        if clause_type == ClauseType.SIZE and param_name == "size_value":
-            if new_value > old_value:
-                return CompatibilityImpact.BREAKING
-            return CompatibilityImpact.COMPATIBLE
-
-        # Default: assume breaking for safety
-        return CompatibilityImpact.BREAKING
-
-    def _assess_impact(self, diff: ContractDiff) -> CompatibilityImpact:
-        """Assess overall compatibility impact."""
-        # Removals are always breaking
-        if diff.removed_clauses:
-            return CompatibilityImpact.BREAKING
-
-        # Check modifications
-        for comparison in diff.modified_clauses:
-            if comparison.impact == CompatibilityImpact.BREAKING:
-                return CompatibilityImpact.BREAKING
-
-        # Additions are compatible
-        if diff.added_clauses:
-            return CompatibilityImpact.COMPATIBLE
-
-        return CompatibilityImpact.NEUTRAL
-
-
-# ============================================================================
-# VERSION RECOMMENDATION
-# ============================================================================
-
-
-class VersionRecommender:
-    """Recommends version bump based on changes."""
-
-    def recommend_version_bump(
-        self, current_version: SemanticVersion, diff: ContractDiff
-    ) -> Tuple[SemanticVersion, str]:
+    def _canonicalize_clauses(self, clauses: List[Any]) -> List[Dict]:
         """
-        Recommend next version based on changes.
+        Canonicalize clause content for deterministic hashing.
+
+        Steps:
+        1. Convert clauses to dictionaries
+        2. Sort clauses by clause_id
+        3. Sort parameters within each clause
+        4. Sort metadata keys
+        5. Remove any non-deterministic fields (timestamps, etc.)
+        """
+        canonical_clauses = []
+
+        for clause in clauses:
+            # Convert to dict if needed
+            if hasattr(clause, "to_dict"):
+                clause_dict = clause.to_dict()
+            elif hasattr(clause, "__dict__"):
+                clause_dict = clause.__dict__.copy()
+            else:
+                clause_dict = dict(clause)
+
+            # Remove non-deterministic fields
+            clause_dict.pop("creation_timestamp", None)
+            clause_dict.pop("last_modified", None)
+
+            # Sort nested structures
+            if "constraint_parameters" in clause_dict:
+                params = clause_dict["constraint_parameters"]
+                if isinstance(params, list):
+                    clause_dict["constraint_parameters"] = sorted(
+                        params, key=lambda p: p.get("name", "") if isinstance(p, dict) else str(p)
+                    )
+
+            if "metadata" in clause_dict and isinstance(clause_dict["metadata"], dict):
+                clause_dict["metadata"] = dict(sorted(clause_dict["metadata"].items()))
+
+            canonical_clauses.append(clause_dict)
+
+        # Sort clauses by clause_id
+        canonical_clauses.sort(key=lambda c: c.get("clause_id", ""))
+
+        return canonical_clauses
+
+
+# ============================================================================
+# VERSION IDENTITY MANAGER
+# ============================================================================
+class VersionIdentityManager:
+    """Manages version identity for contract artifacts.
+
+    Provides high-level operations:
+    - Creating version metadata
+    - Computing fingerprints
+    - Validating version consistency
+    """
+
+    def __init__(self):
+        self.fingerprint_computer = ContractFingerprintComputer()
+
+    def create_version_metadata(
+        self,
+        schema_version: str,
+        synthesis_version: str,
+        contract_version: str,
+        ir_fingerprint: str,
+        clauses: List[Any],
+        generator_tool_version: Optional[str] = None,
+    ) -> ContractVersionMetadata:
+        """
+        Create complete version metadata for a contract.
+
+        Args:
+            schema_version: Schema version (e.g., "1.0.0")
+            synthesis_version: Synthesis version (e.g., "1.0.0")
+            contract_version: Contract version (e.g., "1.0.0")
+            ir_fingerprint: IR fingerprint from Module 05
+            clauses: List of contract clauses
+            generator_tool_version: Optional tool version override
 
         Returns:
-            (new_version, rationale)
+            ContractVersionMetadata with computed fingerprint
         """
-        if diff.overall_impact == CompatibilityImpact.BREAKING:
-            return (current_version.bump_major(), "Breaking changes detected (MAJOR bump)")
+        # Compute contract fingerprint
+        contract_fingerprint = self.fingerprint_computer.compute_fingerprint(
+            ir_fingerprint=ir_fingerprint,
+            schema_version=schema_version,
+            synthesis_version=synthesis_version,
+            clauses=clauses,
+        )
 
-        if diff.overall_impact == CompatibilityImpact.COMPATIBLE:
-            return (current_version.bump_minor(), "Backward-compatible additions (MINOR bump)")
+        # Generate timestamp
+        generation_timestamp = datetime.utcnow().isoformat() + "Z"
 
-        return (current_version.bump_patch(), "Metadata or documentation changes only (PATCH bump)")
+        # Create metadata
+        return ContractVersionMetadata(
+            schema_version=schema_version,
+            synthesis_version=synthesis_version,
+            contract_version=contract_version,
+            contract_fingerprint=contract_fingerprint,
+            ir_fingerprint=ir_fingerprint,
+            generation_timestamp=generation_timestamp,
+            generator_tool_version=generator_tool_version or "contract-schema-1.0.0",
+        )
+
+    def verify_fingerprint(self, metadata: ContractVersionMetadata, clauses: List[Any]) -> bool:
+        """
+        Verify contract fingerprint matches content.
+
+        Args:
+            metadata: Contract version metadata
+            clauses: List of contract clauses
+
+        Returns:
+            True if fingerprint matches, False otherwise
+        """
+        computed_fingerprint = self.fingerprint_computer.compute_fingerprint(
+            ir_fingerprint=metadata.ir_fingerprint,
+            schema_version=metadata.schema_version,
+            synthesis_version=metadata.synthesis_version,
+            clauses=clauses,
+        )
+
+        return computed_fingerprint == metadata.contract_fingerprint
+
+    def compare_versions(self, version1: str, version2: str) -> int:
+        """
+        Compare two semantic versions.
+
+        Args:
+            version1: First version string
+            version2: Second version string
+
+        Returns:
+            -1 if version1 < version2
+             0 if version1 == version2
+             1 if version1 > version2
+        """
+        v1 = SemanticVersion(version1)
+        v2 = SemanticVersion(version2)
+
+        if v1 < v2:
+            return -1
+        elif v1 > v2:
+            return 1
+        else:
+            return 0
 
 
 # ============================================================================
-# DEPRECATION SUPPORT
+# EXPORTS
 # ============================================================================
-
-
-@dataclass
-class DeprecationNotice:
-    """Deprecation notice for clause or contract."""
-
-    deprecated_in_version: SemanticVersion
-    removed_in_version: Optional[SemanticVersion] = None
-    reason: str = ""
-    replacement: Optional[str] = None
-    migration_guide: str = ""
-
-    def is_removed_in(self, version: SemanticVersion) -> bool:
-        """Check if deprecated item is removed in given version."""
-        if not self.removed_in_version:
-            return False
-        return version >= self.removed_in_version
-
-    def format_notice(self) -> str:
-        """Format deprecation notice for display."""
-        lines = [f"DEPRECATED in version {self.deprecated_in_version}"]
-
-        if self.removed_in_version:
-            lines.append(f"Will be removed in version {self.removed_in_version}")
-
-        if self.reason:
-            lines.append(f"Reason: {self.reason}")
-
-        if self.replacement:
-            lines.append(f"Use instead: {self.replacement}")
-
-        return "\n".join(lines)
-
-
 __all__ = [
+    "ContractVersionMetadata",
     "SemanticVersion",
-    "ChangeType",
-    "CompatibilityImpact",
-    "ContractChange",
-    "VersionMetadata",
-    "VersionHistoryEntry",
-    "VersionHistory",
-    "ClauseComparison",
-    "ContractDiff",
-    "ContractDiffer",
-    "VersionRecommender",
-    "DeprecationNotice",
+    "ContractFingerprintComputer",
+    "VersionIdentityManager",
 ]

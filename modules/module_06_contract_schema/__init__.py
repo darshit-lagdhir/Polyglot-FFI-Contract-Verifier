@@ -104,24 +104,28 @@ from .contract_validation import (
     ValidationLayer,
 )
 
-# Versioning (Prompt 4)
+# Versioning (Prompt 1/20)
 from .contract_versioning import (
+    # Identity (New)
+    ContractVersionMetadata,
+    ContractFingerprintComputer,
+    VersionIdentityManager,
     # Version types
     SemanticVersion,
-    # Change tracking
-    ChangeType,
-    CompatibilityImpact,
-    ContractChange,
+    # Change tracking (Pending re-implementation in later prompts)
+    # ChangeType,
+    # CompatibilityImpact,
+    # ContractChange,
     # History
-    VersionHistory,
-    VersionHistoryEntry,
+    # VersionHistory,
+    # VersionHistoryEntry,
     # Diffing
-    ContractDiff,
-    ContractDiffer,
+    # ContractDiff,
+    # ContractDiffer,
     # Recommendations
-    VersionRecommender,
+    # VersionRecommender,
     # Deprecation
-    DeprecationNotice,
+    # DeprecationNotice,
 )
 
 # Serialization (Prompt 5)
@@ -300,15 +304,18 @@ __all__ = [
     "ValidationWarning",
     "ValidationLayer",
     # Versioning
+    "ContractVersionMetadata",
+    "ContractFingerprintComputer",
+    "VersionIdentityManager",
     "SemanticVersion",
-    "ChangeType",
-    "CompatibilityImpact",
-    "ContractChange",
-    "VersionHistory",
-    "ContractDiff",
-    "ContractDiffer",
-    "VersionRecommender",
-    "DeprecationNotice",
+    # "ChangeType",
+    # "CompatibilityImpact",
+    # "ContractChange",
+    # "VersionHistory",
+    # "ContractDiff",
+    # "ContractDiffer",
+    # "VersionRecommender",
+    # "DeprecationNotice",
     # Serialization
     "IntegrityInfo",
     "compute_checksum",
