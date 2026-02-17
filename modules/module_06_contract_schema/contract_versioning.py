@@ -2849,6 +2849,258 @@ class DiffFormatter:
 
 
 # ============================================================================
+# FUNCTION SIGNATURE ANALYZER
+# ============================================================================
+class FunctionSignatureAnalyzer:
+    """Analyzes function signature changes in detail.
+    Detects parameter, return type, and calling convention changes.
+    """
+
+    def analyze_function(self, baseline_func: Dict[str, Any], candidate_func: Dict[str, Any], function_id: str) -> EntityDiff:
+        """
+        Analyze function signature changes.
+        Args:
+            baseline_func: Old function signature
+            candidate_func: New function signature
+            function_id: Function identifier
+        Returns:
+            EntityDiff for function
+        """
+        entity_diff = EntityDiff(entity_id=function_id, entity_type="function")
+
+        # Check return type change
+        baseline_return = baseline_func.get("return_type", "void")
+        candidate_return = candidate_func.get("return_type", "void")
+
+        if baseline_return != candidate_return:
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="return_type_changed",
+                    entity_id=function_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Return type changed from '{baseline_return}' to '{candidate_return}'",
+                    location="return type",
+                    old_value=baseline_return,
+                    new_value=candidate_return,
+                )
+            )
+
+        # Check calling convention change
+        baseline_convention = baseline_func.get("calling_convention", "cdecl")
+        candidate_convention = candidate_func.get("calling_convention", "cdecl")
+
+        if baseline_convention != candidate_convention:
+            entity_diff.changes.append(
+                DetailedChange(
+                    change_type="calling_convention_changed",
+                    entity_id=function_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Calling convention changed from '{baseline_convention}' to '{candidate_convention}'",
+                    old_value=baseline_convention,
+                    new_value=candidate_convention,
+                )
+            )
+
+        # Analyze parameters
+        baseline_params = baseline_func.get("parameters", [])
+        candidate_params = candidate_func.get("parameters", [])
+
+        param_changes = self._analyze_parameters(baseline_params, candidate_params, function_id)
+        entity_diff.changes.extend(param_changes)
+
+        return entity_diff
+
+    def _analyze_parameters(
+        self, baseline_params: List[Dict[str, Any]], candidate_params: List[Dict[str, Any]], function_id: str
+    ) -> List[DetailedChange]:
+        """Analyze parameter changes."""
+        changes = []
+
+        # Check parameter count change
+        if len(baseline_params) != len(candidate_params):
+            changes.append(
+                DetailedChange(
+                    change_type="parameter_count_changed",
+                    entity_id=function_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Parameter count changed from {len(baseline_params)} to {len(candidate_params)}",
+                    old_value=len(baseline_params),
+                    new_value=len(candidate_params),
+                )
+            )
+
+        # Index baseline and candidate params by name
+        baseline_by_name = {p.get("name", f"param_{i}"): (i, p) for i, p in enumerate(baseline_params)}
+        candidate_by_name = {p.get("name", f"param_{i}"): (i, p) for i, p in enumerate(candidate_params)}
+
+        # Detect added parameters
+        added_names = set(candidate_by_name.keys()) - set(baseline_by_name.keys())
+        for name in added_names:
+            idx, param = candidate_by_name[name]
+            param_type = param.get("type", "unknown")
+            changes.append(
+                DetailedChange(
+                    change_type="parameter_added",
+                    entity_id=function_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Parameter '{name}' added at index {idx} (type: {param_type})",
+                    location=f"parameter[{idx}]",
+                    new_value=param,
+                )
+            )
+
+        # Detect removed parameters
+        removed_names = set(baseline_by_name.keys()) - set(candidate_by_name.keys())
+        for name in removed_names:
+            idx, param = baseline_by_name[name]
+            param_type = param.get("type", "unknown")
+            changes.append(
+                DetailedChange(
+                    change_type="parameter_removed",
+                    entity_id=function_id,
+                    severity=ChangeSeverity.BREAKING,
+                    description=f"Parameter '{name}' removed from index {idx} (type: {param_type})",
+                    location=f"parameter[{idx}]",
+                    old_value=param,
+                )
+            )
+
+        # Detect modified parameters (in both baseline and candidate)
+        common_names = set(baseline_by_name.keys()) & set(candidate_by_name.keys())
+        for name in common_names:
+            baseline_idx, baseline_param = baseline_by_name[name]
+            candidate_idx, candidate_param = candidate_by_name[name]
+
+            # Check type change
+            baseline_type = baseline_param.get("type", "unknown")
+            candidate_type = candidate_param.get("type", "unknown")
+
+            if baseline_type != candidate_type:
+                changes.append(
+                    DetailedChange(
+                        change_type="parameter_type_changed",
+                        entity_id=function_id,
+                        severity=ChangeSeverity.BREAKING,
+                        description=f"Parameter '{name}' type changed from '{baseline_type}' to '{candidate_type}'",
+                        location=f"parameter[{candidate_idx}]",
+                        old_value=baseline_type,
+                        new_value=candidate_type,
+                    )
+                )
+
+            # Check index change (reordering)
+            if baseline_idx != candidate_idx:
+                changes.append(
+                    DetailedChange(
+                        change_type="parameter_reordered",
+                        entity_id=function_id,
+                        severity=ChangeSeverity.BREAKING,
+                        description=f"Parameter '{name}' moved from index {baseline_idx} to index {candidate_idx}",
+                        location=f"parameter[{name}]",
+                        old_value=baseline_idx,
+                        new_value=candidate_idx,
+                    )
+                )
+
+        return changes
+
+
+# ============================================================================
+# FUNCTION CATALOG ANALYZER
+# ============================================================================
+class FunctionCatalogAnalyzer:
+    """Analyzes function catalog changes (additions/removals).
+    Compares entire function sets between contract versions.
+    """
+
+    def __init__(self):
+        self.signature_analyzer = FunctionSignatureAnalyzer()
+
+    def analyze_functions(
+        self, baseline_functions: Dict[str, Dict[str, Any]], candidate_functions: Dict[str, Dict[str, Any]]
+    ) -> List[EntityDiff]:
+        """
+        Analyze function catalog changes.
+        Args:
+            baseline_functions: Dict of function_id -> function_signature
+            candidate_functions: Dict of function_id -> function_signature
+        Returns:
+            List of EntityDiff for all changed functions
+        """
+        entity_diffs = []
+
+        baseline_ids = set(baseline_functions.keys())
+        candidate_ids = set(candidate_functions.keys())
+
+        # Added functions
+        for func_id in candidate_ids - baseline_ids:
+            func = candidate_functions[func_id]
+            entity_diff = EntityDiff(
+                entity_id=func_id,
+                entity_type="function",
+                changes=[
+                    DetailedChange(
+                        change_type="function_added",
+                        entity_id=func_id,
+                        severity=ChangeSeverity.EXTENSION,
+                        description=f"Function '{func_id}' added",
+                        new_value=func,
+                    )
+                ],
+            )
+            entity_diffs.append(entity_diff)
+
+        # Removed functions
+        for func_id in baseline_ids - candidate_ids:
+            func = baseline_functions[func_id]
+            entity_diff = EntityDiff(
+                entity_id=func_id,
+                entity_type="function",
+                changes=[
+                    DetailedChange(
+                        change_type="function_removed",
+                        entity_id=func_id,
+                        severity=ChangeSeverity.BREAKING,
+                        description=f"Function '{func_id}' removed",
+                        old_value=func,
+                    )
+                ],
+            )
+            entity_diffs.append(entity_diff)
+
+        # Modified functions
+        for func_id in baseline_ids & candidate_ids:
+            baseline_func = baseline_functions[func_id]
+            candidate_func = candidate_functions[func_id]
+
+            entity_diff = self.signature_analyzer.analyze_function(baseline_func, candidate_func, func_id)
+
+            # Only add if there are changes
+            if entity_diff.changes:
+                entity_diffs.append(entity_diff)
+
+        return entity_diffs
+
+
+# ============================================================================
+# DIFF ANALYZER (UPDATE)
+# ============================================================================
+def _analyze_functions_implementation(self, baseline_contract: Any, candidate_contract: Any) -> List[EntityDiff]:
+    """Analyze function changes (implementation of placeholder)."""
+    # Extract function signatures from contracts
+    baseline_funcs = getattr(baseline_contract, "functions", {})
+    candidate_funcs = getattr(candidate_contract, "functions", {})
+
+    # Use function catalog analyzer
+    catalog_analyzer = FunctionCatalogAnalyzer()
+    return catalog_analyzer.analyze_functions(baseline_funcs, candidate_funcs)
+
+
+# Patch DetailedDiffAnalyzer
+DetailedDiffAnalyzer._analyze_functions = _analyze_functions_implementation
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -2917,4 +3169,7 @@ __all__ = [
     "DetailedDiffAnalyzer",
     "StructLayoutAnalyzer",
     "DiffFormatter",
+    # From Prompt 8
+    "FunctionSignatureAnalyzer",
+    "FunctionCatalogAnalyzer",
 ]

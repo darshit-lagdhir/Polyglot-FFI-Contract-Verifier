@@ -637,17 +637,213 @@ This prompt implemented comprehensive diff analysis with granular structural and
 
 ### Files Modified
 
-1. `modules/module_06_contract_schema/contract_versioning.py` - UPDATED (+600 lines)
-2. `tests/test_contract_versioning_07.py` - NEW (950 lines)
+1. `modules/module_06_contract_schema/contract_versioning.py` - UPDATED (+350 lines)
+2. `tests/test_contract_versioning_08.py` - NEW (900 lines)
+3. `modules/module_06_contract_schema/CONTRACT_VERSIONING.md` - UPDATED
+
+## Prompt 8/20: Function Signature Diff Analysis ✅ COMPLETE
+
+**Implementation Date**: 2026-02-17
+**Status**: Production Ready
+**Test Coverage**: 90 tests passing (HARDEST level)
+
+### What Was Implemented
+
+This prompt implemented comprehensive function signature diff analysis with parameter-level change detection.
+
+#### Core Components
+
+1. **FunctionSignatureAnalyzer** - Signature-level diff analysis
+   - Return type change detection (BREAKING)
+   - Calling convention change detection (BREAKING)
+   - Parameter count change detection (BREAKING)
+   - Parameter-level diff analysis (additions, removals, type changes, reordering)
+
+2. **FunctionCatalogAnalyzer** - Function set diff analysis
+   - Function additions (EXTENSION)
+   - Function removals (BREAKING)
+   - Function modifications (delegates to FunctionSignatureAnalyzer)
+   - Unchanged functions filtered out
+
+### Key Algorithms
+
+**Return Type Analysis**:
+- Detects type changes (int32_t → int64_t)
+- Detects void ↔ non-void transitions
+- Detects pointer ↔ value transitions
+- All return type changes classified as BREAKING
+
+**Calling Convention Analysis**:
+- Detects convention changes (cdecl → stdcall)
+- Supports: cdecl, stdcall, fastcall, thiscall, vectorcall
+- All convention changes classified as BREAKING
+
+**Parameter Count Analysis**:
+- Detects additions/removals
+- Reports old and new counts
+- All count changes classified as BREAKING
+
+**Parameter Addition Detection**:
+- Identifies new parameters by name
+- Reports index and type
+- Stores full parameter definition in new_value
+- All additions classified as BREAKING
+
+**Parameter Removal Detection**:
+- Identifies removed parameters by name
+- Reports original index and type
+- Stores full parameter definition in old_value
+- All removals classified as BREAKING
+
+**Parameter Type Change Detection**:
+- Compares types for parameters with same name
+- Detects int ↔ float, signed ↔ unsigned, pointer ↔ value
+- Reports old and new types
+- All type changes classified as BREAKING
+
+**Parameter Reordering Detection**:
+- Tracks index changes for parameters with same name
+- Detects position swaps (a, b → b, a)
+- Reports old and new indices
+- All reorderings classified as BREAKING
+
+**Function Catalog Analysis**:
+- Identifies added functions (EXTENSION)
+- Identifies removed functions (BREAKING)
+- Identifies modified functions (analyzes signature)
+- Filters out unchanged functions
+
+### Change Detection Examples
+
+**Return Type Change**:
+```c
+// Baseline
+int32_t get_value();
+
+// Candidate
+int64_t get_value();
+
+// Detected:
+// - return_type_changed: int32_t → int64_t (BREAKING)
+```
+
+**Calling Convention Change**:
+```c
+// Baseline
+__cdecl void process();
+
+// Candidate
+__stdcall void process();
+
+// Detected:
+// - calling_convention_changed: cdecl → stdcall (BREAKING)
+```
+
+**Parameter Added**:
+```c
+// Baseline
+void process(int32_t a);
+
+// Candidate
+void process(int32_t a, int32_t b);
+
+// Detected:
+// - parameter_count_changed: 1 → 2 (BREAKING)
+// - parameter_added: 'b' at index 1 (BREAKING)
+```
+
+**Parameter Removed**:
+```c
+// Baseline
+void process(int32_t a, int32_t b);
+
+// Candidate
+void process(int32_t a);
+
+// Detected:
+// - parameter_count_changed: 2 → 1 (BREAKING)
+// - parameter_removed: 'b' from index 1 (BREAKING)
+```
+
+**Parameter Type Changed**:
+```c
+// Baseline
+void process(int32_t size);
+
+// Candidate
+void process(size_t size);
+
+// Detected:
+// - parameter_type_changed: 'size' int32_t → size_t (BREAKING)
+```
+
+**Parameter Reordered**:
+```c
+// Baseline
+void process(int32_t a, int32_t b);
+
+// Candidate
+void process(int32_t b, int32_t a);
+
+// Detected:
+// - parameter_reordered: 'a' moved from 0 → 1 (BREAKING)
+// - parameter_reordered: 'b' moved from 1 → 0 (BREAKING)
+```
+
+**Function Added**:
+```c
+// Candidate adds:
+float calculate_distance(Point* p1, Point* p2);
+
+// Detected:
+// - function_added: 'calculate_distance' (EXTENSION)
+```
+
+**Function Removed**:
+```c
+// Baseline had:
+void legacy_process(int x);
+
+// Candidate: removed
+
+// Detected:
+// - function_removed: 'legacy_process' (BREAKING)
+```
+
+### Testing
+
+**Test Coverage**: 90 tests (HARDEST level)
+- 15 tests: Return type changes
+- 10 tests: Calling convention changes
+- 10 tests: Parameter count changes
+- 10 tests: Parameter additions
+- 10 tests: Parameter removals
+- 10 tests: Parameter type changes
+- 10 tests: Parameter reordering
+- 15 tests: Function catalog analysis
+
+**Test Categories**:
+- Basic detection (change type identified)
+- Edge cases (empty parameters, missing attributes)
+- Description quality (human-readable messages)
+- Location tracking (parameter index, function ID)
+- Value preservation (old_value, new_value)
+- Severity classification (all function signature changes are BREAKING except additions)
+- Integration (combined changes, catalog-level analysis)
+
+### Files Modified
+
+1. `modules/module_06_contract_schema/contract_versioning.py` - UPDATED (+350 lines)
+2. `tests/test_contract_versioning_08.py` - NEW (900 lines)
 3. `modules/module_06_contract_schema/CONTRACT_VERSIONING.md` - UPDATED
 
 ### Next Steps
 
-Prompt 8/20 will implement:
-- Function signature diff analysis
-- Parameter-level change detection
-- Return type analysis
-- Calling convention change detection
+Prompt 9/20 will implement:
+- Clause-level diff analysis (implement `_analyze_clauses`)
+- Constraint parameter change detection
+- Severity change detection
+- Complete the placeholder implementations
 
 ---
 
