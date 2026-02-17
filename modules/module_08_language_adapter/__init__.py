@@ -39,6 +39,14 @@ from .language_adapter import (
     ErrorCodeInterpreter,
     MemoryInspector,
     PostCallValidator,
+    PolicyType,
+    EnforcementPolicy,
+    PerformanceProfile,
+    AdapterConfiguration,
+    ConfigurationValidator,
+    ConfigurationLoader,
+    PolicyRegistry,
+    ConfigurationManager,
     __version__,
 )
 
@@ -81,5 +89,13 @@ __all__ = [
     'ErrorCodeInterpreter',
     'MemoryInspector',
     'PostCallValidator',
+    'PolicyType',
+    'EnforcementPolicy',
+    'PerformanceProfile',
+    'AdapterConfiguration',
+    'ConfigurationValidator',
+    'ConfigurationLoader',
+    'PolicyRegistry',
+    'ConfigurationManager',
     '__version__',
 ]

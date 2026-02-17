@@ -2835,4 +2835,561 @@ class PostCallValidator:
                         'message': error_msg
                     })
         
-        return result
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 34: ENFORCEMENT POLICY
+# ════════════════════════════════════════════════════════════════════════════
+
+class PolicyType(Enum):
+    """Enforcement policy types."""
+    STRICT = "strict"
+    BALANCED = "balanced"
+    PERMISSIVE = "permissive"
+    CUSTOM = "custom"
+
+
+@dataclass
+class EnforcementPolicy:
+    """
+    Defines enforcement behavior for contract violations.
+    
+    Controls how violations are handled, logged, and reported based
+    on clause severity and policy configuration.
+    """
+    
+    policy_type: PolicyType
+    fail_fast: bool = True
+    treat_advisory_as_mandatory: bool = False
+    treat_optional_as_advisory: bool = True
+    allow_missing_clauses: bool = False
+    max_violations: int = 0  # 0 = unlimited
+    violation_callback: Optional[Callable] = None
+    
+    @staticmethod
+    def strict() -> 'EnforcementPolicy':
+        """Create strict enforcement policy."""
+        return EnforcementPolicy(
+            policy_type=PolicyType.STRICT,
+            fail_fast=True,
+            treat_advisory_as_mandatory=True,
+            treat_optional_as_advisory=True,
+            allow_missing_clauses=False,
+            max_violations=1
+        )
+    
+    @staticmethod
+    def balanced() -> 'EnforcementPolicy':
+        """Create balanced enforcement policy."""
+        return EnforcementPolicy(
+            policy_type=PolicyType.BALANCED,
+            fail_fast=False,
+            treat_advisory_as_mandatory=False,
+            treat_optional_as_advisory=True,
+            allow_missing_clauses=True,
+            max_violations=10
+        )
+    
+    @staticmethod
+    def permissive() -> 'EnforcementPolicy':
+        """Create permissive enforcement policy."""
+        return EnforcementPolicy(
+            policy_type=PolicyType.PERMISSIVE,
+            fail_fast=False,
+            treat_advisory_as_mandatory=False,
+            treat_optional_as_advisory=False,
+            allow_missing_clauses=True,
+            max_violations=0
+        )
+    
+    def should_enforce(self, severity: ClauseSeverity) -> bool:
+        """
+        Determine if clause should be enforced.
+        
+        Args:
+            severity: Clause severity
+            
+        Returns:
+            True if clause should be enforced
+        """
+        if severity == ClauseSeverity.MANDATORY:
+            return True
+        
+        if severity == ClauseSeverity.ADVISORY:
+            return self.treat_advisory_as_mandatory
+        
+        if severity == ClauseSeverity.OPTIONAL:
+            return self.treat_optional_as_advisory
+        
+        return False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'policy_type': self.policy_type.value,
+            'fail_fast': self.fail_fast,
+            'treat_advisory_as_mandatory': self.treat_advisory_as_mandatory,
+            'treat_optional_as_advisory': self.treat_optional_as_advisory,
+            'allow_missing_clauses': self.allow_missing_clauses,
+            'max_violations': self.max_violations
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 35: PERFORMANCE PROFILE
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PerformanceProfile:
+    """
+    Performance tuning configuration.
+    
+    Controls optimization level, caching, and performance-related options.
+    """
+    
+    optimization_level: int = 1  # 0-3
+    enable_caching: bool = False
+    parallel_validation: bool = False
+    lazy_validation: bool = False
+    clause_timeout_ms: int = 1000
+    profile_execution: bool = False
+    
+    @staticmethod
+    def fast() -> 'PerformanceProfile':
+        """High-performance profile."""
+        return PerformanceProfile(
+            optimization_level=3,
+            enable_caching=True,
+            parallel_validation=True,
+            lazy_validation=True,
+            clause_timeout_ms=100,
+            profile_execution=False
+        )
+    
+    @staticmethod
+    def balanced() -> 'PerformanceProfile':
+        """Balanced performance profile."""
+        return PerformanceProfile(
+            optimization_level=1,
+            enable_caching=False,
+            parallel_validation=False,
+            lazy_validation=False,
+            clause_timeout_ms=1000,
+            profile_execution=False
+        )
+    
+    @staticmethod
+    def debug() -> 'PerformanceProfile':
+        """Debug-focused profile."""
+        return PerformanceProfile(
+            optimization_level=0,
+            enable_caching=False,
+            parallel_validation=False,
+            lazy_validation=False,
+            clause_timeout_ms=5000,
+            profile_execution=True
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'optimization_level': self.optimization_level,
+            'enable_caching': self.enable_caching,
+            'parallel_validation': self.parallel_validation,
+            'lazy_validation': self.lazy_validation,
+            'clause_timeout_ms': self.clause_timeout_ms,
+            'profile_execution': self.profile_execution
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 36: ADAPTER CONFIGURATION
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class AdapterConfiguration:
+    """
+    Complete adapter configuration.
+    
+    Combines enforcement policy, performance profile, pipeline config,
+    and debugging options into unified configuration.
+    """
+    
+    enforcement_policy: EnforcementPolicy = field(default_factory=EnforcementPolicy.balanced)
+    performance_profile: PerformanceProfile = field(default_factory=PerformanceProfile.balanced)
+    pipeline_config: PipelineConfig = field(default_factory=PipelineConfig)
+    
+    # Debugging options
+    verbose_logging: bool = False
+    trace_validation: bool = False
+    dump_inputs: bool = False
+    dump_memory: bool = False
+    
+    # Validation tuning
+    ignore_clause_types: Set[str] = field(default_factory=set)
+    require_clause_types: Set[str] = field(default_factory=set)
+    
+    # Function-specific overrides
+    function_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
+    def get_effective_config(
+        self,
+        function_name: Optional[str] = None
+    ) -> 'AdapterConfiguration':
+        """
+        Get effective configuration with function overrides applied.
+        
+        Args:
+            function_name: Function name for override lookup
+            
+        Returns:
+            Configuration with overrides applied
+        """
+        if not function_name or function_name not in self.function_overrides:
+            return self
+        
+        # Create copy with overrides
+        import copy
+        config = copy.deepcopy(self)
+        overrides = self.function_overrides[function_name]
+        
+        for key, value in overrides.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        
+        return config
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'enforcement_policy': self.enforcement_policy.to_dict(),
+            'performance_profile': self.performance_profile.to_dict(),
+            'pipeline_config': self.pipeline_config.to_dict(),
+            'verbose_logging': self.verbose_logging,
+            'trace_validation': self.trace_validation,
+            'dump_inputs': self.dump_inputs,
+            'dump_memory': self.dump_memory,
+            'ignore_clause_types': list(self.ignore_clause_types),
+            'require_clause_types': list(self.require_clause_types)
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 37: CONFIGURATION VALIDATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class ConfigurationValidator:
+    """
+    Validates configuration correctness.
+    
+    Ensures configuration values are valid and compatible.
+    """
+    
+    def validate(self, config: AdapterConfiguration) -> Tuple[bool, List[str]]:
+        """
+        Validate configuration.
+        
+        Args:
+            config: Configuration to validate
+            
+        Returns:
+            Tuple of (valid, error_messages)
+        """
+        errors = []
+        
+        # Validate optimization level
+        if not 0 <= config.performance_profile.optimization_level <= 3:
+            errors.append("optimization_level must be 0-3")
+        
+        # Validate clause timeout
+        if config.performance_profile.clause_timeout_ms <= 0:
+            errors.append("clause_timeout_ms must be positive")
+        
+        # Validate max violations
+        if config.enforcement_policy.max_violations < 0:
+            errors.append("max_violations must be non-negative")
+        
+        # Check conflicting options
+        if config.performance_profile.lazy_validation and config.enforcement_policy.fail_fast:
+            errors.append("lazy_validation incompatible with fail_fast")
+        
+        # Validate clause type sets
+        common = config.ignore_clause_types & config.require_clause_types
+        if common:
+            errors.append(f"Clause types in both ignore and require: {common}")
+        
+        return (len(errors) == 0, errors)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 38: CONFIGURATION LOADER
+# ════════════════════════════════════════════════════════════════════════════
+
+class ConfigurationLoader:
+    """
+    Loads configuration from multiple sources.
+    
+    Supports JSON files, dictionaries, and environment variables.
+    """
+    
+    def __init__(self):
+        self.validator = ConfigurationValidator()
+    
+    def load_from_dict(
+        self,
+        config_dict: Dict[str, Any]
+    ) -> AdapterConfiguration:
+        """
+        Load configuration from dictionary.
+        
+        Args:
+            config_dict: Configuration dictionary
+            
+        Returns:
+            AdapterConfiguration instance
+        """
+        config = AdapterConfiguration()
+        
+        # Load enforcement policy
+        if 'enforcement_policy' in config_dict:
+            policy_dict = config_dict['enforcement_policy']
+            policy_type = PolicyType(policy_dict.get('policy_type', 'balanced'))
+            
+            config.enforcement_policy = EnforcementPolicy(
+                policy_type=policy_type,
+                fail_fast=policy_dict.get('fail_fast', True),
+                treat_advisory_as_mandatory=policy_dict.get('treat_advisory_as_mandatory', False),
+                allow_missing_clauses=policy_dict.get('allow_missing_clauses', True),
+                max_violations=policy_dict.get('max_violations', 0)
+            )
+        
+        # Load performance profile
+        if 'performance_profile' in config_dict:
+            perf_dict = config_dict['performance_profile']
+            config.performance_profile = PerformanceProfile(
+                optimization_level=perf_dict.get('optimization_level', 1),
+                enable_caching=perf_dict.get('enable_caching', False),
+                parallel_validation=perf_dict.get('parallel_validation', False),
+                clause_timeout_ms=perf_dict.get('clause_timeout_ms', 1000)
+            )
+        
+        # Load debugging options
+        config.verbose_logging = config_dict.get('verbose_logging', False)
+        config.trace_validation = config_dict.get('trace_validation', False)
+        
+        # Validate loaded config
+        valid, errors = self.validator.validate(config)
+        if not valid:
+            raise ValueError(f"Invalid configuration: {errors}")
+        
+        return config
+    
+    def load_from_file(self, file_path: Union[str, Path]) -> AdapterConfiguration:
+        """
+        Load configuration from JSON file.
+        
+        Args:
+            file_path: Path to JSON configuration file
+            
+        Returns:
+            AdapterConfiguration instance
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {file_path}")
+        
+        with open(path, 'r', encoding='utf-8') as f:
+            config_dict = json.load(f)
+        
+        return self.load_from_dict(config_dict)
+    
+    def load_from_env(
+        self,
+        prefix: str = "ADAPTER_"
+    ) -> Dict[str, Any]:
+        """
+        Load configuration from environment variables.
+        
+        Args:
+            prefix: Environment variable prefix
+            
+        Returns:
+            Configuration dictionary
+        """
+        import os
+        config = {}
+        
+        # Map environment variables to config
+        env_map = {
+            f'{prefix}POLICY': 'enforcement_policy.policy_type',
+            f'{prefix}FAIL_FAST': 'enforcement_policy.fail_fast',
+            f'{prefix}OPTIMIZATION': 'performance_profile.optimization_level',
+            f'{prefix}VERBOSE': 'verbose_logging'
+        }
+        
+        for env_var, config_path in env_map.items():
+            value = os.environ.get(env_var)
+            if value is not None:
+                # Parse value
+                if value.lower() in ('true', 'false'):
+                    value = value.lower() == 'true'
+                elif value.isdigit():
+                    value = int(value)
+                
+                # Set nested config
+                keys = config_path.split('.')
+                current = config
+                for key in keys[:-1]:
+                    if key not in current:
+                        current[key] = {}
+                    current = current[key]
+                current[keys[-1]] = value
+        
+        return config
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 39: POLICY REGISTRY
+# ════════════════════════════════════════════════════════════════════════════
+
+class PolicyRegistry:
+    """
+    Registry for named enforcement policies.
+    
+    Allows policies to be registered, retrieved, and shared across adapters.
+    """
+    
+    def __init__(self):
+        self.policies: Dict[str, EnforcementPolicy] = {
+            'strict': EnforcementPolicy.strict(),
+            'balanced': EnforcementPolicy.balanced(),
+            'permissive': EnforcementPolicy.permissive()
+        }
+    
+    def register(self, name: str, policy: EnforcementPolicy) -> None:
+        """
+        Register named policy.
+        
+        Args:
+            name: Policy name
+            policy: EnforcementPolicy instance
+        """
+        self.policies[name] = policy
+    
+    def get(self, name: str) -> Optional[EnforcementPolicy]:
+        """
+        Get policy by name.
+        
+        Args:
+            name: Policy name
+            
+        Returns:
+            EnforcementPolicy or None if not found
+        """
+        return self.policies.get(name)
+    
+    def unregister(self, name: str) -> bool:
+        """
+        Unregister policy.
+        
+        Args:
+            name: Policy name
+            
+        Returns:
+            True if unregistered, False if not found
+        """
+        if name in self.policies:
+            del self.policies[name]
+            return True
+        return False
+    
+    def list_policies(self) -> List[str]:
+        """Get list of registered policy names."""
+        return list(self.policies.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 40: CONFIGURATION MANAGER
+# ════════════════════════════════════════════════════════════════════════════
+
+class ConfigurationManager:
+    """
+    Central configuration management.
+    
+    Coordinates configuration loading, validation, and runtime updates.
+    """
+    
+    def __init__(self):
+        self.loader = ConfigurationLoader()
+        self.validator = ConfigurationValidator()
+        self.policy_registry = PolicyRegistry()
+        self.active_config: Optional[AdapterConfiguration] = None
+    
+    def load_configuration(
+        self,
+        source: Union[str, Path, Dict[str, Any]]
+    ) -> AdapterConfiguration:
+        """
+        Load configuration from source.
+        
+        Args:
+            source: File path, dict, or config object
+            
+        Returns:
+            Loaded AdapterConfiguration
+        """
+        if isinstance(source, dict):
+            config = self.loader.load_from_dict(source)
+        elif isinstance(source, (str, Path)):
+            config = self.loader.load_from_file(source)
+        else:
+            raise ValueError(f"Invalid config source type: {type(source)}")
+        
+        self.active_config = config
+        return config
+    
+    def get_active_config(self) -> AdapterConfiguration:
+        """Get currently active configuration."""
+        if self.active_config is None:
+            self.active_config = AdapterConfiguration()
+        return self.active_config
+    
+    def update_config(
+        self,
+        updates: Dict[str, Any]
+    ) -> AdapterConfiguration:
+        """
+        Update active configuration.
+        
+        Args:
+            updates: Configuration updates
+            
+        Returns:
+            Updated configuration
+        """
+        config = self.get_active_config()
+        
+        for key, value in updates.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        
+        # Validate updated config
+        valid, errors = self.validator.validate(config)
+        if not valid:
+            raise ValueError(f"Invalid configuration updates: {errors}")
+        
+        return config
+    
+    def add_function_override(
+        self,
+        function_name: str,
+        overrides: Dict[str, Any]
+    ) -> None:
+        """
+        Add function-specific configuration overrides.
+        
+        Args:
+            function_name: Function name
+            overrides: Configuration overrides
+        """
+        config = self.get_active_config()
+        config.function_overrides[function_name] = overrides
