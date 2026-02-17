@@ -5992,6 +5992,454 @@ class ChangelogComparer:
         }
 
 
+@dataclass
+class Author:
+    """Version author information."""
+
+    name: str
+    email: str
+    timestamp: Optional[str] = None
+    role: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {"name": self.name, "email": self.email, "timestamp": self.timestamp, "role": self.role}
+
+
+@dataclass
+class BuildInfo:
+    """Build information."""
+
+    build_number: Optional[int] = None
+    build_timestamp: Optional[str] = None
+    builder: Optional[str] = None
+    build_host: Optional[str] = None
+    compiler_version: Optional[str] = None
+    tool_version: Optional[str] = None
+    source_commit: Optional[str] = None
+    source_branch: Optional[str] = None
+    source_repo: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "build_number": self.build_number,
+            "build_timestamp": self.build_timestamp,
+            "builder": self.builder,
+            "build_host": self.build_host,
+            "compiler_version": self.compiler_version,
+            "tool_version": self.tool_version,
+            "source_commit": self.source_commit,
+            "source_branch": self.source_branch,
+            "source_repo": self.source_repo,
+        }
+
+
+@dataclass
+class Certification:
+    """Compliance certification."""
+
+    standard: str
+    level: Optional[str] = None
+    issued_date: Optional[str] = None
+    expires_date: Optional[str] = None
+    issuer: Optional[str] = None
+    attestation: Optional[str] = None
+
+    def is_expired(self) -> bool:
+        """Check if certification is expired."""
+        if not self.expires_date:
+            return False
+
+        try:
+            # Handle isoformat with space instead of T, and handle Z
+            date_str = self.expires_date.replace("Z", "+00:00")
+            expires = datetime.fromisoformat(date_str)
+            # Ensure compare same timezone awareness
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) > expires
+        except ValueError:
+            return False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "standard": self.standard,
+            "level": self.level,
+            "issued_date": self.issued_date,
+            "expires_date": self.expires_date,
+            "issuer": self.issuer,
+            "attestation": self.attestation,
+        }
+
+
+@dataclass
+class VersionMetadata:
+    """Comprehensive version metadata."""
+
+    version: str
+    created_at: str
+    author: Optional[Author] = None
+    build_info: Optional[BuildInfo] = None
+    certifications: List[Certification] = field(default_factory=list)
+    license: Optional[str] = None
+    dependencies: Dict[str, str] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    custom_metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def add_certification(self, cert: Certification) -> None:
+        """Add certification."""
+        self.certifications.append(cert)
+
+    def add_dependency(self, name: str, version: str) -> None:
+        """Add dependency."""
+        self.dependencies[name] = version
+
+    def add_tag(self, tag: str) -> None:
+        """Add tag."""
+        if tag not in self.tags:
+            self.tags.append(tag)
+
+    def get_active_certifications(self) -> List[Certification]:
+        """Get non-expired certifications."""
+        return [c for c in self.certifications if not c.is_expired()]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "created_at": self.created_at,
+            "author": self.author.to_dict() if self.author else None,
+            "build_info": self.build_info.to_dict() if self.build_info else None,
+            "certifications": [c.to_dict() for c in self.certifications],
+            "license": self.license,
+            "dependencies": self.dependencies,
+            "tags": self.tags,
+            "custom_metadata": self.custom_metadata,
+        }
+
+
+@dataclass
+class Signature:
+    """Digital signature."""
+
+    algorithm: str
+    signature_data: str
+    signer_name: str
+    signer_email: str
+    public_key_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "algorithm": self.algorithm,
+            "signature": self.signature_data,
+            "signer": {
+                "name": self.signer_name,
+                "email": self.signer_email,
+                "public_key_id": self.public_key_id,
+                "timestamp": self.timestamp,
+            },
+        }
+
+
+@dataclass
+class VersionProvenance:
+    """Version provenance information."""
+
+    version: str
+    fingerprint: str
+    parent_version: Optional[str] = None
+    created_at: Optional[str] = None
+    metadata: Optional[VersionMetadata] = None
+    signature: Optional[Signature] = None
+    approval_chain: List[str] = field(default_factory=list)
+
+    def add_approval(self, approver: str) -> None:
+        """Add approver to chain."""
+        if approver not in self.approval_chain:
+            self.approval_chain.append(approver)
+
+    def is_signed(self) -> bool:
+        """Check if version is signed."""
+        return self.signature is not None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "fingerprint": self.fingerprint,
+            "parent_version": self.parent_version,
+            "created_at": self.created_at,
+            "metadata": self.metadata.to_dict() if self.metadata else None,
+            "signature": self.signature.to_dict() if self.signature else None,
+            "approval_chain": self.approval_chain,
+        }
+
+
+class MetadataManager:
+    """Manages version metadata."""
+
+    def __init__(self):
+        self.metadata_store: Dict[str, VersionMetadata] = {}
+
+    def add_metadata(self, metadata: VersionMetadata) -> None:
+        """Add version metadata."""
+        self.metadata_store[metadata.version] = metadata
+
+    def get_metadata(self, version: str) -> Optional[VersionMetadata]:
+        """Get metadata for version."""
+        return self.metadata_store.get(version)
+
+    def update_metadata(self, version: str, updates: Dict[str, Any]) -> bool:
+        """Update version metadata."""
+        metadata = self.metadata_store.get(version)
+        if not metadata:
+            return False
+
+        for key, value in updates.items():
+            if hasattr(metadata, key):
+                setattr(metadata, key, value)
+
+        return True
+
+    def get_versions_by_tag(self, tag: str) -> List[str]:
+        """Get versions with specific tag."""
+        return [version for version, meta in self.metadata_store.items() if tag in meta.tags]
+
+    def get_versions_by_author(self, author_email: str) -> List[str]:
+        """Get versions by author."""
+        return [version for version, meta in self.metadata_store.items() if meta.author and meta.author.email == author_email]
+
+
+class ProvenanceTracker:
+    """Tracks version provenance."""
+
+    def __init__(self):
+        self.provenance_store: Dict[str, VersionProvenance] = {}
+
+    def add_provenance(self, provenance: VersionProvenance) -> None:
+        """Add version provenance."""
+        self.provenance_store[provenance.version] = provenance
+
+    def get_provenance(self, version: str) -> Optional[VersionProvenance]:
+        """Get provenance for version."""
+        return self.provenance_store.get(version)
+
+    def get_provenance_chain(self, version: str) -> List[VersionProvenance]:
+        """Get full provenance chain."""
+        chain = []
+        current = version
+
+        while current:
+            prov = self.provenance_store.get(current)
+            if not prov:
+                break
+
+            chain.append(prov)
+            current = prov.parent_version
+
+        return chain
+
+    def verify_chain(self, version: str) -> Dict[str, Any]:
+        """Verify provenance chain integrity."""
+        chain = self.get_provenance_chain(version)
+
+        if not chain:
+            return {"valid": False, "reason": "No provenance data found"}
+
+        issues = []
+
+        # Check for gaps in chain
+        for i in range(len(chain) - 1):
+            current = chain[i]
+            parent = chain[i + 1]
+
+            if current.parent_version != parent.version:
+                issues.append(f"Chain gap: {current.version} parent mismatch")
+
+        return {"valid": len(issues) == 0, "chain_length": len(chain), "issues": issues}
+
+
+class SignatureManager:
+    """Manages digital signatures."""
+
+    def create_signature(
+        self, version: str, fingerprint: str, signer_name: str, signer_email: str, algorithm: str = "SHA256"
+    ) -> Signature:
+        """Create signature (simplified - no actual crypto)."""
+        # In production, would use actual cryptographic signing
+        now = datetime.now(timezone.utc)
+        data_to_sign = f"{version}:{fingerprint}:{now.isoformat()}"
+        signature_data = hashlib.sha256(data_to_sign.encode()).hexdigest()
+
+        return Signature(
+            algorithm=algorithm,
+            signature_data=signature_data,
+            signer_name=signer_name,
+            signer_email=signer_email,
+            timestamp=now.isoformat().replace("+00:00", "Z"),
+        )
+
+    def verify_signature(self, signature: Signature, version: str, fingerprint: str) -> Dict[str, Any]:
+        """Verify signature (simplified)."""
+        # In production, would use actual cryptographic verification
+
+        if not signature.signature_data:
+            return {"valid": False, "reason": "No signature data"}
+
+        if not signature.timestamp:
+            return {"valid": False, "reason": "No timestamp"}
+
+        # Check timestamp is not too old (e.g., > 1 year)
+        try:
+            sig_time = datetime.fromisoformat(signature.timestamp.replace("Z", "+00:00"))
+            # Force sig_time to be aware if it's not
+            if sig_time.tzinfo is None:
+                sig_time = sig_time.replace(tzinfo=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - sig_time).days
+
+            if age_days > 365:
+                return {"valid": False, "reason": f"Signature too old ({age_days} days)"}
+        except ValueError:
+            return {"valid": False, "reason": "Invalid timestamp format"}
+
+        return {"valid": True, "signer": signature.signer_name, "timestamp": signature.timestamp}
+
+
+class ComplianceChecker:
+    """Checks compliance status."""
+
+    def check_compliance(self, metadata: VersionMetadata, required_standards: List[str]) -> Dict[str, Any]:
+        """Check if version meets compliance requirements."""
+        active_certs = metadata.get_active_certifications()
+        active_standards = {cert.standard for cert in active_certs}
+
+        missing = [std for std in required_standards if std not in active_standards]
+
+        return {
+            "compliant": len(missing) == 0,
+            "active_certifications": list(active_standards),
+            "missing_certifications": missing,
+            "expired_certifications": [cert.standard for cert in metadata.certifications if cert.is_expired()],
+        }
+
+
+class MetadataValidator:
+    """Validates metadata completeness."""
+
+    def validate(self, metadata: VersionMetadata) -> Dict[str, Any]:
+        """Validate metadata."""
+        issues = []
+        warnings = []
+
+        # Check required fields
+        if not metadata.version:
+            issues.append("Version is required")
+
+        if not metadata.created_at:
+            issues.append("Created timestamp is required")
+
+        # Check author info
+        if metadata.author:
+            if not metadata.author.name:
+                warnings.append("Author name not specified")
+            if not metadata.author.email:
+                warnings.append("Author email not specified")
+        else:
+            warnings.append("No author information provided")
+
+        # Check build info
+        if metadata.build_info:
+            if not metadata.build_info.source_commit:
+                warnings.append("No source commit specified")
+        else:
+            warnings.append("No build information provided")
+
+        # Check license
+        if not metadata.license:
+            warnings.append("No license specified")
+
+        return {"valid": len(issues) == 0, "issues": issues, "warnings": warnings}
+
+
+class ProvenanceExporter:
+    """Exports provenance data."""
+
+    def export(self, provenance: VersionProvenance, format: str = "json") -> str:
+        """Export provenance data."""
+        data = provenance.to_dict()
+
+        if format == "json":
+            return json.dumps(data, indent=2)
+        elif format == "yaml":
+            # Simplified YAML representation
+            lines = []
+            lines.append(f"version: {data['version']}")
+            lines.append(f"fingerprint: {data['fingerprint']}")
+            if data["parent_version"]:
+                lines.append(f"parent_version: {data['parent_version']}")
+            if data["created_at"]:
+                lines.append(f"created_at: {data['created_at']}")
+
+            return "\n".join(lines)
+        else:
+            return str(data)
+
+    def import_provenance(self, data_str: str, format: str = "json") -> Optional[VersionProvenance]:
+        """Import provenance data."""
+        try:
+            if format == "json":
+                data = json.loads(data_str)
+            else:
+                return None
+
+            # Reconstruct provenance
+            metadata = None
+            if data.get("metadata"):
+                meta_data = data["metadata"]
+                author = None
+                if meta_data.get("author"):
+                    author = Author(**meta_data["author"])
+
+                metadata = VersionMetadata(
+                    version=meta_data["version"],
+                    created_at=meta_data["created_at"],
+                    author=author,
+                    license=meta_data.get("license"),
+                    dependencies=meta_data.get("dependencies", {}),
+                    tags=meta_data.get("tags", []),
+                )
+
+            signature = None
+            if data.get("signature"):
+                sig_data = data["signature"]
+                signer = sig_data.get("signer", {})
+                signature = Signature(
+                    algorithm=sig_data["algorithm"],
+                    signature_data=sig_data["signature"],
+                    signer_name=signer.get("name", ""),
+                    signer_email=signer.get("email", ""),
+                    public_key_id=signer.get("public_key_id"),
+                    timestamp=signer.get("timestamp"),
+                )
+
+            return VersionProvenance(
+                version=data["version"],
+                fingerprint=data["fingerprint"],
+                parent_version=data.get("parent_version"),
+                created_at=data.get("created_at"),
+                metadata=metadata,
+                signature=signature,
+                approval_chain=data.get("approval_chain", []),
+            )
+
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -6131,4 +6579,17 @@ __all__ = [
     "MigrationGuideGenerator",
     "ChangelogFormatter",
     "ChangelogComparer",
+    # From Prompt 18
+    "Author",
+    "BuildInfo",
+    "Certification",
+    "VersionMetadata",
+    "Signature",
+    "VersionProvenance",
+    "MetadataManager",
+    "ProvenanceTracker",
+    "SignatureManager",
+    "ComplianceChecker",
+    "MetadataValidator",
+    "ProvenanceExporter",
 ]
