@@ -1090,9 +1090,81 @@ This prompt implemented the migration path generation engine and upgrade strateg
 2. `tests/test_contract_versioning_11.py` - NEW (800 lines)
 3. `modules/module_06_contract_schema/CONTRACT_VERSIONING.md` - UPDATED
 
+## Prompt 12/20: Dependency Resolution ✅ COMPLETE
+
+**Implementation Date**: 2026-02-17
+**Status**: Production Ready
+**Test Coverage**: 80 tests passing (HARDEST level)
+
+### What Was Implemented
+
+This prompt implemented the multi-contract dependency resolution and coordinated upgrade planning system. It allows managing complex graphs of interconnected contracts and ensures version compatibility across the entire system.
+
+#### Core Components
+
+1. **VersionConstraint** - Specification for contract dependencies
+   - Supports `==`, `>=`, `<=`, `>`, `<`, and `^` (compatible) operators.
+   - Handles semver parsing and satisfaction checking.
+
+2. **ContractDependency** - Per-contract dependency registry
+   - Manages a list of version constraints for other contracts.
+   - Preserves dependency order and metadata.
+
+3. **DependencyGraph** - The structural representation of contract relationships
+   - Provides topological sorting for calculating correct upgrade order (bottom-up).
+   - Detects circular dependencies.
+   - Computes transitive dependencies (full dependency tree).
+
+4. **DependencyResolver** - Conflict detection and resolution engine
+   - Identifies incompatible version requirements across different branches of the dependency tree.
+   - Resolves effective versions for all dependencies.
+
+5. **CoordinatedUpgradePlanner** - Operational planning for ecosystem upgrades
+   - Calculates the specific sequence of upgrades needed to reach a target state.
+   - Validates that proposed upgrades won't break existing dependents.
+   - Generates multi-step upgrade plans with dependency awareness.
+
+### Key Algorithms
+
+- **Topological Sorting (Kahn's Algorithm)**: Used to determine the correct order of contract deployment/upgrade.
+- **Transitive Closure**: Used to find the full set of dependencies for any contract in the system.
+- **Constraint Intersection (Heuristic)**: Basic detection of overlapping or conflicting version ranges.
+
+### Examples
+
+**Dependency Chain**:
+`app` -> `libgraphics` -> `libcore` -> `libbase`
+
+**Topological Sort (Upgrade Order)**:
+1. `libbase`
+2. `libcore`
+3. `libgraphics`
+4. `app`
+
+### Testing
+
+**Test Coverage**: 80 tests (HARDEST level)
+- 15 tests: VersionConstraint logic and parsing
+- 10 tests: ContractDependency management
+- 20 tests: DependencyGraph traversal and cycles
+- 20 tests: DependencyResolver conflict detection
+- 15 tests: CoordinatedUpgradePlanner execution and validation
+
+### Statistics
+
+- **Code**: +450 lines
+- **Tests**: 80 (HARDEST)
+- **Coverage**: 100% (Dependency logic)
+
+### Files Modified
+
+1. `modules/module_06_contract_schema/contract_versioning.py` - UPDATED (+450 lines)
+2. `tests/test_contract_versioning_12.py` - NEW (850 lines)
+3. `modules/module_06_contract_schema/CONTRACT_VERSIONING.md` - UPDATED
+
 ### Next Steps
 
-Prompt 12/20 will implement:
+Prompt 13/20 will implement:
 - Semantic Versioning Policies
 - Stability Enforcement Checks
 - Pre-release / Build Metadata Handling

@@ -1607,9 +1607,9 @@ class CompatibilityRelationship(Enum):
 # VERSION RANGE SPECIFICATION
 # ============================================================================
 @dataclass
-class VersionConstraint:
-    """Single version constraint (e.g., >=1.2.0).
-    Represents one component of a version range specification.
+class VersionConstraintComponent:
+    """Single version constraint component (e.g., >=1.2.0).
+    Represents one part of a multi-version range specification.
     """
 
     operator: str  # "==", "!=", "<", "<=", ">", ">="
@@ -1617,7 +1617,7 @@ class VersionConstraint:
 
     def satisfied_by(self, version: str) -> bool:
         """
-        Check if a version satisfies this constraint.
+        Check if a version satisfies this constraint component.
         Args:
             version: Version to check
         Returns:
@@ -1660,7 +1660,7 @@ class VersionRange:
         self.range_spec = range_spec
         self.constraints = self._parse_range(range_spec)
 
-    def _parse_range(self, spec: str) -> List[VersionConstraint]:
+    def _parse_range(self, spec: str) -> List[VersionConstraintComponent]:
         """Parse range specification into constraints."""
         constraints = []
         spec = spec.strip()
@@ -1669,15 +1669,15 @@ class VersionRange:
         if spec.startswith("^"):
             version = spec[1:]
             v = SemanticVersion(version)
-            constraints.append(VersionConstraint(">=", version))
-            constraints.append(VersionConstraint("<", f"{v.major + 1}.0.0"))
+            constraints.append(VersionConstraintComponent(">=", version))
+            constraints.append(VersionConstraintComponent("<", f"{v.major + 1}.0.0"))
 
         # Tilde range: ~1.2.3 → >=1.2.3, <1.3.0
         elif spec.startswith("~"):
             version = spec[1:]
             v = SemanticVersion(version)
-            constraints.append(VersionConstraint(">=", version))
-            constraints.append(VersionConstraint("<", f"{v.major}.{v.minor + 1}.0"))
+            constraints.append(VersionConstraintComponent(">=", version))
+            constraints.append(VersionConstraintComponent("<", f"{v.major}.{v.minor + 1}.0"))
 
         # Wildcard: 1.2.* → >=1.2.0, <1.3.0
         elif "*" in spec:
@@ -1686,13 +1686,13 @@ class VersionRange:
                 if len(parts) == 3:
                     # 1.2.* → >=1.2.0, <1.3.0
                     major, minor = parts[0], parts[1]
-                    constraints.append(VersionConstraint(">=", f"{major}.{minor}.0"))
-                    constraints.append(VersionConstraint("<", f"{major}.{int(minor) + 1}.0"))
+                    constraints.append(VersionConstraintComponent(">=", f"{major}.{minor}.0"))
+                    constraints.append(VersionConstraintComponent("<", f"{major}.{int(minor) + 1}.0"))
                 elif len(parts) == 2:
                     # 1.* → >=1.0.0, <2.0.0
                     major = parts[0]
-                    constraints.append(VersionConstraint(">=", f"{major}.0.0"))
-                    constraints.append(VersionConstraint("<", f"{int(major) + 1}.0.0"))
+                    constraints.append(VersionConstraintComponent(">=", f"{major}.0.0"))
+                    constraints.append(VersionConstraintComponent("<", f"{int(major) + 1}.0.0"))
 
         # Comma-separated constraints: >=1.0.0, <2.0.0
         elif "," in spec:
@@ -1706,16 +1706,16 @@ class VersionRange:
 
         return constraints
 
-    def _parse_single_constraint(self, spec: str) -> List[VersionConstraint]:
+    def _parse_single_constraint(self, spec: str) -> List[VersionConstraintComponent]:
         """Parse a single constraint like '>=1.0.0'."""
         # Match operator and version
         match = re.match(r"^\s*(==|!=|<=|>=|<|>)\s*(.+)$", spec)
         if match:
             operator, version = match.groups()
-            return [VersionConstraint(operator, version.strip())]
+            return [VersionConstraintComponent(operator, version.strip())]
 
         # No operator means exact match
-        return [VersionConstraint("==", spec.strip())]
+        return [VersionConstraintComponent("==", spec.strip())]
 
     def satisfied_by(self, version: str) -> bool:
         """
@@ -1993,8 +1993,8 @@ class UpgradePathFinder:
 # ============================================================================
 # DEPENDENCY RESOLVER
 # ============================================================================
-class DependencyResolver:
-    """Resolves version dependencies across multiple requirements.
+class VersionResolver:
+    """Simple version resolver across multiple requirements.
     Finds versions that satisfy all constraints.
     """
 
@@ -3861,6 +3861,332 @@ class MigrationPlanner:
 
 
 # ============================================================================
+# DEPENDENCY RESOLUTION & MULTI-CONTRACT VERSION COORDINATION
+# ============================================================================
+class ConstraintOperator(Enum):
+    """Version constraint operators."""
+
+    EQUAL = "=="
+    GREATER_EQUAL = ">="
+    LESS_EQUAL = "<="
+    GREATER = ">"
+    LESS = "<"
+    COMPATIBLE = "^"  # Caret (semver compatible)
+
+
+@dataclass
+class VersionConstraint:
+    """Version constraint specification for a named contract."""
+
+    contract_name: str
+    operator: ConstraintOperator
+    version: str
+
+    def satisfies(self, candidate_version: str) -> bool:
+        """Check if candidate version satisfies constraint."""
+        try:
+            baseline = self._parse_version(self.version)
+            candidate = self._parse_version(candidate_version)
+        except (ValueError, IndexError):
+            return False
+
+        if self.operator == ConstraintOperator.EQUAL:
+            return candidate == baseline
+        elif self.operator == ConstraintOperator.GREATER_EQUAL:
+            return candidate >= baseline
+        elif self.operator == ConstraintOperator.LESS_EQUAL:
+            return candidate <= baseline
+        elif self.operator == ConstraintOperator.GREATER:
+            return candidate > baseline
+        elif self.operator == ConstraintOperator.LESS:
+            return candidate < baseline
+        elif self.operator == ConstraintOperator.COMPATIBLE:
+            # ^1.5.0 means >=1.5.0, <2.0.0
+            major = baseline[0]
+            return candidate >= baseline and candidate[0] == major
+
+        return False
+
+    def _parse_version(self, version_str: str) -> Tuple[int, int, int]:
+        """Parse semver version to tuple."""
+        parts = version_str.split(".")
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        patch = int(parts[2]) if len(parts) > 2 else 0
+        return (major, minor, patch)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {"contract_name": self.contract_name, "operator": self.operator.value, "version": self.version}
+
+
+@dataclass
+class ContractDependency:
+    """Contract dependency specification."""
+
+    contract_name: str
+    current_version: str
+    dependencies: List[VersionConstraint] = field(default_factory=list)
+
+    def add_dependency(self, constraint: VersionConstraint) -> None:
+        """Add dependency constraint."""
+        self.dependencies.append(constraint)
+
+    def get_dependency(self, contract_name: str) -> Optional[VersionConstraint]:
+        """Get dependency constraint by contract name."""
+        for dep in self.dependencies:
+            if dep.contract_name == contract_name:
+                return dep
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "contract_name": self.contract_name,
+            "current_version": self.current_version,
+            "dependencies": [d.to_dict() for d in self.dependencies],
+        }
+
+
+class DependencyGraph:
+    """Dependency graph for contracts and their relationships."""
+
+    def __init__(self):
+        self.nodes: Dict[str, ContractDependency] = {}
+        self.edges: Dict[str, List[str]] = {}  # contract_name -> [dependencies]
+
+    def add_contract(self, contract: ContractDependency) -> None:
+        """Add contract to graph."""
+        self.nodes[contract.contract_name] = contract
+        self.edges[contract.contract_name] = [dep.contract_name for dep in contract.dependencies]
+
+    def get_contract(self, name: str) -> Optional[ContractDependency]:
+        """Get contract by name."""
+        return self.nodes.get(name)
+
+    def get_dependencies(self, contract_name: str) -> List[str]:
+        """Get direct dependencies of contract."""
+        return self.edges.get(contract_name, [])
+
+    def get_transitive_dependencies(self, contract_name: str) -> Set[str]:
+        """Get all transitive dependencies."""
+        visited = set()
+        to_visit = [contract_name]
+
+        while to_visit:
+            current = to_visit.pop()
+            if current in visited:
+                continue
+
+            visited.add(current)
+            deps = self.get_dependencies(current)
+            to_visit.extend(deps)
+
+        visited.discard(contract_name)
+        return visited
+
+    def topological_sort(self) -> List[str]:
+        """Topological sort (bottom-up dependency order)."""
+        in_degree = {name: 0 for name in self.nodes}
+
+        for deps in self.edges.values():
+            for dep in deps:
+                if dep in in_degree:
+                    in_degree[dep] += 1
+
+        queue = [name for name, degree in in_degree.items() if degree == 0]
+        result = []
+
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+
+            for dep in self.get_dependencies(node):
+                if dep in in_degree:
+                    in_degree[dep] -= 1
+                    if in_degree[dep] == 0:
+                        queue.append(dep)
+
+        # Reverse to get bottom-up order
+        return list(reversed(result))
+
+    def has_cycle(self) -> bool:
+        """Check for circular dependencies."""
+        sorted_list = self.topological_sort()
+        return len(sorted_list) != len(self.nodes)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert graph to dictionary representation."""
+        return {"contracts": [c.to_dict() for c in self.nodes.values()], "edges": self.edges}
+
+
+class DependencyResolver:
+    """Resolves dependencies and detects conflicts across multiple contracts."""
+
+    def __init__(self, graph: DependencyGraph):
+        self.graph = graph
+
+    def resolve(self, contract_name: str) -> Dict[str, Any]:
+        """Resolve dependencies for a specific contract."""
+        contract = self.graph.get_contract(contract_name)
+        if not contract:
+            return {"success": False, "error": "Contract not found"}
+
+        conflicts = self.detect_conflicts(contract_name)
+
+        if conflicts:
+            return {"success": False, "conflicts": conflicts, "error": "Dependency conflicts detected"}
+
+        resolved_versions = self._resolve_versions(contract_name)
+
+        return {"success": True, "contract": contract_name, "resolved_dependencies": resolved_versions}
+
+    def detect_conflicts(self, contract_name: str) -> List[Dict[str, Any]]:
+        """Detect dependency conflicts in the tree."""
+        conflicts = []
+        dependencies = self.graph.get_transitive_dependencies(contract_name)
+
+        # Group constraints by target contract
+        constraint_map: Dict[str, List[Tuple[str, VersionConstraint]]] = {}
+
+        for dep_name in dependencies:
+            dep_contract = self.graph.get_contract(dep_name)
+            if dep_contract:
+                for constraint in dep_contract.dependencies:
+                    target = constraint.contract_name
+                    if target not in constraint_map:
+                        constraint_map[target] = []
+                    constraint_map[target].append((dep_name, constraint))
+
+        # Check for conflicting constraints
+        for target, constraints in constraint_map.items():
+            if len(constraints) > 1:
+                # Check if any version satisfies all constraints
+                if not self._has_satisfying_version(constraints):
+                    conflicts.append(
+                        {
+                            "target_contract": target,
+                            "conflicting_constraints": [{"from": source, "constraint": c.to_dict()} for source, c in constraints],
+                        }
+                    )
+
+        return conflicts
+
+    def _resolve_versions(self, contract_name: str) -> Dict[str, str]:
+        """Resolve versions for all dependencies."""
+        resolved = {}
+        dependencies = self.graph.get_transitive_dependencies(contract_name)
+
+        for dep_name in dependencies:
+            dep_contract = self.graph.get_contract(dep_name)
+            if dep_contract:
+                resolved[dep_name] = dep_contract.current_version
+
+        return resolved
+
+    def _has_satisfying_version(self, constraints: List[Tuple[str, VersionConstraint]]) -> bool:
+        """Check if any version satisfies all constraints (heuristic)."""
+        if len(constraints) <= 1:
+            return True
+
+        # Check for simple contradictions like >= X and < X
+        ge_versions = {c.version for _, c in constraints if c.operator == ConstraintOperator.GREATER_EQUAL}
+        lt_versions = {c.version for _, c in constraints if c.operator == ConstraintOperator.LESS}
+
+        if ge_versions & lt_versions:
+            return False
+
+        # General heuristic: too many constraints likely conflict
+        return len(constraints) <= 3
+
+
+class CoordinatedUpgradePlanner:
+    """Plans coordinated upgrades across a complex dependency graph."""
+
+    def __init__(self, graph: DependencyGraph):
+        self.graph = graph
+        self.resolver = DependencyResolver(graph)
+
+    def plan_coordinated_upgrade(self, upgrades: Dict[str, str]) -> Dict[str, Any]:
+        """Plan coordinated upgrade for multiple contracts."""
+        # contract_name -> target_version
+        
+        # Get upgrade order (topological sort)
+        upgrade_order = self._get_upgrade_order(list(upgrades.keys()))
+
+        if not upgrade_order and upgrades:
+            return {"success": False, "error": "Circular dependency detected"}
+
+        # Build upgrade plan
+        plan = {"success": True, "upgrade_order": upgrade_order, "steps": []}
+
+        for contract_name in upgrade_order:
+            if contract_name in upgrades:
+                contract = self.graph.get_contract(contract_name)
+                target_version = upgrades[contract_name]
+
+                step = {
+                    "contract": contract_name,
+                    "from_version": contract.current_version if contract else "unknown",
+                    "to_version": target_version,
+                    "dependencies": self.graph.get_dependencies(contract_name),
+                }
+                plan["steps"].append(step)
+
+        return plan
+
+    def _get_upgrade_order(self, contract_names: List[str]) -> List[str]:
+        """Get upgrade order for subsets of contracts."""
+        # Create subgraph with only relevant contracts
+        all_contracts = set(contract_names)
+
+        # Add transitive dependencies
+        for name in list(all_contracts):
+            all_contracts.update(self.graph.get_transitive_dependencies(name))
+
+        # Filter topological sort to include only relevant contracts
+        full_order = self.graph.topological_sort()
+        return [c for c in full_order if c in all_contracts]
+
+    def validate_upgrade_plan(self, upgrades: Dict[str, str]) -> Dict[str, Any]:
+        """Validate coordinated upgrade plan."""
+        issues = []
+        warnings = []
+
+        # Check for circular dependencies
+        if self.graph.has_cycle():
+            issues.append("Circular dependency detected in dependency graph")
+
+        # Check each upgrade
+        for contract_name, target_version in upgrades.items():
+            contract = self.graph.get_contract(contract_name)
+            if not contract:
+                issues.append(f"Contract '{contract_name}' not found in graph")
+                continue
+
+            # Check if upgrade breaks dependencies
+            dependents = self._get_dependents(contract_name)
+            for dependent in dependents:
+                dep_contract = self.graph.get_contract(dependent)
+                if dep_contract:
+                    constraint = dep_contract.get_dependency(contract_name)
+                    if constraint and not constraint.satisfies(target_version):
+                        warnings.append(
+                            f"Upgrade of {contract_name} to {target_version} may break dependent {dependent}"
+                        )
+
+        return {"valid": len(issues) == 0, "issues": issues, "warnings": warnings}
+
+    def _get_dependents(self, contract_name: str) -> List[str]:
+        """Get contracts that depend on this contract."""
+        dependents = []
+        for name, deps in self.graph.edges.items():
+            if contract_name in deps:
+                dependents.append(name)
+        return dependents
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -3902,14 +4228,12 @@ __all__ = [
     "ContractVersionComparator",
     # From Prompt 5
     "CompatibilityRelationship",
-    "VersionConstraint",
     "VersionRange",
     "CompatibilityMatrixEntry",
     "CompatibilityMatrix",
     "CompatibilityMatrixBuilder",
     "UpgradePath",
     "UpgradePathFinder",
-    "DependencyResolver",
     # From Prompt 6
     "PolicyLevel",
     "AdvisorySeverity",
@@ -3947,4 +4271,14 @@ __all__ = [
     "MigrationPathGenerator",
     "UpgradeRecommendation",
     "MigrationPlanner",
+    # From Prompt 12
+    "ConstraintOperator",
+    "VersionConstraint",
+    "ContractDependency",
+    "DependencyGraph",
+    "DependencyResolver",
+    "CoordinatedUpgradePlanner",
+    # Renamed internal components
+    "VersionConstraintComponent",
+    "VersionResolver",
 ]
