@@ -1,45 +1,61 @@
-# PFCV Troubleshooting Guide
+# Troubleshooting Guide
 
-This guide helps you resolve common issues encountered while using the **Polyglot FFI Contract Verifier (PFCV)** pipeline.
+Common issues, their causes, and recommended solutions for the Language Adapter.
 
-## Pipeline-Wide Issues
+## Contract Violations
 
-### 1. IR Extraction Failures (Module 04/05)
-**Error**: `Clang error: cannot find header`
-**Solution**: Ensure your include paths are correctly passed to the IR extractor. Check your `CPATH` environment variable or use the `-I` flag.
+### Issue: `ContractViolationError` raised
+**Cause**: The inputs provided to the FFI function or the values returned by it do not adhere to the clauses defined in the loaded contract.
 
-### 2. Contract Schema Mismatches (Module 06)
-**Error**: `ContractBridgeError: Schema validation failed`
-**Solution**: This usually occurs if an older contract is being used with a newer version of the pipeline. Regenerate the contract using Module 07.
-
-## Synthesis-Specific Issues (Module 07)
-
-### 3. IR Validation Failures
-**Error**: `IRBridgeError: IR validation failed: Type completeness violation`
-**Cause**: The input IR references a type ID that is not defined in the `types` list.
-**Solution**: Use `pfcv-ir validate` to check the integrity of your IR artifact before synthesis.
-
-### 4. Determinism Violations
-**Symptoms**: Identical IR produces slightly different contract JSON.
-**Solution**: Ensure you are using a pinned `synthesis_version` in your configuration. Use `pfcv-synth verify-determinism` to debug.
-
-### 5. Performance Bottlenecks
-**Symptoms**: Synthesis taking more than a few seconds for large interfaces.
 **Solution**:
-- **Enable Caching**: Ensure `SynthesisCache` is properly configured.
-- **Parallel Synthesis**: Use the `batch --parallel` CLI command.
+Inspect the error details to identify the failing clause.
+```python
+try:
+    adapter.call_with_enforcement('process_data', data)
+except ContractViolationError as e:
+    print(f"Violation ID: {e.clause_id}")
+    print(f"Expected: {e.expected}")
+    print(f"Observed: {e.observed}")
+    # Adjust input or check native logic
+```
 
-## Infrastructure Issues
+## Performance Issues
 
-### 6. Memory Limits
-**Symptoms**: `Process finished with exit code 137` (OOM Killer).
-**Solution**: Processing extremely large headers (>5,000 functions) may require up to 4GB of RAM. Increase container memory limits.
+### Issue: Noticeable latency in FFI calls
+**Cause**: Heavy validation logic, high logging volume, or disabled caching.
 
-## Debugging Tips
+**Solutions**:
+1. Enable the validation cache: `adapter.enable_caching()`.
+2. Set logging level to `ERROR` in `AdapterConfiguration`.
+3. Check for expensive custom validation predicates.
+4. Enable basic profiling to find bottlenecks: `adapter.enable_profiling()`.
 
-1. **Enable Verbose Logging**: Use the `--verbose` flag on CLI commands or set `logging.basicConfig(level=logging.DEBUG)`.
-2. **Inspect Provenance**: Every generated clause includes a `provenance` field. Inspect this to see *why* a specific constraint was generated.
-3. **Verify Installation**: Run `pfcv --version` to ensure all modules are correctly installed and visible.
+## Memory Management
 
----
-© 2026 PFCV Team.
+### Issue: Process memory usage increases unexpectedly
+**Cause**: Native memory leaks or the adapter tracking too many buffers without cleanup.
+
+**Solutions**:
+1. Ensure all memory-intensive operations are wrapped in `enforcement_scope`.
+2. Check memory statistics: `adapter.memory_manager.get_statistics()`.
+3. Verify ownership transfer clauses in the contract; ensure `TRANSFER_TO_NATIVE` is used when the library takes control.
+
+## Interoperability Errors
+
+### Issue: Type mismatch during cross-language sharing
+**Cause**: Incorrect type projection between Universal types and language-specific types.
+
+**Solution**:
+Verify the mapping using the `TypeProjector`:
+```python
+from language_adapter.cross_language import TypeProjector, UniversalType, UniversalTypeDescriptor
+
+projector = TypeProjector('rust')
+u_type = UniversalTypeDescriptor(base_type=UniversalType.BUFFER)
+print(f"Rust projection: {projector.project_type(u_type)}")
+```
+
+## Getting Help
+- **Project Site**: Check the root `docs/` directory for full tutorials.
+- **Bug Reports**: Open an issue on GitHub with a minimal reproduction case.
+- **Community**: Join the discussions on our community forum for integration advice.
