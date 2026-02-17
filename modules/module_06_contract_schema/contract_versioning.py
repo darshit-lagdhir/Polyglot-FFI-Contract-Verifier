@@ -1735,9 +1735,9 @@ class VersionRange:
 # COMPATIBILITY MATRIX
 # ============================================================================
 @dataclass
-class CompatibilityMatrixEntry:
-    """Single entry in compatibility matrix.
-    Records compatibility relationship between two versions.
+class VersionPairCompatibilityEntry:
+    """Single entry in version pair compatibility matrix.
+    Records compatibility relationship between two versions of the same contract.
     """
 
     from_version: str
@@ -1757,16 +1757,16 @@ class CompatibilityMatrixEntry:
         }
 
 
-class CompatibilityMatrix:
-    """Matrix of compatibility relationships between all version pairs.
+class VersionPairCompatibilityMatrix:
+    """Matrix of compatibility relationships between all version pairs of a contract.
     Provides O(1) lookup of compatibility between any two versions.
     """
 
     def __init__(self):
-        self.matrix: Dict[Tuple[str, str], CompatibilityMatrixEntry] = {}
+        self.matrix: Dict[Tuple[str, str], VersionPairCompatibilityEntry] = {}
         self.versions: Set[str] = set()
 
-    def add_entry(self, entry: CompatibilityMatrixEntry):
+    def add_entry(self, entry: VersionPairCompatibilityEntry):
         """
         Add a compatibility entry to matrix.
         Args:
@@ -1777,14 +1777,14 @@ class CompatibilityMatrix:
         self.versions.add(entry.from_version)
         self.versions.add(entry.to_version)
 
-    def get_compatibility(self, from_version: str, to_version: str) -> Optional[CompatibilityMatrixEntry]:
+    def get_compatibility(self, from_version: str, to_version: str) -> Optional[VersionPairCompatibilityEntry]:
         """
         Get compatibility between two versions.
         Args:
             from_version: Source version
             to_version: Target version
         Returns:
-            CompatibilityMatrixEntry if known, None otherwise
+            VersionPairCompatibilityEntry if known, None otherwise
         """
         key = (from_version, to_version)
         return self.matrix.get(key)
@@ -1823,25 +1823,25 @@ class CompatibilityMatrix:
 # ============================================================================
 # COMPATIBILITY MATRIX BUILDER
 # ============================================================================
-class CompatibilityMatrixBuilder:
-    """Builds compatibility matrix for a set of versions.
+class VersionPairCompatibilityBuilder:
+    """Builds pairwise compatibility matrix for a set of versions of the same contract.
     Computes pairwise compatibility and populates matrix.
     """
 
     def __init__(self, abi_detector: Optional[ABICompatibilityDetector] = None):
         self.abi_detector = abi_detector or ABICompatibilityDetector()
-        self.cache: Dict[Tuple[str, str], CompatibilityMatrixEntry] = {}
+        self.cache: Dict[Tuple[str, str], VersionPairCompatibilityEntry] = {}
 
-    def build_matrix(self, versions: List[str], contracts: Dict[str, Any]) -> CompatibilityMatrix:
+    def build_matrix(self, versions: List[str], contracts: Dict[str, Any]) -> VersionPairCompatibilityMatrix:
         """
         Build compatibility matrix for given versions.
         Args:
             versions: List of version strings
             contracts: Mapping of version → contract object
         Returns:
-            Populated CompatibilityMatrix
+            Populated VersionPairCompatibilityMatrix
         """
-        matrix = CompatibilityMatrix()
+        matrix = VersionPairCompatibilityMatrix()
 
         for v1 in versions:
             for v2 in versions:
@@ -1852,7 +1852,7 @@ class CompatibilityMatrixBuilder:
 
     def _compute_compatibility(
         self, from_version: str, to_version: str, contracts: Dict[str, Any]
-    ) -> CompatibilityMatrixEntry:
+    ) -> VersionPairCompatibilityEntry:
         """Compute compatibility between two versions."""
         # Check cache
         cache_key = (from_version, to_version)
@@ -1861,7 +1861,7 @@ class CompatibilityMatrixBuilder:
 
         # Identical versions
         if from_version == to_version:
-            entry = CompatibilityMatrixEntry(
+            entry = VersionPairCompatibilityEntry(
                 from_version=from_version,
                 to_version=to_version,
                 relationship=CompatibilityRelationship.IDENTICAL,
@@ -1876,7 +1876,7 @@ class CompatibilityMatrixBuilder:
             v2 = SemanticVersion(to_version)
         except ValueError:
             # Unknown versions
-            entry = CompatibilityMatrixEntry(
+            entry = VersionPairCompatibilityEntry(
                 from_version=from_version,
                 to_version=to_version,
                 relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
@@ -1887,7 +1887,7 @@ class CompatibilityMatrixBuilder:
 
         # Major version difference → breaking
         if v1.major != v2.major:
-            entry = CompatibilityMatrixEntry(
+            entry = VersionPairCompatibilityEntry(
                 from_version=from_version,
                 to_version=to_version,
                 relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
@@ -1896,7 +1896,7 @@ class CompatibilityMatrixBuilder:
 
         # Minor/patch version difference → backward compatible
         elif v2 > v1:
-            entry = CompatibilityMatrixEntry(
+            entry = VersionPairCompatibilityEntry(
                 from_version=from_version,
                 to_version=to_version,
                 relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -1905,7 +1905,7 @@ class CompatibilityMatrixBuilder:
 
         # Older version → forward compatible (rare)
         else:
-            entry = CompatibilityMatrixEntry(
+            entry = VersionPairCompatibilityEntry(
                 from_version=from_version,
                 to_version=to_version,
                 relationship=CompatibilityRelationship.FORWARD_COMPATIBLE,
@@ -1947,7 +1947,7 @@ class UpgradePathFinder:
     Uses graph search to find lowest-cost paths.
     """
 
-    def __init__(self, compatibility_matrix: CompatibilityMatrix):
+    def __init__(self, compatibility_matrix: VersionPairCompatibilityMatrix):
         self.matrix = compatibility_matrix
 
     def find_path(self, from_version: str, to_version: str) -> Optional[UpgradePath]:
@@ -4187,6 +4187,343 @@ class CoordinatedUpgradePlanner:
 
 
 # ============================================================================
+# VERSION COMPATIBILITY MATRIX & CROSS-VERSION TESTING
+# ============================================================================
+class CompatibilityStatus(Enum):
+    """Compatibility status between versions."""
+
+    COMPATIBLE = "compatible"
+    PARTIALLY_COMPATIBLE = "partially_compatible"
+    INCOMPATIBLE = "incompatible"
+    UNTESTED = "untested"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class CompatibilityTestResult:
+    """Result of compatibility testing between two contract versions."""
+
+    baseline_version: str
+    candidate_version: str
+    status: CompatibilityStatus
+    binding_generation: str = "UNTESTED"  # PASS, FAIL, UNTESTED
+    runtime_integration: str = "UNTESTED"
+    feature_coverage: str = "UNTESTED"
+    breaking_changes: int = 0
+    warnings: List[str] = field(default_factory=list)
+    notes: str = ""
+
+    def is_compatible(self) -> bool:
+        """Check if versions are compatible."""
+        return self.status == CompatibilityStatus.COMPATIBLE
+
+    def is_partially_compatible(self) -> bool:
+        """Check if versions are partially compatible."""
+        return self.status == CompatibilityStatus.PARTIALLY_COMPATIBLE
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "baseline_version": self.baseline_version,
+            "candidate_version": self.candidate_version,
+            "status": self.status.value,
+            "binding_generation": self.binding_generation,
+            "runtime_integration": self.runtime_integration,
+            "feature_coverage": self.feature_coverage,
+            "breaking_changes": self.breaking_changes,
+            "warnings": self.warnings,
+            "notes": self.notes,
+        }
+
+
+@dataclass
+class CompatibilityMatrixEntry:
+    """Single entry in compatibility matrix involving two different contracts/versions."""
+
+    contract_a: str
+    version_a: str
+    contract_b: str
+    version_b: str
+    test_result: CompatibilityTestResult
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "contract_a": self.contract_a,
+            "version_a": self.version_a,
+            "contract_b": self.contract_b,
+            "version_b": self.version_b,
+            "test_result": self.test_result.to_dict(),
+        }
+
+
+class CompatibilityMatrix:
+    """Compatibility matrix for cross-contract versions."""
+
+    def __init__(self):
+        self.entries: Dict[Tuple[str, str, str, str], CompatibilityMatrixEntry] = {}
+
+    def add_entry(self, entry: CompatibilityMatrixEntry) -> None:
+        """Add entry to matrix."""
+        key = (entry.contract_a, entry.version_a, entry.contract_b, entry.version_b)
+        self.entries[key] = entry
+
+    def get_compatibility(
+        self, contract_a: str, version_a: str, contract_b: str, version_b: str
+    ) -> Optional[CompatibilityTestResult]:
+        """Get compatibility test result from matrix."""
+        key = (contract_a, version_a, contract_b, version_b)
+        entry = self.entries.get(key)
+        return entry.test_result if entry else None
+
+    def get_compatible_versions(self, contract_a: str, version_a: str, contract_b: str) -> List[str]:
+        """Get all compatible versions of contract_b for a specific contract_a version."""
+        compatible = []
+
+        for (ca, va, cb, vb), entry in self.entries.items():
+            if ca == contract_a and va == version_a and cb == contract_b:
+                if entry.test_result.is_compatible():
+                    compatible.append(vb)
+
+        return compatible
+
+    def get_all_entries_for_contract(self, contract: str) -> List[CompatibilityMatrixEntry]:
+        """Get all matrix entries involving a specific contract."""
+        entries = []
+
+        for entry in self.entries.values():
+            if entry.contract_a == contract or entry.contract_b == contract:
+                entries.append(entry)
+
+        return entries
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert matrix to dictionary."""
+        return {"entries": [e.to_dict() for e in self.entries.values()]}
+
+
+class CompatibilityTester:
+    """Tests compatibility between contract versions using version history."""
+
+    def __init__(self, version_history: VersionHistory):
+        self.history = version_history
+
+    def test_compatibility(self, baseline_version: str, candidate_version: str) -> CompatibilityTestResult:
+        """Test compatibility between two versions based on diff analysis."""
+        # Get diff between versions
+        diff = self.history.diff_between(baseline_version, candidate_version)
+
+        if diff is None:
+            return CompatibilityTestResult(
+                baseline_version=baseline_version,
+                candidate_version=candidate_version,
+                status=CompatibilityStatus.UNKNOWN,
+                notes="Unable to compute diff",
+            )
+
+        # Analyze diff for compatibility
+        breaking_count = len(diff.get_breaking_changes())
+
+        if breaking_count == 0:
+            status = CompatibilityStatus.COMPATIBLE
+            binding_gen = "PASS"
+            runtime = "PASS"
+            features = "PASS"
+        elif breaking_count <= 3:
+            status = CompatibilityStatus.PARTIALLY_COMPATIBLE
+            binding_gen = "PASS"
+            runtime = "PASS"
+            features = "PARTIAL"
+        else:
+            status = CompatibilityStatus.INCOMPATIBLE
+            binding_gen = "FAIL"
+            runtime = "FAIL"
+            features = "FAIL"
+
+        warnings = []
+        if breaking_count > 0:
+            warnings.append(f"{breaking_count} breaking changes detected")
+
+        return CompatibilityTestResult(
+            baseline_version=baseline_version,
+            candidate_version=candidate_version,
+            status=status,
+            binding_generation=binding_gen,
+            runtime_integration=runtime,
+            feature_coverage=features,
+            breaking_changes=breaking_count,
+            warnings=warnings,
+        )
+
+    def batch_test(self, baseline_versions: List[str], candidate_versions: List[str]) -> List[CompatibilityTestResult]:
+        """Test compatibility for multiple version pairs in batch."""
+        results = []
+
+        for baseline in baseline_versions:
+            for candidate in candidate_versions:
+                result = self.test_compatibility(baseline, candidate)
+                results.append(result)
+
+        return results
+
+
+class CompatibilityRecommendationEngine:
+    """Generates compatibility recommendations based on the matrix."""
+
+    def __init__(self, matrix: CompatibilityMatrix):
+        self.matrix = matrix
+
+    def recommend_version(self, contract_a: str, version_a: str, contract_b: str) -> Dict[str, Any]:
+        """Recommend compatible version of contract_b for given contract_a."""
+        compatible_versions = self.matrix.get_compatible_versions(contract_a, version_a, contract_b)
+
+        if not compatible_versions:
+            return {"found": False, "reason": "No compatible versions found", "recommended_version": None}
+
+        # Return latest compatible version
+        recommended = max(compatible_versions, key=self._parse_version)
+
+        return {
+            "found": True,
+            "recommended_version": recommended,
+            "all_compatible_versions": compatible_versions,
+            "reason": f"Latest compatible version of {contract_b}",
+        }
+
+    def get_upgrade_recommendation(
+        self, contract_a: str, current_version_a: str, target_version_a: str, contract_b: str, current_version_b: str
+    ) -> Dict[str, Any]:
+        """Recommend upgrade path for contract_b when upgrading contract_a."""
+        # Check current compatibility
+        current_compat = self.matrix.get_compatibility(contract_a, current_version_a, contract_b, current_version_b)
+
+        # Check target compatibility
+        target_compat = self.matrix.get_compatibility(contract_a, target_version_a, contract_b, current_version_b)
+
+        if target_compat and target_compat.is_compatible():
+            return {
+                "upgrade_needed": False,
+                "reason": f"{contract_b} {current_version_b} is compatible with {contract_a} {target_version_a}",
+                "recommended_version": current_version_b,
+            }
+
+        # Find compatible version
+        compatible_versions = self.matrix.get_compatible_versions(contract_a, target_version_a, contract_b)
+
+        if not compatible_versions:
+            return {
+                "upgrade_needed": True,
+                "upgrade_available": False,
+                "reason": f"No compatible version of {contract_b} found for {contract_a} {target_version_a}",
+            }
+
+        recommended = max(compatible_versions, key=self._parse_version)
+
+        return {
+            "upgrade_needed": True,
+            "upgrade_available": True,
+            "recommended_version": recommended,
+            "reason": f"{contract_b} must be upgraded to {recommended} for compatibility with {contract_a} {target_version_a}",
+        }
+
+    def _parse_version(self, version: str) -> Tuple[int, int, int]:
+        """Parse version string to tuple for comparison."""
+        parts = version.split(".")
+        return (
+            int(parts[0]) if len(parts) > 0 else 0,
+            int(parts[1]) if len(parts) > 1 else 0,
+            int(parts[2]) if len(parts) > 2 else 0,
+        )
+
+
+class VersionRangeSpec:
+    """Specifies version range compatibility using patterns."""
+
+    def __init__(
+        self,
+        contract_a: str,
+        version_pattern_a: str,
+        contract_b: str,
+        version_pattern_b: str,
+        status: CompatibilityStatus,
+    ):
+        self.contract_a = contract_a
+        self.version_pattern_a = version_pattern_a
+        self.contract_b = contract_b
+        self.version_pattern_b = version_pattern_b
+        self.status = status
+
+    def matches(self, contract_a: str, version_a: str, contract_b: str, version_b: str) -> bool:
+        """Check if version pair matches this range spec."""
+        if contract_a != self.contract_a or contract_b != self.contract_b:
+            return False
+
+        return self._matches_pattern(version_a, self.version_pattern_a) and self._matches_pattern(
+            version_b, self.version_pattern_b
+        )
+
+    def _matches_pattern(self, version: str, pattern: str) -> bool:
+        """Check if version matches pattern (e.g., 2.*.* matches 2.5.0)."""
+        v_parts = version.split(".")
+        p_parts = pattern.split(".")
+
+        for i in range(min(len(v_parts), len(p_parts))):
+            if p_parts[i] != "*" and p_parts[i] != v_parts[i]:
+                return False
+
+        return True
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "contract_a": self.contract_a,
+            "version_pattern_a": self.version_pattern_a,
+            "contract_b": self.contract_b,
+            "version_pattern_b": self.version_pattern_b,
+            "status": self.status.value,
+        }
+
+
+class CompatibilityMatrixBuilder:
+    """Builds compatibility matrix from test results and range specs."""
+
+    def __init__(self):
+        self.matrix = CompatibilityMatrix()
+        self.range_specs: List[VersionRangeSpec] = []
+
+    def add_test_result(
+        self, contract_a: str, version_a: str, contract_b: str, version_b: str, test_result: CompatibilityTestResult
+    ) -> None:
+        """Add test result to matrix."""
+        entry = CompatibilityMatrixEntry(
+            contract_a=contract_a,
+            version_a=version_a,
+            contract_b=contract_b,
+            version_b=version_b,
+            test_result=test_result,
+        )
+        self.matrix.add_entry(entry)
+
+    def add_range_spec(self, spec: VersionRangeSpec) -> None:
+        """Add version range specification."""
+        self.range_specs.append(spec)
+
+    def get_compatibility_from_ranges(
+        self, contract_a: str, version_a: str, contract_b: str, version_b: str
+    ) -> Optional[CompatibilityStatus]:
+        """Get compatibility status from range specs."""
+        for spec in self.range_specs:
+            if spec.matches(contract_a, version_a, contract_b, version_b):
+                return spec.status
+
+        return None
+
+    def build(self) -> CompatibilityMatrix:
+        """Build and return compatibility matrix."""
+        return self.matrix
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -4229,11 +4566,12 @@ __all__ = [
     # From Prompt 5
     "CompatibilityRelationship",
     "VersionRange",
-    "CompatibilityMatrixEntry",
-    "CompatibilityMatrix",
-    "CompatibilityMatrixBuilder",
     "UpgradePath",
     "UpgradePathFinder",
+    # Renamed Internal Pairwise Matrix Components
+    "VersionPairCompatibilityEntry",
+    "VersionPairCompatibilityMatrix",
+    "VersionPairCompatibilityBuilder",
     # From Prompt 6
     "PolicyLevel",
     "AdvisorySeverity",
@@ -4281,4 +4619,13 @@ __all__ = [
     # Renamed internal components
     "VersionConstraintComponent",
     "VersionResolver",
+    # From Prompt 13
+    "CompatibilityStatus",
+    "CompatibilityTestResult",
+    "CompatibilityMatrixEntry",
+    "CompatibilityMatrix",
+    "CompatibilityTester",
+    "CompatibilityRecommendationEngine",
+    "VersionRangeSpec",
+    "CompatibilityMatrixBuilder",
 ]

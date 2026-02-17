@@ -6,14 +6,14 @@ import pytest
 
 from modules.module_06_contract_schema.contract_versioning import (
     CompatibilityRelationship,
-    VersionConstraint,
+    VersionConstraintComponent,
     VersionRange,
-    CompatibilityMatrixEntry,
-    CompatibilityMatrix,
-    CompatibilityMatrixBuilder,
+    VersionPairCompatibilityEntry,
+    VersionPairCompatibilityMatrix,
+    VersionPairCompatibilityBuilder,
     UpgradePath,
     UpgradePathFinder,
-    DependencyResolver,
+    VersionResolver,
     SemanticVersion,
     ABICompatibility,
 )
@@ -44,18 +44,18 @@ class TestCompatibilityRelationship:
 # TEST VERSION CONSTRAINT
 # ============================================================================
 class TestVersionConstraint:
-    """Test VersionConstraint."""
+    """Test VersionConstraintComponent."""
 
     def test_constraint_equals(self):
         """Test == constraint."""
-        constraint = VersionConstraint("==", "1.2.0")
+        constraint = VersionConstraintComponent("==", "1.2.0")
 
         assert constraint.satisfied_by("1.2.0") is True
         assert constraint.satisfied_by("1.2.1") is False
 
     def test_constraint_greater_than(self):
         """Test > constraint."""
-        constraint = VersionConstraint(">", "1.2.0")
+        constraint = VersionConstraintComponent(">", "1.2.0")
 
         assert constraint.satisfied_by("1.2.1") is True
         assert constraint.satisfied_by("1.3.0") is True
@@ -63,14 +63,14 @@ class TestVersionConstraint:
 
     def test_constraint_less_than(self):
         """Test < constraint."""
-        constraint = VersionConstraint("<", "2.0.0")
+        constraint = VersionConstraintComponent("<", "2.0.0")
 
         assert constraint.satisfied_by("1.9.9") is True
         assert constraint.satisfied_by("2.0.0") is False
 
     def test_constraint_greater_equal(self):
         """Test >= constraint."""
-        constraint = VersionConstraint(">=", "1.2.0")
+        constraint = VersionConstraintComponent(">=", "1.2.0")
 
         assert constraint.satisfied_by("1.2.0") is True
         assert constraint.satisfied_by("1.2.1") is True
@@ -78,7 +78,7 @@ class TestVersionConstraint:
 
     def test_constraint_less_equal(self):
         """Test <= constraint."""
-        constraint = VersionConstraint("<=", "2.0.0")
+        constraint = VersionConstraintComponent("<=", "2.0.0")
 
         assert constraint.satisfied_by("2.0.0") is True
         assert constraint.satisfied_by("1.9.9") is True
@@ -86,7 +86,7 @@ class TestVersionConstraint:
 
     def test_constraint_not_equals(self):
         """Test != constraint."""
-        constraint = VersionConstraint("!=", "1.2.0")
+        constraint = VersionConstraintComponent("!=", "1.2.0")
 
         assert constraint.satisfied_by("1.2.1") is True
         assert constraint.satisfied_by("1.2.0") is False
@@ -152,11 +152,11 @@ class TestVersionRange:
 # TEST COMPATIBILITY MATRIX ENTRY
 # ============================================================================
 class TestCompatibilityMatrixEntry:
-    """Test CompatibilityMatrixEntry."""
+    """Test VersionPairCompatibilityEntry."""
 
     def test_create_entry(self):
         """Test creating matrix entry."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="1.1.0",
             relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -168,7 +168,7 @@ class TestCompatibilityMatrixEntry:
 
     def test_entry_to_dict(self):
         """Test entry to dictionary conversion."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="1.1.0",
             relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -185,11 +185,11 @@ class TestCompatibilityMatrixEntry:
 # TEST COMPATIBILITY MATRIX
 # ============================================================================
 class TestCompatibilityMatrix:
-    """Test CompatibilityMatrix."""
+    """Test VersionPairCompatibilityMatrix."""
 
     @pytest.fixture
     def matrix(self):
-        return CompatibilityMatrix()
+        return VersionPairCompatibilityMatrix()
 
     def test_matrix_initialization(self, matrix):
         """Test matrix initialization."""
@@ -198,7 +198,7 @@ class TestCompatibilityMatrix:
 
     def test_add_entry(self, matrix):
         """Test adding entry to matrix."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="1.1.0",
             relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -212,7 +212,7 @@ class TestCompatibilityMatrix:
 
     def test_get_compatibility(self, matrix):
         """Test retrieving compatibility."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="1.1.0",
             relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -233,7 +233,7 @@ class TestCompatibilityMatrix:
 
     def test_is_compatible_true(self, matrix):
         """Test is_compatible returns True for compatible versions."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="1.1.0",
             relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -245,7 +245,7 @@ class TestCompatibilityMatrix:
 
     def test_is_compatible_false(self, matrix):
         """Test is_compatible returns False for incompatible versions."""
-        entry = CompatibilityMatrixEntry(
+        entry = VersionPairCompatibilityEntry(
             from_version="1.0.0",
             to_version="2.0.0",
             relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
@@ -258,7 +258,7 @@ class TestCompatibilityMatrix:
     def test_get_all_versions(self, matrix):
         """Test getting all versions sorted."""
         matrix.add_entry(
-            CompatibilityMatrixEntry(
+            VersionPairCompatibilityEntry(
                 from_version="1.2.0",
                 to_version="1.3.0",
                 relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -266,7 +266,7 @@ class TestCompatibilityMatrix:
         )
 
         matrix.add_entry(
-            CompatibilityMatrixEntry(
+            VersionPairCompatibilityEntry(
                 from_version="1.0.0",
                 to_version="1.1.0",
                 relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE,
@@ -282,11 +282,11 @@ class TestCompatibilityMatrix:
 # TEST COMPATIBILITY MATRIX BUILDER
 # ============================================================================
 class TestCompatibilityMatrixBuilder:
-    """Test CompatibilityMatrixBuilder."""
+    """Test VersionPairCompatibilityBuilder."""
 
     @pytest.fixture
     def builder(self):
-        return CompatibilityMatrixBuilder()
+        return VersionPairCompatibilityBuilder()
 
     def test_build_matrix_simple(self, builder):
         """Test building matrix for simple version set."""
@@ -357,17 +357,17 @@ class TestUpgradePathFinder:
 
     @pytest.fixture
     def matrix(self):
-        m = CompatibilityMatrix()
+        m = VersionPairCompatibilityMatrix()
 
         # Add entries
         m.add_entry(
-            CompatibilityMatrixEntry(
+            VersionPairCompatibilityEntry(
                 from_version="1.0.0", to_version="1.1.0", relationship=CompatibilityRelationship.BACKWARD_COMPATIBLE
             )
         )
 
         m.add_entry(
-            CompatibilityMatrixEntry(
+            VersionPairCompatibilityEntry(
                 from_version="1.0.0",
                 to_version="2.0.0",
                 relationship=CompatibilityRelationship.BREAKING_INCOMPATIBLE,
@@ -406,13 +406,13 @@ class TestUpgradePathFinder:
 # ============================================================================
 # TEST DEPENDENCY RESOLVER
 # ============================================================================
-class TestDependencyResolver:
-    """Test DependencyResolver."""
+class TestVersionResolver:
+    """Test VersionResolver."""
 
     @pytest.fixture
     def resolver(self):
         versions = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0"]
-        return DependencyResolver(versions)
+        return VersionResolver(versions)
 
     def test_resolve_single_requirement(self, resolver):
         """Test resolving single requirement."""
@@ -452,7 +452,7 @@ class TestCompatibilityMatrixIntegration:
     def test_full_workflow(self):
         """Test complete workflow from building to path finding."""
         # Build matrix
-        builder = CompatibilityMatrixBuilder()
+        builder = VersionPairCompatibilityBuilder()
         versions = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
         contracts = {}
 
@@ -468,7 +468,7 @@ class TestCompatibilityMatrixIntegration:
     def test_dependency_resolution_with_matrix(self):
         """Test dependency resolution using matrix."""
         versions = ["1.0.0", "1.1.0", "1.2.0", "1.3.0"]
-        resolver = DependencyResolver(versions)
+        resolver = VersionResolver(versions)
 
         result = resolver.resolve(["^1.1.0", "~1.2.0"])
 
@@ -486,7 +486,7 @@ class TestEdgeCases:
 
     def test_empty_matrix(self):
         """Test operations on empty matrix."""
-        matrix = CompatibilityMatrix()
+        matrix = VersionPairCompatibilityMatrix()
 
         versions = matrix.get_all_versions()
 
@@ -501,7 +501,7 @@ class TestEdgeCases:
 
     def test_resolver_with_no_versions(self):
         """Test resolver with empty version list."""
-        resolver = DependencyResolver([])
+        resolver = VersionResolver([])
 
         result = resolver.resolve(["^1.0.0"])
 
@@ -534,7 +534,7 @@ def test_bulk_version_range_tilde(i):
 def test_bulk_dependency_resolution(i):
     # Testing resolution with multiple requirements
     versions = [f"1.{j}.0" for j in range(20)]
-    resolver = DependencyResolver(versions)
+    resolver = VersionResolver(versions)
     # req: ^1.{i}.0 and <=1.{i+5}.0
     reqs = [f"^1.{i}.0", f"<=1.{i+5}.0"]
     result = resolver.resolve(reqs)
