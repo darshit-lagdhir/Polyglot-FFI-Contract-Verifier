@@ -53,6 +53,12 @@ from .language_adapter import (
     CtypesIntegration,
     CffiIntegration,
     PythonAdapter,
+    PythonPointerWrapper,
+    BufferPinner,
+    AllocationTracker,
+    ReferenceHolder,
+    MemoryValidator,
+    PythonMemoryManager,
     __version__,
 )
 
@@ -109,5 +115,11 @@ __all__ = [
     'CtypesIntegration',
     'CffiIntegration',
     'PythonAdapter',
+    'PythonPointerWrapper',
+    'BufferPinner',
+    'AllocationTracker',
+    'ReferenceHolder',
+    'MemoryValidator',
+    'PythonMemoryManager',
     '__version__',
 ]
