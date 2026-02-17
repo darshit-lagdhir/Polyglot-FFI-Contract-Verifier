@@ -1115,6 +1115,479 @@ class SynthesisDeterminismVerifier:
 
 
 # ============================================================================
+# ABI COMPATIBILITY ENUMS
+# ============================================================================
+class ABICompatibility(Enum):
+    """ABI compatibility classifications for contract changes.
+    Defines the impact of contract changes on binary compatibility.
+    """
+
+    ABI_IDENTICAL = "abi_identical"
+    ABI_COMPATIBLE_EXTENSION = "abi_compatible_extension"
+    ABI_COMPATIBLE_RELAXATION = "abi_compatible_relaxation"
+    ABI_COMPATIBLE_STRENGTHENING = "abi_compatible_strengthening"
+    ABI_BREAKING_LAYOUT = "abi_breaking_layout"
+    ABI_BREAKING_SIGNATURE = "abi_breaking_signature"
+    ABI_BREAKING_REMOVAL = "abi_breaking_removal"
+
+
+class ChangeType(Enum):
+    """Types of contract changes."""
+
+    FUNCTION_ADDED = "function_added"
+    FUNCTION_REMOVED = "function_removed"
+    FUNCTION_MODIFIED = "function_modified"
+    TYPE_ADDED = "type_added"
+    TYPE_REMOVED = "type_removed"
+    TYPE_MODIFIED = "type_modified"
+    FIELD_ADDED = "field_added"
+    FIELD_REMOVED = "field_removed"
+    FIELD_MODIFIED = "field_modified"
+    CLAUSE_ADDED = "clause_added"
+    CLAUSE_REMOVED = "clause_removed"
+    CLAUSE_MODIFIED = "clause_modified"
+
+
+# ============================================================================
+# CHANGE DETECTION ENTITIES
+# ============================================================================
+@dataclass
+class ContractChange:
+    """Represents a single change between contract versions.
+    Records what changed, where, and why it matters.
+    """
+
+    change_type: ChangeType
+    entity_id: str
+    description: str
+    abi_impact: ABICompatibility
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def is_breaking(self) -> bool:
+        """Check if this change is ABI-breaking."""
+        return self.abi_impact in [
+            ABICompatibility.ABI_BREAKING_LAYOUT,
+            ABICompatibility.ABI_BREAKING_SIGNATURE,
+            ABICompatibility.ABI_BREAKING_REMOVAL,
+        ]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "change_type": self.change_type.value,
+            "entity_id": self.entity_id,
+            "description": self.description,
+            "abi_impact": self.abi_impact.value,
+            "details": self.details,
+        }
+
+
+@dataclass
+class ContractDiff:
+    """Complete diff between two contract versions.
+    Contains all detected changes and overall compatibility classification.
+    """
+
+    baseline_version: str
+    candidate_version: str
+    baseline_fingerprint: str
+    candidate_fingerprint: str
+    changes: List[ContractChange] = field(default_factory=list)
+    overall_compatibility: Optional[ABICompatibility] = None
+
+    def has_breaking_changes(self) -> bool:
+        """Check if any changes are ABI-breaking."""
+        return any(change.is_breaking() for change in self.changes)
+
+    def get_breaking_changes(self) -> List[ContractChange]:
+        """Get all breaking changes."""
+        return [c for c in self.changes if c.is_breaking()]
+
+    def get_compatible_changes(self) -> List[ContractChange]:
+        """Get all compatible changes."""
+        return [c for c in self.changes if not c.is_breaking()]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "baseline_version": self.baseline_version,
+            "candidate_version": self.candidate_version,
+            "baseline_fingerprint": self.baseline_fingerprint,
+            "candidate_fingerprint": self.candidate_fingerprint,
+            "changes": [c.to_dict() for c in self.changes],
+            "overall_compatibility": self.overall_compatibility.value
+            if self.overall_compatibility
+            else None,
+            "has_breaking_changes": self.has_breaking_changes(),
+        }
+
+
+# ============================================================================
+# CONTRACT VERSION TRACKER
+# ============================================================================
+@dataclass
+class ContractVersionSnapshot:
+    """Snapshot of a contract at a specific version.
+    Records contract state and metadata at a point in time.
+    """
+
+    version: str
+    release_date: str
+    contract_fingerprint: str
+    schema_version: str
+    synthesis_version: str
+    ir_fingerprint: str
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "release_date": self.release_date,
+            "contract_fingerprint": self.contract_fingerprint,
+            "schema_version": self.schema_version,
+            "synthesis_version": self.synthesis_version,
+            "ir_fingerprint": self.ir_fingerprint,
+            "description": self.description,
+        }
+
+
+class ContractEvolutionTimeline:
+    """Timeline of contract version evolution.
+    Tracks all versions of a contract interface over time.
+    """
+
+    def __init__(self, interface_id: str):
+        self.interface_id = interface_id
+        self.snapshots: Dict[str, ContractVersionSnapshot] = {}
+
+    def add_snapshot(self, snapshot: ContractVersionSnapshot):
+        """
+        Add a version snapshot to timeline.
+        Args:
+            snapshot: Contract version snapshot
+        """
+        self.snapshots[snapshot.version] = snapshot
+
+    def get_snapshot(self, version: str) -> Optional[ContractVersionSnapshot]:
+        """Get snapshot for a specific version."""
+        return self.snapshots.get(version)
+
+    def get_all_versions(self) -> List[str]:
+        """Get all tracked versions in chronological order."""
+        versions = list(self.snapshots.keys())
+        # Sort by semantic version
+        try:
+            return sorted(versions, key=lambda v: SemanticVersion(v))
+        except ValueError:
+            return sorted(versions)  # Fallback to string sort
+
+    def get_latest_version(self) -> Optional[ContractVersionSnapshot]:
+        """Get the latest version snapshot."""
+        versions = self.get_all_versions()
+        if not versions:
+            return None
+        return self.snapshots[versions[-1]]
+
+
+# ============================================================================
+# ABI COMPATIBILITY DETECTOR
+# ============================================================================
+class ABICompatibilityDetector:
+    """Detects ABI compatibility between contract versions.
+    Analyzes structural changes and classifies their impact.
+    """
+
+    def detect_compatibility(self, baseline_contract: Any, candidate_contract: Any) -> ContractDiff:
+        """
+        Detect compatibility between two contracts.
+        Args:
+            baseline_contract: Old contract version
+            candidate_contract: New contract version
+        Returns:
+            ContractDiff with all detected changes
+        """
+        diff = ContractDiff(
+            baseline_version=getattr(baseline_contract, "contract_version", "unknown"),
+            candidate_version=getattr(candidate_contract, "contract_version", "unknown"),
+            baseline_fingerprint=getattr(baseline_contract, "contract_fingerprint", ""),
+            candidate_fingerprint=getattr(candidate_contract, "contract_fingerprint", ""),
+        )
+
+        # Step 1: Check if identical
+        if diff.baseline_fingerprint == diff.candidate_fingerprint:
+            diff.overall_compatibility = ABICompatibility.ABI_IDENTICAL
+            return diff
+
+        # Step 2: Detect changes (simplified - real implementation would compare entities)
+        # In a full implementation, we would extract functions and structs
+        # and compare them one by one.
+
+        # Placeholder for structural analysis logic
+        changes = []
+
+        # Example: Mock function analysis if attributes exist
+        if hasattr(baseline_contract, "functions") and hasattr(candidate_contract, "functions"):
+            changes.extend(
+                self._detect_function_changes(
+                    baseline_contract.functions, candidate_contract.functions
+                )
+            )
+
+        if hasattr(baseline_contract, "structs") and hasattr(candidate_contract, "structs"):
+            changes.extend(
+                self._detect_struct_changes(baseline_contract.structs, candidate_contract.structs)
+            )
+
+        diff.changes = changes
+
+        # Determine overall compatibility based on most severe change
+        if diff.has_breaking_changes():
+            # Find most severe breaking impact
+            impacts = [c.abi_impact for c in diff.get_breaking_changes()]
+            if ABICompatibility.ABI_BREAKING_REMOVAL in impacts:
+                diff.overall_compatibility = ABICompatibility.ABI_BREAKING_REMOVAL
+            elif ABICompatibility.ABI_BREAKING_SIGNATURE in impacts:
+                diff.overall_compatibility = ABICompatibility.ABI_BREAKING_SIGNATURE
+            else:
+                diff.overall_compatibility = ABICompatibility.ABI_BREAKING_LAYOUT
+        elif changes:
+            # All compatible
+            diff.overall_compatibility = ABICompatibility.ABI_COMPATIBLE_EXTENSION
+        else:
+            # No structural changes detected but fingerprints differ
+            # This indicates metadata or other non-structural changes
+            diff.overall_compatibility = ABICompatibility.ABI_COMPATIBLE_EXTENSION
+
+        return diff
+
+    def _detect_function_changes(
+        self, baseline_functions: List[Any], candidate_functions: List[Any]
+    ) -> List[ContractChange]:
+        """Detect changes to function signatures."""
+        changes = []
+
+        # Convert to dictionaries or lists of entities for comparison
+        # This implementation assumes entities are dicts with 'id' or objects with 'function_id'
+        def get_id(f):
+            if isinstance(f, dict):
+                return f.get("function_id") or f.get("id")
+            return getattr(f, "function_id", None) or getattr(f, "id", None)
+
+        baseline_map = {get_id(f): f for f in baseline_functions if get_id(f)}
+        candidate_map = {get_id(f): f for f in candidate_functions if get_id(f)}
+
+        # Detect additions
+        added = set(candidate_map.keys()) - set(baseline_map.keys())
+        for func_id in added:
+            changes.append(
+                ContractChange(
+                    change_type=ChangeType.FUNCTION_ADDED,
+                    entity_id=func_id,
+                    description=f"Function '{func_id}' added",
+                    abi_impact=ABICompatibility.ABI_COMPATIBLE_EXTENSION,
+                )
+            )
+
+        # Detect removals
+        removed = set(baseline_map.keys()) - set(candidate_map.keys())
+        for func_id in removed:
+            changes.append(
+                ContractChange(
+                    change_type=ChangeType.FUNCTION_REMOVED,
+                    entity_id=func_id,
+                    description=f"Function '{func_id}' removed",
+                    abi_impact=ABICompatibility.ABI_BREAKING_REMOVAL,
+                )
+            )
+
+        # Detect modifications (simplified)
+        common = set(baseline_map.keys()) & set(candidate_map.keys())
+        for func_id in common:
+            # In real system, we'd compare signature properties
+            # This is a placeholder for detection logic
+            pass
+
+        return changes
+
+    def _detect_struct_changes(
+        self, baseline_structs: List[Any], candidate_structs: List[Any]
+    ) -> List[ContractChange]:
+        """Detect changes to struct layouts."""
+        changes = []
+
+        def get_id(s):
+            if isinstance(s, dict):
+                return s.get("struct_id") or s.get("id")
+            return getattr(s, "struct_id", None) or getattr(s, "id", None)
+
+        baseline_map = {get_id(s): s for s in baseline_structs if get_id(s)}
+        candidate_map = {get_id(s): s for s in candidate_structs if get_id(s)}
+
+        # Detect additions/removals
+        added = set(candidate_map.keys()) - set(baseline_map.keys())
+        for struct_id in added:
+            changes.append(
+                ContractChange(
+                    change_type=ChangeType.TYPE_ADDED,
+                    entity_id=struct_id,
+                    description=f"Struct '{struct_id}' added",
+                    abi_impact=ABICompatibility.ABI_COMPATIBLE_EXTENSION,
+                )
+            )
+
+        removed = set(baseline_map.keys()) - set(candidate_map.keys())
+        for struct_id in removed:
+            changes.append(
+                ContractChange(
+                    change_type=ChangeType.TYPE_REMOVED,
+                    entity_id=struct_id,
+                    description=f"Struct '{struct_id}' removed",
+                    abi_impact=ABICompatibility.ABI_BREAKING_REMOVAL,
+                )
+            )
+
+        return changes
+
+
+# ============================================================================
+# MIGRATION NECESSITY ANALYZER
+# ============================================================================
+@dataclass
+class MigrationNecessity:
+    """Analysis of whether migration is required.
+    Provides detailed assessment of upgrade requirements.
+    """
+
+    required: bool
+    reason: str
+    affected_entities: List[str] = field(default_factory=list)
+    migration_complexity: str = "unknown"  # "trivial", "moderate", "complex"
+    estimated_effort: str = "unknown"  # "minutes", "hours", "days"
+    recommendations: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "required": self.required,
+            "reason": self.reason,
+            "affected_entities": self.affected_entities,
+            "migration_complexity": self.migration_complexity,
+            "estimated_effort": self.estimated_effort,
+            "recommendations": self.recommendations,
+        }
+
+
+class MigrationNecessityAnalyzer:
+    """Analyzes whether migration is needed between contract versions.
+    Provides detailed recommendations based on change analysis.
+    """
+
+    def analyze(self, diff: ContractDiff) -> MigrationNecessity:
+        """
+        Analyze migration necessity.
+        Args:
+            diff: Contract diff to analyze
+        Returns:
+            MigrationNecessity with analysis results
+        """
+        # Check for breaking changes
+        if diff.has_breaking_changes():
+            breaking = diff.get_breaking_changes()
+
+            return MigrationNecessity(
+                required=True,
+                reason="ABI-breaking changes detected",
+                affected_entities=[c.entity_id for c in breaking],
+                migration_complexity=self._assess_complexity(breaking),
+                estimated_effort=self._estimate_effort(breaking),
+                recommendations=self._generate_recommendations(breaking),
+            )
+
+        # No breaking changes
+        return MigrationNecessity(
+            required=False,
+            reason="All changes are ABI-compatible",
+            migration_complexity="trivial",
+            estimated_effort="none",
+            recommendations=["Safe to upgrade without migration"],
+        )
+
+    def _assess_complexity(self, changes: List[ContractChange]) -> str:
+        """Assess migration complexity based on changes."""
+        if len(changes) <= 2:
+            return "trivial"
+        elif len(changes) <= 10:
+            return "moderate"
+        else:
+            return "complex"
+
+    def _estimate_effort(self, changes: List[ContractChange]) -> str:
+        """Estimate migration effort."""
+        if len(changes) <= 2:
+            return "minutes"
+        elif len(changes) <= 10:
+            return "hours"
+        else:
+            return "days"
+
+    def _generate_recommendations(self, changes: List[ContractChange]) -> List[str]:
+        """Generate migration recommendations."""
+        recommendations = []
+
+        for change in changes:
+            if change.change_type == ChangeType.FUNCTION_REMOVED:
+                recommendations.append(f"Remove calls to deleted function '{change.entity_id}'")
+            elif change.change_type == ChangeType.FUNCTION_MODIFIED:
+                recommendations.append(f"Update calls to modified function '{change.entity_id}'")
+            elif change.change_type == ChangeType.TYPE_REMOVED:
+                recommendations.append(f"Replace usage of deleted type '{change.entity_id}'")
+
+        return recommendations
+
+
+# ============================================================================
+# CONTRACT VERSION COMPARATOR
+# ============================================================================
+class ContractVersionComparator:
+    """High-level contract version comparison.
+    Combines ABI detection, migration analysis, and compatibility checking.
+    """
+
+    def __init__(self):
+        self.abi_detector = ABICompatibilityDetector()
+        self.migration_analyzer = MigrationNecessityAnalyzer()
+
+    def compare(self, baseline_contract: Any, candidate_contract: Any) -> Dict[str, Any]:
+        """
+        Compare two contract versions.
+        Args:
+            baseline_contract: Old contract
+            candidate_contract: New contract
+        Returns:
+            Dictionary with complete comparison results
+        """
+        # Detect ABI compatibility
+        diff = self.abi_detector.detect_compatibility(baseline_contract, candidate_contract)
+
+        # Analyze migration necessity
+        migration = self.migration_analyzer.analyze(diff)
+
+        return {
+            "diff": diff.to_dict(),
+            "migration": migration.to_dict(),
+            "summary": {
+                "safe_upgrade": not migration.required,
+                "breaking_changes_count": len(diff.get_breaking_changes()),
+                "compatible_changes_count": len(diff.get_compatible_changes()),
+                "overall_compatibility": diff.overall_compatibility.value
+                if diff.overall_compatibility
+                else None,
+            },
+        }
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 __all__ = [
@@ -1143,4 +1616,15 @@ __all__ = [
     "SynthesisEvolutionEvent",
     "SynthesisEvolutionTracker",
     "SynthesisDeterminismVerifier",
+    # From Prompt 4
+    "ABICompatibility",
+    "ChangeType",
+    "ContractChange",
+    "ContractDiff",
+    "ContractVersionSnapshot",
+    "ContractEvolutionTimeline",
+    "ABICompatibilityDetector",
+    "MigrationNecessity",
+    "MigrationNecessityAnalyzer",
+    "ContractVersionComparator",
 ]

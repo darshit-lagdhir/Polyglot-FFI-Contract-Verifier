@@ -104,7 +104,7 @@ from .contract_validation import (
     ValidationLayer,
 )
 
-# Versioning (Prompt 1, 2 & 3/20)
+# Versioning (Prompt 1, 2, 3 & 4/20)
 from .contract_versioning import (
     # Identity (Prompt 1)
     ContractVersionMetadata,
@@ -132,6 +132,17 @@ from .contract_versioning import (
     SynthesisEvolutionEvent,
     SynthesisEvolutionTracker,
     SynthesisDeterminismVerifier,
+    # Contract Evolution (Prompt 4)
+    ABICompatibility,
+    ChangeType,
+    ContractChange,
+    ContractDiff,
+    ContractVersionSnapshot,
+    ContractEvolutionTimeline,
+    ABICompatibilityDetector,
+    MigrationNecessity,
+    MigrationNecessityAnalyzer,
+    ContractVersionComparator,
     # Change tracking (Pending re-implementation in later prompts)
     # ChangeType,
     # CompatibilityImpact,
@@ -323,7 +334,7 @@ __all__ = [
     "ValidationError",
     "ValidationWarning",
     "ValidationLayer",
-    # Versioning (Prompt 1, 2 & 3)
+    # Versioning (Prompt 1, 2, 3 & 4)
     "ContractVersionMetadata",
     "ContractFingerprintComputer",
     "VersionIdentityManager",
@@ -346,6 +357,16 @@ __all__ = [
     "SynthesisEvolutionEvent",
     "SynthesisEvolutionTracker",
     "SynthesisDeterminismVerifier",
+    "ABICompatibility",
+    "ChangeType",
+    "ContractChange",
+    "ContractDiff",
+    "ContractVersionSnapshot",
+    "ContractEvolutionTimeline",
+    "ABICompatibilityDetector",
+    "MigrationNecessity",
+    "MigrationNecessityAnalyzer",
+    "ContractVersionComparator",
     # "ChangeType",
     # "CompatibilityImpact",
     # "ContractChange",
