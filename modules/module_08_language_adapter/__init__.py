@@ -16,6 +16,10 @@ from .language_adapter import (
     LanguageAdapter,
     PredicateFactory,
     ValidationEngine,
+    PhaseResult,
+    PipelineConfig,
+    NormalizationInterface,
+    InvocationOrchestrator,
     __version__,
 )
 
@@ -35,5 +39,9 @@ __all__ = [
     'LanguageAdapter',
     'PredicateFactory',
     'ValidationEngine',
+    'PhaseResult',
+    'PipelineConfig',
+    'NormalizationInterface',
+    'InvocationOrchestrator',
     '__version__',
 ]

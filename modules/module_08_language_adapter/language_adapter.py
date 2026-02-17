@@ -371,6 +371,10 @@ class EnforcementContext:
             'context': context,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
+
+    def finalize(self) -> None:
+        """Mark context as finalized with end timestamp."""
+        self.end_time = datetime.utcnow().isoformat() + 'Z'
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -947,6 +951,10 @@ class LanguageAdapter:
         self.projector = ContractProjector()
         self.ownership_registry = OwnershipRegistry()
         self.validation_engine = ValidationEngine()
+        self.orchestrator = InvocationOrchestrator(
+            self.validation_engine,
+            self.ownership_registry
+        )
         self.contract_fingerprint: Optional[str] = None
         self.validation_graphs: Dict[str, ValidationGraph] = {}
     
@@ -1000,11 +1008,444 @@ class LanguageAdapter:
         
         # context.finalize() if implemented, or just update status
         
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 13: PHASE RESULT
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PhaseResult:
+    """
+    Result from a single pipeline phase.
+    
+    Tracks success, timing, diagnostics, and violations for one phase
+    of the enforcement pipeline.
+    """
+    
+    phase_name: str
+    success: bool
+    duration_ms: float
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
+    violations: List[ViolationReport] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
         return {
-            'valid': result['valid'],
-            'context': context.to_dict(),
-            'metrics': result
+            'phase_name': self.phase_name,
+            'success': self.success,
+            'duration_ms': self.duration_ms,
+            'diagnostics': self.diagnostics,
+            'violations': [v.to_dict() for v in self.violations]
         }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 14: PIPELINE CONFIGURATION
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PipelineConfig:
+    """
+    Pipeline execution configuration.
+    
+    Controls pipeline behavior including phase execution, error handling,
+    and performance options.
+    """
+    
+    enable_normalization: bool = True
+    enable_pre_validation: bool = True
+    enable_ownership_checks: bool = True
+    enable_post_validation: bool = True
+    enable_ownership_reconciliation: bool = True
+    fail_fast: bool = True
+    dry_run: bool = False  # Skip native invocation for testing
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'enable_normalization': self.enable_normalization,
+            'enable_pre_validation': self.enable_pre_validation,
+            'enable_ownership_checks': self.enable_ownership_checks,
+            'enable_post_validation': self.enable_post_validation,
+            'enable_ownership_reconciliation': self.enable_ownership_reconciliation,
+            'fail_fast': self.fail_fast,
+            'dry_run': self.dry_run
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 15: NORMALIZATION INTERFACE
+# ════════════════════════════════════════════════════════════════════════════
+
+class NormalizationInterface:
+    """
+    Abstract interface for value normalization.
+    
+    Language-specific adapters implement this interface to convert
+    their runtime values into canonical validation forms.
+    """
+    
+    def normalize_value(self, value: Any) -> Any:
+        """
+        Normalize single value.
+        
+        Args:
+            value: Language-specific value
+            
+        Returns:
+            Normalized canonical value
+            
+        Raises:
+            ValueError: If value cannot be normalized
+        """
+        # Default implementation: pass-through
+        return value
+    
+    def normalize_inputs(self, inputs: List[Any]) -> List[Any]:
+        """
+        Normalize list of input values.
+        
+        Args:
+            inputs: List of language-specific values
+            
+        Returns:
+            List of normalized values
+        """
+        return [self.normalize_value(v) for v in inputs]
+    
+    def can_normalize(self, value: Any) -> bool:
+        """
+        Check if value can be normalized.
+        
+        Args:
+            value: Value to check
+            
+        Returns:
+            True if normalization possible, False otherwise
+        """
+        try:
+            self.normalize_value(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 16: INVOCATION ORCHESTRATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+class InvocationOrchestrator:
+    """
+    Orchestrates complete enforcement pipeline.
+    
+    Coordinates normalization, validation, ownership checking, native
+    invocation, and post-call reconciliation in strict phase order.
+    """
+    
+    def __init__(
+        self,
+        validation_engine: ValidationEngine,
+        ownership_registry: OwnershipRegistry,
+        config: Optional[PipelineConfig] = None
+    ):
+        self.validation_engine = validation_engine
+        self.ownership_registry = ownership_registry
+        self.config = config or PipelineConfig()
+        self.normalizer = NormalizationInterface()
+        self.phase_results: List[PhaseResult] = []
+    
+    def execute_pipeline(
+        self,
+        function_name: str,
+        validation_graph: ValidationGraph,
+        inputs: List[Any],
+        context: EnforcementContext
+    ) -> Dict[str, Any]:
+        """
+        Execute complete enforcement pipeline.
+        
+        Args:
+            function_name: Name of function being invoked
+            validation_graph: Validation graph for function
+            inputs: Raw input values
+            context: Enforcement context
+            
+        Returns:
+            Pipeline execution result
+        """
+        self.phase_results = []
+        
+        # Phase 1: Normalization
+        if self.config.enable_normalization:
+            norm_result = self._phase_normalization(inputs)
+            self.phase_results.append(norm_result)
+            
+            if not norm_result.success and self.config.fail_fast:
+                return self._assemble_failure_result(context)
+            
+            normalized_inputs = norm_result.diagnostics.get('normalized', inputs)
+        else:
+            normalized_inputs = inputs
+        
+        context.normalized_inputs = normalized_inputs
+        
+        # Phase 2: Pre-call validation
+        if self.config.enable_pre_validation:
+            pre_val_result = self._phase_pre_validation(
+                validation_graph,
+                normalized_inputs,
+                context
+            )
+            self.phase_results.append(pre_val_result)
+            
+            if not pre_val_result.success and self.config.fail_fast:
+                return self._assemble_failure_result(context)
+        
+        # Phase 3: Ownership preconditions
+        if self.config.enable_ownership_checks:
+            own_check_result = self._phase_ownership_check(normalized_inputs)
+            self.phase_results.append(own_check_result)
+            
+            if not own_check_result.success and self.config.fail_fast:
+                return self._assemble_failure_result(context)
+        
+        # Phase 4: Native invocation (simulated for now)
+        if not self.config.dry_run:
+            invoke_result = self._phase_native_invocation(
+                function_name,
+                normalized_inputs
+            )
+            self.phase_results.append(invoke_result)
+            
+            if not invoke_result.success:
+                return self._assemble_failure_result(context)
+            
+            native_result = invoke_result.diagnostics.get('result')
+        else:
+            native_result = None
+        
+        # Phase 5: Post-call validation (placeholder for now)
+        if self.config.enable_post_validation:
+            post_val_result = self._phase_post_validation(native_result)
+            self.phase_results.append(post_val_result)
+        
+        # Phase 6: Ownership reconciliation (placeholder)
+        if self.config.enable_ownership_reconciliation:
+            recon_result = self._phase_ownership_reconciliation()
+            self.phase_results.append(recon_result)
+        
+        context.finalize()
+        
+        return self._assemble_success_result(context, native_result)
+    
+    def _phase_normalization(self, inputs: List[Any]) -> PhaseResult:
+        """Execute normalization phase."""
+        start = datetime.utcnow()
+        
+        try:
+            normalized = self.normalizer.normalize_inputs(inputs)
+            duration = (datetime.utcnow() - start).total_seconds() * 1000
+            
+            return PhaseResult(
+                phase_name='normalization',
+                success=True,
+                duration_ms=duration,
+                diagnostics={
+                    'original_count': len(inputs),
+                    'normalized': normalized
+                }
+            )
+        except Exception as e:
+            duration = (datetime.utcnow() - start).total_seconds() * 1000
+            return PhaseResult(
+                phase_name='normalization',
+                success=False,
+                duration_ms=duration,
+                diagnostics={'error': str(e)}
+            )
+    
+    def _phase_pre_validation(
+        self,
+        graph: ValidationGraph,
+        inputs: List[Any],
+        context: EnforcementContext
+    ) -> PhaseResult:
+        """Execute pre-call validation phase."""
+        start = datetime.utcnow()
+        
+        result = self.validation_engine.validate(graph, inputs, context)
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        violations = []
+        for val_result in context.validation_results:
+            if val_result['status'] == 'fail':
+                # Create violation report (simplified)
+                violations.append(ViolationReport(
+                    function_name=context.function_name,
+                    clause_id=val_result['clause_id'],
+                    clause_type='unknown',
+                    severity=ClauseSeverity.MANDATORY,
+                    expected='validation pass',
+                    observed='validation fail',
+                    message=val_result.get('message', ''),
+                    contract_fingerprint='',
+                    timestamp=val_result['timestamp']
+                ))
+        
+        return PhaseResult(
+            phase_name='pre_validation',
+            success=result,
+            duration_ms=duration,
+            diagnostics={
+                'validations_executed': len(graph.nodes),
+                'validations_passed': len([
+                    r for r in context.validation_results
+                    if r['status'] == 'pass'
+                ])
+            },
+            violations=violations
+        )
+    
+    def _phase_ownership_check(self, inputs: List[Any]) -> PhaseResult:
+        """Execute ownership precondition check phase."""
+        start = datetime.utcnow()
+        
+        # Placeholder: Check if pointer inputs are registered
+        # Real implementation in future prompts
+        
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        return PhaseResult(
+            phase_name='ownership_check',
+            success=True,
+            duration_ms=duration,
+            diagnostics={'checked_count': 0}
+        )
+    
+    def _phase_native_invocation(
+        self,
+        function_name: str,
+        inputs: List[Any]
+    ) -> PhaseResult:
+        """Execute native invocation phase (simulated)."""
+        start = datetime.utcnow()
+        
+        # Simulated invocation - real implementation in Python specialization
+        result = {'simulated': True, 'function': function_name}
+        
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        return PhaseResult(
+            phase_name='native_invocation',
+            success=True,
+            duration_ms=duration,
+            diagnostics={'result': result}
+        )
+    
+    def _phase_post_validation(self, result: Any) -> PhaseResult:
+        """Execute post-call validation phase."""
+        start = datetime.utcnow()
+        
+        # Placeholder: Validate return value
+        # Real implementation in future prompts
+        
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        return PhaseResult(
+            phase_name='post_validation',
+            success=True,
+            duration_ms=duration,
+            diagnostics={}
+        )
+    
+    def _phase_ownership_reconciliation(self) -> PhaseResult:
+        """Execute ownership reconciliation phase."""
+        start = datetime.utcnow()
+        
+        # Placeholder: Update ownership registry
+        # Real implementation in future prompts
+        
+        duration = (datetime.utcnow() - start).total_seconds() * 1000
+        
+        return PhaseResult(
+            phase_name='ownership_reconciliation',
+            success=True,
+            duration_ms=duration,
+            diagnostics={}
+        )
+    
+    def _assemble_success_result(
+        self,
+        context: EnforcementContext,
+        native_result: Any
+    ) -> Dict[str, Any]:
+        """Assemble successful pipeline result."""
+        return {
+            'success': True,
+            'result': native_result,
+            'context': context.to_dict(),
+            'phases': [p.to_dict() for p in self.phase_results],
+            'total_duration_ms': sum(p.duration_ms for p in self.phase_results)
+        }
+    
+    def _assemble_failure_result(
+        self,
+        context: EnforcementContext
+    ) -> Dict[str, Any]:
+        """Assemble failed pipeline result."""
+        return {
+            'success': False,
+            'result': None,
+            'context': context.to_dict(),
+            'phases': [p.to_dict() for p in self.phase_results],
+            'total_duration_ms': sum(p.duration_ms for p in self.phase_results),
+            'failed_phase': next(
+                (p.phase_name for p in self.phase_results if not p.success),
+                None
+            )
+        }
+    
+    def get_phase_results(self) -> List[PhaseResult]:
+        """Get all phase results from last execution."""
+        return self.phase_results
+
+    def invoke_with_enforcement(
+        self,
+        function_name: str,
+        inputs: List[Any],
+        pipeline_config: Optional[PipelineConfig] = None
+    ) -> Dict[str, Any]:
+        """
+        Invoke function with full enforcement pipeline.
+        
+        Args:
+            function_name: Name of function to invoke
+            inputs: Raw input values
+            pipeline_config: Optional pipeline configuration
+            
+        Returns:
+            Pipeline execution result
+        """
+        graph = self.get_validation_graph(function_name)
+        if not graph:
+            raise ValueError(f"No validation graph for: {function_name}")
+        
+        context = self.create_enforcement_context(function_name)
+        
+        if pipeline_config:
+            orchestrator = InvocationOrchestrator(
+                self.validation_engine,
+                self.ownership_registry,
+                pipeline_config
+            )
+        else:
+            orchestrator = self.orchestrator
+        
+        return orchestrator.execute_pipeline(
+            function_name,
+            graph,
+            inputs,
+            context
+        )
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get adapter statistics."""
