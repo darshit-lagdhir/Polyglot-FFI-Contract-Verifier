@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -4523,6 +4523,364 @@ class CompatibilityMatrixBuilder:
         return self.matrix
 
 
+class LifecycleStage(Enum):
+    """Version lifecycle stage."""
+
+    DEVELOPMENT = "development"
+    PREVIEW = "preview"
+    STABLE = "stable"
+    DEPRECATED = "deprecated"
+    END_OF_LIFE = "end_of_life"
+
+
+class SupportTier(Enum):
+    """Support tier for version."""
+
+    FULL = "full"
+    MAINTENANCE = "maintenance"
+    EXTENDED = "extended"
+    NONE = "none"
+
+
+@dataclass
+class DeprecationNotice:
+    """Deprecation notice for a version."""
+
+    version: str
+    deprecated_at: str  # ISO 8601 date
+    end_of_life_at: str  # ISO 8601 date
+    reason: str
+    replacement_version: Optional[str] = None
+    migration_guide_url: Optional[str] = None
+    breaking_changes: List[str] = field(default_factory=list)
+
+    def is_deprecated(self) -> bool:
+        """Check if currently deprecated."""
+        now = datetime.now(timezone.utc)
+        deprecated_date = datetime.fromisoformat(self.deprecated_at.replace("Z", "+00:00"))
+        return now >= deprecated_date
+
+    def is_end_of_life(self) -> bool:
+        """Check if end-of-life reached."""
+        now = datetime.now(timezone.utc)
+        eol_date = datetime.fromisoformat(self.end_of_life_at.replace("Z", "+00:00"))
+        return now >= eol_date
+
+    def days_until_eol(self) -> int:
+        """Days until end-of-life."""
+        now = datetime.now(timezone.utc)
+        eol_date = datetime.fromisoformat(self.end_of_life_at.replace("Z", "+00:00"))
+        delta = eol_date - now
+        return max(0, delta.days)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "deprecated_at": self.deprecated_at,
+            "end_of_life_at": self.end_of_life_at,
+            "reason": self.reason,
+            "replacement_version": self.replacement_version,
+            "migration_guide_url": self.migration_guide_url,
+            "breaking_changes": self.breaking_changes,
+            "days_until_eol": self.days_until_eol(),
+        }
+
+
+@dataclass
+class VersionLifecycle:
+    """Lifecycle information for a version."""
+
+    version: str
+    stage: LifecycleStage
+    support_tier: SupportTier
+    released_at: Optional[str] = None
+    stable_at: Optional[str] = None
+    deprecation_notice: Optional[DeprecationNotice] = None
+    stability_guarantees: List[str] = field(default_factory=list)
+
+    def is_production_ready(self) -> bool:
+        """Check if version is production-ready."""
+        return self.stage in [LifecycleStage.STABLE, LifecycleStage.DEPRECATED]
+
+    def is_supported(self) -> bool:
+        """Check if version is currently supported."""
+        if self.deprecation_notice and self.deprecation_notice.is_end_of_life():
+            return False
+        return self.stage != LifecycleStage.END_OF_LIFE
+
+    def get_support_description(self) -> str:
+        """Get human-readable support description."""
+        if self.stage == LifecycleStage.END_OF_LIFE:
+            return "No longer supported"
+
+        if self.deprecation_notice and self.deprecation_notice.is_deprecated():
+            days = self.deprecation_notice.days_until_eol()
+            return f"Deprecated, {days} days until end-of-life"
+
+        tier_desc = {
+            SupportTier.FULL: "Fully supported",
+            SupportTier.MAINTENANCE: "Maintenance mode (security fixes only)",
+            SupportTier.EXTENDED: "Extended support",
+            SupportTier.NONE: "No support",
+        }
+
+        return tier_desc.get(self.support_tier, "Unknown")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "version": self.version,
+            "stage": self.stage.value,
+            "support_tier": self.support_tier.value,
+            "released_at": self.released_at,
+            "stable_at": self.stable_at,
+            "deprecation_notice": self.deprecation_notice.to_dict() if self.deprecation_notice else None,
+            "stability_guarantees": self.stability_guarantees,
+            "is_production_ready": self.is_production_ready(),
+            "is_supported": self.is_supported(),
+            "support_description": self.get_support_description(),
+        }
+
+
+class LifecycleManager:
+    """Manages version lifecycles."""
+
+    def __init__(self):
+        self.lifecycles: Dict[str, VersionLifecycle] = {}
+
+    def add_version(self, lifecycle: VersionLifecycle) -> None:
+        """Add version lifecycle."""
+        self.lifecycles[lifecycle.version] = lifecycle
+
+    def get_lifecycle(self, version: str) -> Optional[VersionLifecycle]:
+        """Get lifecycle for version."""
+        return self.lifecycles.get(version)
+
+    def get_supported_versions(self) -> List[str]:
+        """Get all currently supported versions."""
+        return [v for v, lc in self.lifecycles.items() if lc.is_supported()]
+
+    def get_deprecated_versions(self) -> List[str]:
+        """Get all deprecated versions."""
+        deprecated = []
+        for v, lc in self.lifecycles.items():
+            if lc.stage == LifecycleStage.DEPRECATED:
+                deprecated.append(v)
+        return deprecated
+
+    def get_production_ready_versions(self) -> List[str]:
+        """Get all production-ready versions."""
+        return [v for v, lc in self.lifecycles.items() if lc.is_production_ready()]
+
+    def deprecate_version(
+        self, version: str, reason: str, eol_days: int = 365, replacement_version: Optional[str] = None
+    ) -> bool:
+        """Deprecate a version."""
+        lifecycle = self.lifecycles.get(version)
+        if not lifecycle:
+            return False
+
+        now = datetime.now(timezone.utc)
+        deprecated_at = now.isoformat().replace("+00:00", "Z")
+        eol_at = (now + timedelta(days=eol_days)).isoformat().replace("+00:00", "Z")
+
+        notice = DeprecationNotice(
+            version=version,
+            deprecated_at=deprecated_at,
+            end_of_life_at=eol_at,
+            reason=reason,
+            replacement_version=replacement_version,
+        )
+
+        lifecycle.stage = LifecycleStage.DEPRECATED
+        lifecycle.support_tier = SupportTier.MAINTENANCE
+        lifecycle.deprecation_notice = notice
+
+        return True
+
+    def retire_version(self, version: str) -> bool:
+        """Retire version to end-of-life."""
+        lifecycle = self.lifecycles.get(version)
+        if not lifecycle:
+            return False
+
+        lifecycle.stage = LifecycleStage.END_OF_LIFE
+        lifecycle.support_tier = SupportTier.NONE
+
+        return True
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "lifecycles": {v: lc.to_dict() for v, lc in self.lifecycles.items()},
+            "supported_versions": self.get_supported_versions(),
+            "deprecated_versions": self.get_deprecated_versions(),
+        }
+
+
+class DeprecationPolicy:
+    """Defines deprecation policies."""
+
+    def __init__(
+        self, name: str, deprecation_period_days: int = 180, eol_period_days: int = 365, minimum_notice_days: int = 90
+    ):
+        self.name = name
+        self.deprecation_period_days = deprecation_period_days
+        self.eol_period_days = eol_period_days
+        self.minimum_notice_days = minimum_notice_days
+
+    def calculate_eol_date(self, deprecation_date: str) -> str:
+        """Calculate EOL date from deprecation date."""
+        dep_date = datetime.fromisoformat(deprecation_date.replace("Z", "+00:00"))
+        eol_date = dep_date + timedelta(days=self.eol_period_days)
+        return eol_date.isoformat() + "Z"
+
+    def validate_deprecation_notice(self, notice: DeprecationNotice) -> Dict[str, Any]:
+        """Validate deprecation notice against policy."""
+        issues = []
+        warnings = []
+
+        # Check minimum notice period
+        dep_date = datetime.fromisoformat(notice.deprecated_at.replace("Z", "+00:00"))
+        eol_date = datetime.fromisoformat(notice.end_of_life_at.replace("Z", "+00:00"))
+        notice_days = (eol_date - dep_date).days
+
+        if notice_days < self.minimum_notice_days:
+            issues.append(f"Notice period ({notice_days} days) is less than minimum ({self.minimum_notice_days} days)")
+
+        # Check replacement version specified
+        if not notice.replacement_version:
+            warnings.append("No replacement version specified")
+
+        # Check migration guide
+        if not notice.migration_guide_url:
+            warnings.append("No migration guide URL provided")
+
+        return {"valid": len(issues) == 0, "issues": issues, "warnings": warnings}
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "name": self.name,
+            "deprecation_period_days": self.deprecation_period_days,
+            "eol_period_days": self.eol_period_days,
+            "minimum_notice_days": self.minimum_notice_days,
+        }
+
+
+class VersionRetirementPlanner:
+    """Plans version retirements."""
+
+    def __init__(self, lifecycle_manager: LifecycleManager):
+        self.manager = lifecycle_manager
+
+    def plan_retirement(self, version: str, retirement_strategy: str = "graceful") -> Dict[str, Any]:
+        """Plan version retirement."""
+        lifecycle = self.manager.get_lifecycle(version)
+        if not lifecycle:
+            return {"success": False, "error": "Version not found"}
+
+        if lifecycle.stage == LifecycleStage.END_OF_LIFE:
+            return {"success": False, "error": "Version already retired"}
+
+        plan = {"success": True, "version": version, "strategy": retirement_strategy, "phases": []}
+
+        if retirement_strategy == "graceful":
+            plan["phases"] = [
+                {
+                    "phase": 1,
+                    "name": "Deprecation Notice",
+                    "duration_days": 180,
+                    "actions": ["Announce deprecation", "Update documentation", "Publish migration guide"],
+                },
+                {
+                    "phase": 2,
+                    "name": "Maintenance Mode",
+                    "duration_days": 180,
+                    "actions": ["Security fixes only", "No new features", "Encourage migration"],
+                },
+                {
+                    "phase": 3,
+                    "name": "End-of-Life",
+                    "duration_days": 0,
+                    "actions": ["Stop all updates", "Remove from supported versions list"],
+                },
+            ]
+        elif retirement_strategy == "forced":
+            plan["phases"] = [
+                {
+                    "phase": 1,
+                    "name": "Final Notice",
+                    "duration_days": 90,
+                    "actions": ["Final warning", "Mandatory upgrade notice"],
+                },
+                {
+                    "phase": 2,
+                    "name": "Immediate Retirement",
+                    "duration_days": 0,
+                    "actions": ["Remove support", "Bindings may fail to compile"],
+                },
+            ]
+
+        return plan
+
+    def get_retirement_timeline(self, version: str) -> Dict[str, Any]:
+        """Get retirement timeline for version."""
+        lifecycle = self.manager.get_lifecycle(version)
+        if not lifecycle or not lifecycle.deprecation_notice:
+            return {"has_timeline": False}
+
+        notice = lifecycle.deprecation_notice
+
+        return {
+            "has_timeline": True,
+            "version": version,
+            "deprecated_at": notice.deprecated_at,
+            "end_of_life_at": notice.end_of_life_at,
+            "days_remaining": notice.days_until_eol(),
+            "replacement_version": notice.replacement_version,
+            "migration_guide": notice.migration_guide_url,
+        }
+
+
+class StabilityGuaranteeChecker:
+    """Checks if version changes violate stability guarantees."""
+
+    def __init__(self, lifecycle_manager: LifecycleManager):
+        self.manager = lifecycle_manager
+
+    def check_compatibility_with_guarantees(
+        self, baseline_version: str, candidate_version: str, diff: Any  # DetailedDiff
+    ) -> Dict[str, Any]:
+        """Check if diff violates stability guarantees."""
+        baseline_lc = self.manager.get_lifecycle(baseline_version)
+
+        if not baseline_lc:
+            return {"checked": False, "reason": "Baseline version lifecycle not found"}
+
+        violations = []
+        warnings = []
+
+        # Check if baseline is stable
+        if baseline_lc.stage == LifecycleStage.STABLE:
+            # Stable versions should not have breaking changes in minor/patch updates
+            baseline_parts = baseline_version.split(".")
+            candidate_parts = candidate_version.split(".")
+
+            if len(baseline_parts) >= 1 and len(candidate_parts) >= 1:
+                if baseline_parts[0] == candidate_parts[0]:
+                    # Same major version
+                    breaking_count = len(diff.get_breaking_changes())
+                    if breaking_count > 0:
+                        violations.append(
+                            f"Breaking changes detected in same major version "
+                            f"({baseline_version} → {candidate_version})"
+                        )
+
+        return {"checked": True, "compliant": len(violations) == 0, "violations": violations, "warnings": warnings}
+
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -4628,4 +4986,13 @@ __all__ = [
     "CompatibilityRecommendationEngine",
     "VersionRangeSpec",
     "CompatibilityMatrixBuilder",
+    # From Prompt 14
+    "LifecycleStage",
+    "SupportTier",
+    "DeprecationNotice",
+    "VersionLifecycle",
+    "LifecycleManager",
+    "DeprecationPolicy",
+    "VersionRetirementPlanner",
+    "StabilityGuaranteeChecker",
 ]
