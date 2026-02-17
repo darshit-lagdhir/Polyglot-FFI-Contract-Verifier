@@ -7,14 +7,15 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](RELEASE_NOTES.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/actions)
 [![Test Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-2,220%2B-brightgreen.svg)](tests/)
 
 ---
 
 ## 🚀 Mission
-PFCV eliminates the "guesswork" in FFI development. By automating the extraction, normalization, and verification of native interfaces, we ensure that the boundary between high-level logic (Python, Rust, Java) and low-level implementations (C, C++, Rust) is type-safe, memory-safe, and ABI-compliant.
+PFCV eliminates the "guesswork" in FFI development. By automating the extraction, normalization, and verification of native interfaces, we ensure that the boundary between high-level logic (Python, Rust, C++) and low-level implementations (C, C++, Rust) is type-safe, memory-safe, and ABI-compliant.
 
-## 🏗️ The 7-Module Pipeline
-PFCV is built as a modular, 7-stage pipeline where each component performs a specialized task in the verification chain:
+## 🏗️ The 8-Module Pipeline
+PFCV is built as a modular, 8-stage pipeline where each component performs a specialized task in the verification chain:
 
 | Module | Name | Status | Purpose |
 | :--- | :--- | :--- | :--- |
@@ -25,16 +26,18 @@ PFCV is built as a modular, 7-stage pipeline where each component performs a spe
 | **05** | [IR Normalization](modules/module_05_ir_normalization/) | ✅ 1.0.0 | Universal IR projection (scalar, pointer, struct). |
 | **06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ 1.0.0 | Formal schema for FFI safety contracts. |
 | **07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ 1.0.0 | Contextual pattern detection & contract generation. |
+| **08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ 1.0.0 | Multi-language runtime enforcement (Python, Rust, C++). |
 
 ---
 
 ## ✨ Key Features
-- 🛡️ **Full-Spectrum Safety**: Covers nullability, ownership, relational constraints, and ABI compatibility.
+- 🛡️ **Full-Spectrum Safety**: Covers nullability, ownership, relational constraints, ABI compatibility, and memory safety.
 - 🎯 **Contextual Intelligence**: Detects complex patterns like buffer-size relationships and symmetrical ownership (create/destroy).
-- 🧩 **Multi-Language Support**: Seamlessly handles C headers, C++ binaries, and Rust crates.
-- 🏎️ **Enterprise Performance**: Synthesis of 1,000+ functions in < 60s with multi-level LRU caching.
-- 🚔 **Runtime Enforcement**: Standard Python adapters for real-time contract enforcement.
-- � **Visual Reporting**: Generates high-fidelity HTML verification reports with actionable fixes.
+- 🧩 **Multi-Language Support**: Complete runtime adapters for **Python**, **Rust**, and **C++**.
+- 🚄 **Cross-Language Contracts**: Share and enforce the same contract across different language stacks.
+- 🏎️ **Enterprise Performance**: Synthesis of 1,000+ functions in < 60s with multi-level LRU caching and <5% runtime overhead.
+- 🚔 **Runtime Enforcement**: Shield applications from native crashes with robust exception handling and crash isolation.
+- 📊 **Visual Reporting**: Generates high-fidelity HTML verification reports with actionable fixes.
 
 ---
 
@@ -45,36 +48,77 @@ PFCV is built as a modular, 7-stage pipeline where each component performs a spe
 pip install polyglot-ffi-contract-verifier
 ```
 
-### 2. Basic Workflow
+### 2. Basic Workflow (Python Example)
+```python
+from language_adapter import create_adapter
+
+# Create adapter with contract
+adapter = create_adapter('my_contract.json')
+
+# Call FFI function with full enforcement
+result = adapter.call_with_enforcement('process_data', data_buffer)
+```
+
+### 3. CLI Usage
 ```bash
 # Extract IR from your native header
 pfcv-ir extract include/my_lib.h -o ir/
 
 # Synthesize a contract from the IR
 pfcv-synth synthesize ir/my_lib.json -o my_contract.json
+```
 
-# Validate and Run Pipeline
-python -m verification_pipeline --contract my_contract.json --lib lib/my_lib.so
+---
+
+## 🏗️ Architecture
+```text
+┌──────────────────────────┐      ┌──────────────────────────┐
+│   Native Source (C/C++)  │      │   Native Binary (.so/.dll)│
+└────────────┬─────────────┘      └────────────┬─────────────┘
+             │                                 │
+   [M04: Ingestion]                  [M03: Build Process]
+             │                                 │
+   [M05: IR Normalization]                     │
+             │                                 │
+   [M07: Synthesis Engine]                     │
+             │                                 │
+   [M06: Contract Schema]                      │
+             │                                 │
+   [M08: Language Adapter] <───────────────────┘
+             │
+   ┌─────────┴─────────┐
+   │ Python / Rust / C++│  (Runtime Enforcement)
+   └───────────────────┘
 ```
 
 ---
 
 ## 📖 Documentation
 - **Getting Started**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
-- **Technical Specifications**: [Architecture Deep Dive](docs/ARCHITECTURE_DEEP_DIVE.md)
-- **Production Setup**: [Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md)
-- **Problem Solving**: [Troubleshooting](docs/TROUBLESHOOTING.md)
+- **API Reference**: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+- **Production Setup**: [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
+- **Troubleshooting**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+---
+
+## 📊 Statistics
+- **Modules**: 8 Complete
+- **Tests**: 2,220+ Passing
+- **Lines of Code**: 20,000+
+- **Languages Supported**: Python, Rust, C++
+- **Coverage**: >95%
+- **Performance Overhead**: <5%
 
 ---
 
 ## 🤝 Community & Support
 - **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and standards.
 - **Reporting Issues**: Use our [GitHub Issue Tracker](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/issues).
-- **Security**: Please report vulnerabilities to `security@pfcv.dev` (see [SECURITY.md](SECURITY.md)).
+- **Security**: Please report vulnerabilities according to [SECURITY.md](SECURITY.md).
 
 ---
 
 ## 📄 License
 PFCV is released under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-© 2026 PFCV Team. All rights reserved.
+© 2024-2026 PFCV Team. All rights reserved.

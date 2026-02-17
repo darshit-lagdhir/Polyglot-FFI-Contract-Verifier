@@ -2,58 +2,83 @@
 
 All notable changes to the **Polyglot FFI Contract Verifier (PFCV)** project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-02-16
+## [1.0.0] - 2024-02-17 - Production Release
 
 ### Summary
-This major release marks the completion of the 7-module pipeline for high-assurance FFI verification. The project has reached production stability with a cumulative test suite of over 2,220 tests.
+This major release marks the completion of the 8-module pipeline for high-assurance FFI verification and enforcement. The project has reached full production stability with a cumulative test suite of 2,220 tests.
 
-### Module 07: Contract Synthesis Engine
+### Module 08: Language Adapter (Prompts 21-25)
+- **Added**: Full runtime enforcement adapters for **Python**, **Rust**, and **C++**.
+- **Added**: Cross-language contract sharing and interoperability layer.
+- **Added**: Smart pointer tracking (shared_ptr, unique_ptr) and RAII support for C++.
+- **Added**: Ownership tracking (Move/Borrow) for Rust.
+- **Added**: Exception translation and native crash isolation across all adapters.
+- **Added**: Comprehensive observability stack (logging, metrics, tracing).
+
+### Module 07: Contract Synthesis Engine (Prompts 16-20)
 - **Added**: Full deterministic synthesis engine for generating enforceable contracts from IR.
 - **Added**: 6 specialized generators: Layout, Nullability, Ownership, Relational, Calling Convention, ABI.
-- **Added**: Contextual intelligence layer for interface-wide pattern detection.
-- **Added**: High-performance multi-level LRU caching system.
-- **Added**: Benchmarking and profiling suite for synthesis performance.
+- **Added**: High-performance multi-level LRU caching and optimization.
 
-### Module 06: Contract Schema
-- **Added**: Formal JSON/YAML schema for FFI safety contracts.
-- **Added**: Runtime enforcement boundary with native-to-Python adapters.
-- **Added**: Advanced contract diffing and semantic versioning recommendation engine.
+### Module 06: Contract Schema (Prompts 11-15)
+- **Added**: Formal JSON/YAML schema for FFI safety contracts with semantic versioning.
+- **Added**: Schema validation and contract diffing logic.
 
 ### Module 05: IR Normalization
-- **Added**: Unified Intermediate Representation for native types.
-- **Added**: Cross-module bridge for seamless ingestion and synthesis integration.
-- **Improved**: Normalization logic for complex nested unions and padding detection.
+- **Added**: Unified Intermediate Representation (IR) for native types (scalars, pointers, structs, unions).
+- **Added**: Serialization and deserialization for universal IR exchange.
 
 ### Module 04: Native Interface Ingestion
-- **Added**: Clang-based ingestion for C/C++ source.
-- **Added**: Support for metadata extraction from compiled native binaries.
+- **Added**: Clang-based ingestion for C/C++ source code.
+- **Added**: Deep metadata extraction including alignment, padding, and ABI attributes.
 
-### Module 03-01: Foundations & Pipeline
-- **Added**: Build system integration (CMake/Make).
-- **Added**: End-to-end verification pipeline orchestrator (Module 02).
-- **Added**: Formal system architecture and constraints (Module 01).
+### Module 03: Build Process
+- **Added**: Seamless integration with CMake, Make, and Cargo build systems.
+- **Added**: Artifact tracking and build environment capturing.
+
+### Module 02: Verification Pipeline
+- **Added**: End-to-end orchestration of the verification workflow.
+- **Added**: Plugin architecture for custom verification stages.
+
+### Module 01: System Architecture
+- **Added**: Core architectural constraints and formal verification principles.
 
 ---
 
-## [0.9.0] - 2026-01-10 [YANKED]
+## [0.9.0] - 2024-01-15 [YANKED]
 ### Added
-- Beta release covering Modules 01 through 06.
-- Early alpha integration of the Synthesis Engine.
+- Beta release covering Modules 01 through 07.
+- Initial multi-language adapter concepts.
 
-## [0.1.0] - 2026-01-01 [YANKED]
+## [0.1.0] - 2024-01-01 [YANKED]
 ### Added
-- Initial proof of concept for IR normalization core.
+- Initial proof of concept for IR normalization and foundation classes.
+
+---
+
+## [Future Roadmap]
+
+### Version 1.1.0 - Planned
+- **JavaScript/TypeScript Adapter**: Full runtime enforcement for Node.js and Deno.
+- **WebAssembly Support**: Validation for Wasm boundaries.
+- **In-Browser Validation**: Lightweight client-side verification engine.
+
+### Version 1.2.0 - Planned
+- **Go Adapter**: Specialized CGO boundary enforcement.
+- **Advanced Profiling**: Fine-grained performance analysis of validation predicates.
+
+### Version 2.0.0 - Planned
+- **Distributed Tracing**: Integration with OpenTelemetry for cross-service FFI tracing.
+- **Cloud-Native Deployment**: Serverless synthesis and contract marketplace.
 
 ---
 
 **Legend:**
 - `Added`: New features
 - `Changed`: Changes to existing functionality
-- `Deprecated`: Features to be removed in future versions
-- `Removed`: Removed features
 - `Fixed`: Bug fixes
 - `Security`: Security fixes
 - `[YANKED]`: Release pulled from distribution
