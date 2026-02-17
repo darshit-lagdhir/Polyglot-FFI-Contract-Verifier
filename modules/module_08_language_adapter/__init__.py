@@ -1,0 +1,35 @@
+""" Language Adapter - Runtime FFI Enforcement System. """
+
+from .language_adapter import (
+    ClauseSeverity,
+    OwnershipKind,
+    ValidationStatus,
+    EnforcementMode,
+    ValidationNode,
+    ValidationGraph,
+    OwnershipState,
+    EnforcementContext,
+    ViolationReport,
+    ContractProjector,
+    OwnershipRegistry,
+    AdapterConfig,
+    LanguageAdapter,
+    __version__,
+)
+
+__all__ = [
+    'ClauseSeverity',
+    'OwnershipKind',
+    'ValidationStatus',
+    'EnforcementMode',
+    'ValidationNode',
+    'ValidationGraph',
+    'OwnershipState',
+    'EnforcementContext',
+    'ViolationReport',
+    'ContractProjector',
+    'OwnershipRegistry',
+    'AdapterConfig',
+    'LanguageAdapter',
+    '__version__',
+]
