@@ -5674,6 +5674,29 @@ class PythonAdapterComplete(PythonAdapter):
         
         # Documentation system
         self.documentation = DocumentationManager(self)
+        
+        # Optimization management
+        self.optimization_manager = OptimizationManager(self)
+    
+    def enable_caching(self) -> None:
+        """Enable validation caching."""
+        self.optimization_manager.enable_caching()
+    
+    def disable_caching(self) -> None:
+        """Disable validation caching."""
+        self.optimization_manager.disable_caching()
+    
+    def enable_profiling(self) -> None:
+        """Enable performance profiling."""
+        self.optimization_manager.enable_profiling()
+    
+    def disable_profiling(self) -> None:
+        """Disable performance profiling."""
+        self.optimization_manager.disable_profiling()
+    
+    def get_optimization_report(self) -> Dict[str, Any]:
+        """Get optimization report."""
+        return self.optimization_manager.get_optimization_report()
     
     def enable_diagnostic_mode(self) -> None:
         """Enable diagnostic collection."""
@@ -6966,6 +6989,8 @@ class ValidationCache:
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.access_times: Dict[str, float] = {}
         self.enabled = True
+        self.hit_count = 0
+        self.miss_count = 0
     
     def _make_key(
         self,
@@ -7011,17 +7036,20 @@ class ValidationCache:
         key = self._make_key(function_name, clause_id, input_hash)
         
         if key not in self.cache:
+            self.miss_count += 1
             return None
         
         # Check TTL
         import time
         if time.time() - self.access_times[key] > self.ttl_seconds:
+            self.miss_count += 1
             del self.cache[key]
             del self.access_times[key]
             return None
         
         # Update access time
         self.access_times[key] = time.time()
+        self.hit_count += 1
         
         return self.cache[key]['result']
     
@@ -7093,10 +7121,14 @@ class ValidationCache:
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get cache statistics."""
+        total = self.hit_count + self.miss_count
+        hit_rate = self.hit_count / total if total > 0 else 0.0
         return {
             'entries': len(self.cache),
             'max_entries': self.max_entries,
-            'ttl_seconds': self.ttl_seconds,
+            'hit_count': self.hit_count,
+            'miss_count': self.miss_count,
+            'hit_rate': hit_rate,
             'enabled': self.enabled
         }
 
