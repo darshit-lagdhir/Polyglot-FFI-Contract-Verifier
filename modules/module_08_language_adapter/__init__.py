@@ -25,6 +25,13 @@ from .language_adapter import (
     NativeCrashException,
     CrashIsolationBoundary,
     ExceptionTranslator,
+    CompoundPredicate,
+    ConditionalPredicate,
+    ExpressionPredicate,
+    AlignmentPredicate,
+    EnumPredicate,
+    BitwisePredicate,
+    PredicateRegistry,
     __version__,
 )
 
@@ -53,5 +60,12 @@ __all__ = [
     'NativeCrashException',
     'CrashIsolationBoundary',
     'ExceptionTranslator',
+    'CompoundPredicate',
+    'ConditionalPredicate',
+    'ExpressionPredicate',
+    'AlignmentPredicate',
+    'EnumPredicate',
+    'BitwisePredicate',
+    'PredicateRegistry',
     '__version__',
 ]

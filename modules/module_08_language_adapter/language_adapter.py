@@ -810,6 +810,199 @@ class PredicateFactory:
         
         return predicate
 
+    @staticmethod
+    def create_compound_predicate(
+        operator: str,
+        sub_predicates: List[Callable]
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create compound predicate from sub-predicates.
+        
+        Args:
+            operator: Logical operator ('and', 'or', 'not')
+            sub_predicates: List of predicate functions
+            
+        Returns:
+            Compound predicate function
+        """
+        compound = CompoundPredicate(operator, sub_predicates)
+        return compound.__call__
+
+    @staticmethod
+    def create_conditional_predicate(
+        condition_expr: str,
+        then_predicate: Callable,
+        else_predicate: Optional[Callable] = None
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create conditional predicate from expression.
+        
+        Args:
+            condition_expr: Condition expression string
+            then_predicate: Predicate if condition true
+            else_predicate: Predicate if condition false
+            
+        Returns:
+            Conditional predicate function
+        """
+        condition_pred = ExpressionPredicate(condition_expr)
+        
+        def condition_func(inputs: List[Any], params: List[int]) -> bool:
+            return condition_pred(inputs, params)
+            
+        conditional = ConditionalPredicate(
+            condition_func,
+            then_predicate,
+            else_predicate
+        )
+        return conditional.__call__
+
+    @staticmethod
+    def create_expression_predicate(
+        expression: str
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create expression-based predicate.
+        
+        Args:
+            expression: Python expression to evaluate
+            
+        Returns:
+            Expression predicate function
+        """
+        pred = ExpressionPredicate(expression)
+        return pred.__call__
+
+    @staticmethod
+    def create_alignment_predicate(
+        alignment: int
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create alignment validation predicate.
+        
+        Args:
+            alignment: Required alignment in bytes
+            
+        Returns:
+            Alignment predicate function
+        """
+        pred = AlignmentPredicate(alignment)
+        return pred.__call__
+
+    @staticmethod
+    def create_enum_predicate(
+        allowed_values: List[Any]
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create enum validation predicate.
+        
+        Args:
+            allowed_values: List of allowed enum values
+            
+        Returns:
+            Enum predicate function
+        """
+        pred = EnumPredicate(allowed_values)
+        return pred.__call__
+
+    @staticmethod
+    def create_bitwise_predicate(
+        required_set: int = 0,
+        required_unset: int = 0
+    ) -> Callable[[List[Any], List[int]], bool]:
+        """
+        Create bitwise validation predicate.
+        
+        Args:
+            required_set: Bits that must be set
+            required_unset: Bits that must be unset
+            
+        Returns:
+            Bitwise predicate function
+        """
+        pred = BitwisePredicate(required_set, required_unset)
+        return pred.__call__
+
+    @staticmethod
+    def create_from_metadata(metadata: Dict[str, Any]) -> Callable:
+        """
+        Create predicate from metadata dictionary.
+        
+        Enables contract-driven predicate generation.
+        
+        Args:
+            metadata: Clause metadata containing type and parameters
+            
+        Returns:
+            Predicate function
+        """
+        clause_type = metadata.get('type', 'unknown')
+        
+        if clause_type == 'range':
+            return PredicateFactory.create_range_predicate(
+                metadata.get('min'),
+                metadata.get('max')
+            )
+        
+        elif clause_type == 'nullability':
+            return PredicateFactory.create_nullability_predicate(
+                metadata.get('allow_null', False)
+            )
+        
+        elif clause_type == 'type':
+            type_name = metadata.get('expected_type', 'int')
+            type_map = {
+                'int': int,
+                'str': str,
+                'float': float,
+                'bool': bool
+            }
+            return PredicateFactory.create_type_predicate(
+                type_map.get(type_name, int)
+            )
+        
+        elif clause_type == 'string_length':
+            return PredicateFactory.create_string_length_predicate(
+                metadata.get('min_length'),
+                metadata.get('max_length')
+            )
+        
+        elif clause_type == 'alignment':
+            return PredicateFactory.create_alignment_predicate(
+                metadata.get('alignment', 1)
+            )
+        
+        elif clause_type == 'enum':
+            return PredicateFactory.create_enum_predicate(
+                metadata.get('allowed_values', [])
+            )
+        
+        elif clause_type == 'bitwise':
+            return PredicateFactory.create_bitwise_predicate(
+                metadata.get('required_set', 0),
+                metadata.get('required_unset', 0)
+            )
+        
+        elif clause_type == 'expression':
+            return PredicateFactory.create_expression_predicate(
+                metadata.get('expression', 'True')
+            )
+        
+        elif clause_type == 'compound':
+            operator = metadata.get('operator', 'and')
+            sub_clauses = metadata.get('sub_clauses', [])
+            sub_predicates = [
+                PredicateFactory.create_from_metadata(sc)
+                for sc in sub_clauses
+            ]
+            return PredicateFactory.create_compound_predicate(
+                operator,
+                sub_predicates
+            )
+        
+        # Default: always pass
+        return lambda inputs, params: True
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 12: VALIDATION ENGINE
@@ -1857,3 +2050,332 @@ class ExceptionTranslator:
             hints.append("Ensure pointer is initialized before use")
         
         return hints
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 21: COMPOUND PREDICATES
+# ════════════════════════════════════════════════════════════════════════════
+
+class CompoundPredicate:
+    """
+    Combines multiple predicates with logical operators.
+    
+    Supports AND, OR, NOT composition for complex validation logic.
+    """
+    
+    def __init__(
+        self,
+        operator: str,
+        predicates: List[Callable[[List[Any], List[int]], bool]]
+    ):
+        """
+        Initialize compound predicate.
+        
+        Args:
+            operator: Logical operator ('and', 'or', 'not')
+            predicates: List of predicate functions
+        """
+        self.operator = operator.lower()
+        self.predicates = predicates
+        
+        if self.operator not in ['and', 'or', 'not']:
+            raise ValueError(f"Invalid operator: {operator}")
+        
+        if self.operator == 'not' and len(predicates) != 1:
+            raise ValueError("NOT operator requires exactly one predicate")
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute compound predicate."""
+        if self.operator == 'and':
+            return all(pred(inputs, param_indices) for pred in self.predicates)
+        elif self.operator == 'or':
+            return any(pred(inputs, param_indices) for pred in self.predicates)
+        elif self.operator == 'not':
+            return not self.predicates[0](inputs, param_indices)
+        
+        return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 22: CONDITIONAL PREDICATE
+# ════════════════════════════════════════════════════════════════════════════
+
+class ConditionalPredicate:
+    """
+    Executes predicate based on runtime condition.
+    
+    Enables context-dependent validation (e.g., validate buffer only if size > 0).
+    """
+    
+    def __init__(
+        self,
+        condition: Callable[[List[Any], List[int]], bool],
+        then_predicate: Callable[[List[Any], List[int]], bool],
+        else_predicate: Optional[Callable[[List[Any], List[int]], bool]] = None
+    ):
+        """
+        Initialize conditional predicate.
+        
+        Args:
+            condition: Condition function
+            then_predicate: Predicate to execute if condition true
+            else_predicate: Predicate to execute if condition false
+        """
+        self.condition = condition
+        self.then_predicate = then_predicate
+        self.else_predicate = else_predicate or (lambda inputs, params: True)
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute conditional predicate."""
+        if self.condition(inputs, param_indices):
+            return self.then_predicate(inputs, param_indices)
+        else:
+            return self.else_predicate(inputs, param_indices)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 23: EXPRESSION PREDICATE
+# ════════════════════════════════════════════════════════════════════════════
+
+class ExpressionPredicate:
+    """
+    Evaluates custom expression for validation.
+    
+    Provides safe expression evaluation with restricted namespace.
+    """
+    
+    def __init__(
+        self,
+        expression: str,
+        allowed_names: Optional[Set[str]] = None
+    ):
+        """
+        Initialize expression predicate.
+        
+        Args:
+            expression: Python expression to evaluate
+            allowed_names: Set of allowed variable names
+        """
+        self.expression = expression
+        self.allowed_names = allowed_names or {'inputs', 'len', 'abs', 'min', 'max'}
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute expression predicate."""
+        # Create safe namespace
+        safe_globals = {
+            '__builtins__': {},
+            'inputs': inputs,
+            'len': len,
+            'abs': abs,
+            'min': min,
+            'max': max
+        }
+        
+        # Validate expression doesn't use forbidden operations
+        forbidden = ['import', 'exec', 'eval', '__', 'open', 'file']
+        if any(word in self.expression.lower() for word in forbidden):
+            raise ValueError(f"Expression contains forbidden operations")
+        
+        try:
+            result = eval(self.expression, safe_globals, {})
+            return bool(result)
+        except Exception:
+            return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 24: ALIGNMENT PREDICATE
+# ════════════════════════════════════════════════════════════════════════════
+
+class AlignmentPredicate:
+    """
+    Validates memory alignment requirements.
+    
+    Ensures pointer addresses meet alignment constraints (e.g., 4-byte, 8-byte).
+    """
+    
+    def __init__(self, alignment: int):
+        """
+        Initialize alignment predicate.
+        
+        Args:
+            alignment: Required alignment in bytes (must be power of 2)
+        """
+        if alignment <= 0 or (alignment & (alignment - 1)) != 0:
+            raise ValueError(f"Alignment must be power of 2, got {alignment}")
+        
+        self.alignment = alignment
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute alignment predicate."""
+        if not param_indices:
+            return True
+        
+        value = inputs[param_indices[0]]
+        
+        # Handle integer addresses
+        if isinstance(value, int):
+            return (value % self.alignment) == 0
+        
+        # Cannot validate non-integer alignment
+        return True
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 25: ENUM PREDICATE
+# ════════════════════════════════════════════════════════════════════════════
+
+class EnumPredicate:
+    """
+    Validates enum value membership.
+    
+    Ensures value is one of allowed enum values.
+    """
+    
+    def __init__(self, allowed_values: List[Any]):
+        """
+        Initialize enum predicate.
+        
+        Args:
+            allowed_values: List of allowed enum values
+        """
+        self.allowed_values = set(allowed_values)
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute enum predicate."""
+        if not param_indices:
+            return True
+        
+        value = inputs[param_indices[0]]
+        return value in self.allowed_values
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 26: BITWISE PREDICATE
+# ════════════════════════════════════════════════════════════════════════════
+
+class BitwisePredicate:
+    """
+    Validates bitfield flags and masks.
+    
+    Checks that required bits are set/unset in bitfield values.
+    """
+    
+    def __init__(
+        self,
+        required_set: int = 0,
+        required_unset: int = 0
+    ):
+        """
+        Initialize bitwise predicate.
+        
+        Args:
+            required_set: Bitmask of bits that must be set
+            required_unset: Bitmask of bits that must be unset
+        """
+        self.required_set = required_set
+        self.required_unset = required_unset
+    
+    def __call__(
+        self,
+        inputs: List[Any],
+        param_indices: List[int]
+    ) -> bool:
+        """Execute bitwise predicate."""
+        if not param_indices:
+            return True
+        
+        value = inputs[param_indices[0]]
+        
+        if not isinstance(value, int):
+            return False
+        
+        # Check required set bits
+        if (value & self.required_set) != self.required_set:
+            return False
+        
+        # Check required unset bits
+        if (value & self.required_unset) != 0:
+            return False
+        
+        return True
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 27: PREDICATE REGISTRY
+# ════════════════════════════════════════════════════════════════════════════
+
+class PredicateRegistry:
+    """
+    Registry for named predicates.
+    
+    Allows predicates to be stored, retrieved, and reused by name.
+    """
+    
+    def __init__(self):
+        self.predicates: Dict[str, Callable] = {}
+    
+    def register(
+        self,
+        name: str,
+        predicate: Callable[[List[Any], List[int]], bool]
+    ) -> None:
+        """
+        Register named predicate.
+        
+        Args:
+            name: Predicate name
+            predicate: Predicate function
+        """
+        self.predicates[name] = predicate
+    
+    def get(self, name: str) -> Optional[Callable]:
+        """
+        Get predicate by name.
+        
+        Args:
+            name: Predicate name
+            
+        Returns:
+            Predicate function or None if not found
+        """
+        return self.predicates.get(name)
+    
+    def unregister(self, name: str) -> bool:
+        """
+        Unregister predicate.
+        
+        Args:
+            name: Predicate name
+            
+        Returns:
+            True if unregistered, False if not found
+        """
+        if name in self.predicates:
+            del self.predicates[name]
+            return True
+        return False
+    
+    def list_predicates(self) -> List[str]:
+        """Get list of registered predicate names."""
+        return list(self.predicates.keys())
