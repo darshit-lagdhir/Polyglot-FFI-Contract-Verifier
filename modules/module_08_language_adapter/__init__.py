@@ -83,6 +83,12 @@ from .language_adapter import (
     OwnershipStateMachine,
     TransferSemantics,
     OwnershipValidator,
+    ContractMetadata,
+    StateSnapshot,
+    HistoryTracker,
+    QueryEngine,
+    MetadataEnricher,
+    IntrospectionAPI,
     __version__,
 )
 
@@ -169,5 +175,11 @@ __all__ = [
     'OwnershipStateMachine',
     'TransferSemantics',
     'OwnershipValidator',
+    'ContractMetadata',
+    'StateSnapshot',
+    'HistoryTracker',
+    'QueryEngine',
+    'MetadataEnricher',
+    'IntrospectionAPI',
     '__version__',
 ]

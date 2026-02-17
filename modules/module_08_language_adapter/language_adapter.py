@@ -6357,3 +6357,545 @@ class OwnershipValidator:
             return (True, None)
         
         return (False, "Access denied: not owner or borrower")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 68: CONTRACT METADATA
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ContractMetadata:
+    """
+    Rich metadata about contract.
+    
+    Contains documentation, versioning, and auxiliary information
+    beyond validation rules.
+    """
+    
+    contract_id: str
+    version: str = "1.0.0"
+    author: Optional[str] = None
+    created_at: Optional[str] = None
+    description: Optional[str] = None
+    source_file: Optional[str] = None
+    
+    # Function metadata
+    function_metadata: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
+    # Platform compatibility
+    supported_platforms: List[str] = field(default_factory=list)
+    min_language_version: Optional[str] = None
+    
+    # Performance hints
+    performance_hints: Dict[str, Any] = field(default_factory=dict)
+    
+    # Security metadata
+    security_level: str = "standard"
+    requires_encryption: bool = False
+    
+    def get_function_metadata(
+        self,
+        function_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get metadata for specific function.
+        
+        Args:
+            function_name: Function name
+            
+        Returns:
+            Function metadata or None
+        """
+        return self.function_metadata.get(function_name)
+    
+    def add_function_metadata(
+        self,
+        function_name: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Add metadata for function.
+        
+        Args:
+            function_name: Function name
+            metadata: Function metadata
+        """
+        self.function_metadata[function_name] = metadata
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'contract_id': self.contract_id,
+            'version': self.version,
+            'author': self.author,
+            'created_at': self.created_at,
+            'description': self.description,
+            'source_file': self.source_file,
+            'function_metadata': self.function_metadata,
+            'supported_platforms': self.supported_platforms,
+            'min_language_version': self.min_language_version,
+            'performance_hints': self.performance_hints,
+            'security_level': self.security_level,
+            'requires_encryption': self.requires_encryption
+        }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 69: STATE SNAPSHOT
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class StateSnapshot:
+    """
+    Point-in-time snapshot of adapter state.
+    
+    Captures complete state for debugging and analysis.
+    """
+    
+    timestamp: str
+    active_invocations: List[Dict[str, Any]] = field(default_factory=list)
+    ownership_state: Dict[str, Any] = field(default_factory=dict)
+    configuration: Dict[str, Any] = field(default_factory=dict)
+    statistics: Dict[str, Any] = field(default_factory=dict)
+    loaded_functions: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            'timestamp': self.timestamp,
+            'active_invocations': self.active_invocations,
+            'ownership_state': self.ownership_state,
+            'configuration': self.configuration,
+            'statistics': self.statistics,
+            'loaded_functions': self.loaded_functions
+        }
+    
+    def to_json(self, indent: int = 2) -> str:
+        """Serialize to JSON."""
+        return json.dumps(self.to_dict(), indent=indent)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 70: HISTORY TRACKER
+# ════════════════════════════════════════════════════════════════════════════
+
+class HistoryTracker:
+    """
+    Tracks invocation history.
+    
+    Records past invocations, violations, and state changes for analysis.
+    """
+    
+    def __init__(self, max_history: int = 1000):
+        self.max_history = max_history
+        self.invocations: List[Dict[str, Any]] = []
+        self.violations: List[Dict[str, Any]] = []
+        self.state_changes: List[Dict[str, Any]] = []
+    
+    def record_invocation(
+        self,
+        function_name: str,
+        success: bool,
+        duration_ms: float,
+        context: Optional[EnforcementContext] = None
+    ) -> None:
+        """
+        Record invocation.
+        
+        Args:
+            function_name: Function name
+            success: Whether invocation succeeded
+            duration_ms: Execution duration
+            context: Enforcement context
+        """
+        self.invocations.append({
+            'function_name': function_name,
+            'success': success,
+            'duration_ms': duration_ms,
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'context_id': context.invocation_id if context else None
+        })
+        
+        # Limit history size
+        if len(self.invocations) > self.max_history:
+            self.invocations.pop(0)
+    
+    def record_violation(
+        self,
+        function_name: str,
+        clause_id: str,
+        message: str
+    ) -> None:
+        """
+        Record contract violation.
+        
+        Args:
+            function_name: Function name
+            clause_id: Violated clause
+            message: Violation message
+        """
+        self.violations.append({
+            'function_name': function_name,
+            'clause_id': clause_id,
+            'message': message,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+        
+        if len(self.violations) > self.max_history:
+            self.violations.pop(0)
+    
+    def record_state_change(
+        self,
+        change_type: str,
+        details: Dict[str, Any]
+    ) -> None:
+        """
+        Record state change.
+        
+        Args:
+            change_type: Type of change
+            details: Change details
+        """
+        self.state_changes.append({
+            'change_type': change_type,
+            'details': details,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+        
+        if len(self.state_changes) > self.max_history:
+            self.state_changes.pop(0)
+    
+    def get_recent_invocations(
+        self,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get recent invocations."""
+        return self.invocations[-count:]
+    
+    def get_recent_violations(
+        self,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get recent violations."""
+        return self.violations[-count:]
+    
+    def get_invocation_statistics(self) -> Dict[str, Any]:
+        """Get invocation statistics."""
+        total = len(self.invocations)
+        if total == 0:
+            return {
+                'total': 0,
+                'successful': 0,
+                'failed': 0,
+                'success_rate': 0.0
+            }
+        
+        successful = len([i for i in self.invocations if i['success']])
+        
+        return {
+            'total': total,
+            'successful': successful,
+            'failed': total - successful,
+            'success_rate': successful / total if total > 0 else 0.0,
+            'average_duration_ms': sum(
+                i['duration_ms'] for i in self.invocations
+            ) / total
+        }
+    
+    def clear_history(self) -> None:
+        """Clear all history."""
+        self.invocations.clear()
+        self.violations.clear()
+        self.state_changes.clear()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 71: QUERY ENGINE
+# ════════════════════════════════════════════════════════════════════════════
+
+class QueryEngine:
+    """
+    Structured query interface for adapter introspection.
+    
+    Supports dot-notation queries to access adapter state and metadata.
+    """
+    
+    def __init__(self, adapter: 'LanguageAdapter'):
+        self.adapter = adapter
+    
+    def query(self, query_path: str) -> Any:
+        """
+        Execute query using dot notation.
+        
+        Args:
+            query_path: Query path (e.g., 'contract.functions')
+            
+        Returns:
+            Query result
+            
+        Raises:
+            ValueError: If query path is invalid
+        """
+        parts = query_path.split('.')
+        
+        if not parts or parts == ['']:
+            raise ValueError("Empty query path")
+        
+        # Route to appropriate handler
+        if parts[0] == 'contract':
+            return self._query_contract(parts[1:])
+        elif parts[0] == 'state':
+            return self._query_state(parts[1:])
+        elif parts[0] == 'stats':
+            return self._query_statistics(parts[1:])
+        elif parts[0] == 'config':
+            return self._query_configuration(parts[1:])
+        else:
+            raise ValueError(f"Unknown query root: {parts[0]}")
+    
+    def _query_contract(self, path: List[str]) -> Any:
+        """Query contract information."""
+        if not path:
+            # Return all contract info
+            return {
+                'fingerprint': self.adapter.contract_fingerprint,
+                'functions': list(self.adapter.validation_graphs.keys())
+            }
+        
+        if path[0] == 'functions':
+            return list(self.adapter.validation_graphs.keys())
+        
+        if path[0] == 'function' and len(path) >= 2:
+            func_name = path[1]
+            graph = self.adapter.get_validation_graph(func_name)
+            
+            if not graph:
+                return None
+            
+            if len(path) == 2:
+                return {
+                    'name': func_name,
+                    'clauses': len(graph.nodes),
+                    'clause_ids': [n.clause_id for n in graph.nodes]
+                }
+            
+            if path[2] == 'parameters':
+                return [n.parameters for n in graph.nodes]
+        
+        return None
+    
+    def _query_state(self, path: List[str]) -> Any:
+        """Query runtime state."""
+        if not path:
+            return {
+                'has_contract': self.adapter.contract_fingerprint is not None,
+                'loaded_functions': len(self.adapter.validation_graphs)
+            }
+        
+        if path[0] == 'ownership' and len(path) >= 2:
+            if path[1] == 'allocations':
+                return self.adapter.ownership_registry.get_statistics()
+        
+        return None
+    
+    def _query_statistics(self, path: List[str]) -> Any:
+        """Query statistics."""
+        # Build stats from adapter state
+        stats = {
+            'loaded_functions': len(self.adapter.validation_graphs),
+            'contract_loaded': self.adapter.contract_fingerprint is not None
+        }
+        
+        # Use get_statistics if available (e.g. PythonAdapterComplete)
+        if hasattr(self.adapter, 'get_statistics'):
+            stats.update(self.adapter.get_statistics())
+        
+        if not path:
+            return stats
+        
+        # Navigate path
+        current = stats
+        for part in path:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+        
+        return current
+    
+    def _query_configuration(self, path: List[str]) -> Any:
+        """Query configuration."""
+        if hasattr(self.adapter, 'config') and self.adapter.config:
+            config_dict = self.adapter.config.to_dict()
+            
+            if not path:
+                return config_dict
+            
+            current = config_dict
+            for part in path:
+                if isinstance(current, dict) and part in current:
+                    current = current[part]
+                else:
+                    return None
+            
+            return current
+        
+        return None
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 72: METADATA ENRICHER
+# ════════════════════════════════════════════════════════════════════════════
+
+class MetadataEnricher:
+    """
+    Enriches runtime data with contract metadata.
+    
+    Adds context and documentation to errors, diagnostics, and reports.
+    """
+    
+    def __init__(self, contract_metadata: Optional[ContractMetadata] = None):
+        self.metadata = contract_metadata
+    
+    def enrich_violation_report(
+        self,
+        report: ViolationReport
+    ) -> Dict[str, Any]:
+        """
+        Enrich violation report with metadata.
+        
+        Args:
+            report: Violation report
+            
+        Returns:
+            Enriched report dictionary
+        """
+        enriched = report.to_dict()
+        
+        if self.metadata:
+            func_metadata = self.metadata.get_function_metadata(
+                report.function_name
+            )
+            
+            if func_metadata:
+                enriched['function_description'] = func_metadata.get(
+                    'description'
+                )
+                enriched['documentation_url'] = func_metadata.get(
+                    'docs_url'
+                )
+        
+        return enriched
+    
+    def enrich_enforcement_context(
+        self,
+        context: EnforcementContext
+    ) -> Dict[str, Any]:
+        """
+        Enrich enforcement context with metadata.
+        
+        Args:
+            context: Enforcement context
+            
+        Returns:
+            Enriched context dictionary
+        """
+        enriched = context.to_dict()
+        
+        if self.metadata:
+            func_metadata = self.metadata.get_function_metadata(
+                context.function_name
+            )
+            
+            if func_metadata:
+                enriched['metadata'] = {
+                    'description': func_metadata.get('description'),
+                    'expected_frequency': func_metadata.get(
+                        'call_frequency'
+                    ),
+                    'performance_hint': func_metadata.get(
+                        'performance_hint'
+                    )
+                }
+        
+        return enriched
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 73: INTROSPECTION API
+# ════════════════════════════════════════════════════════════════════════════
+
+class IntrospectionAPI:
+    """
+    High-level introspection API.
+    
+    Provides convenient methods for common introspection tasks.
+    """
+    
+    def __init__(self, adapter: 'LanguageAdapter'):
+        self.adapter = adapter
+        self.query_engine = QueryEngine(adapter)
+        self.history_tracker = HistoryTracker()
+        self.metadata: Optional[ContractMetadata] = None
+        self.enricher = MetadataEnricher()
+    
+    def set_metadata(self, metadata: ContractMetadata) -> None:
+        """Set contract metadata."""
+        self.metadata = metadata
+        self.enricher = MetadataEnricher(metadata)
+    
+    def get_loaded_functions(self) -> List[str]:
+        """Get list of loaded functions."""
+        return self.query_engine.query('contract.functions')
+    
+    def get_function_info(
+        self,
+        function_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get information about function."""
+        return self.query_engine.query(
+            f'contract.function.{function_name}'
+        )
+    
+    def get_ownership_statistics(self) -> Dict[str, Any]:
+        """Get ownership tracking statistics."""
+        return self.query_engine.query('state.ownership.allocations')
+    
+    def create_snapshot(self) -> StateSnapshot:
+        """
+        Create state snapshot.
+        
+        Returns:
+            StateSnapshot of current state
+        """
+        snapshot = StateSnapshot(
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            ownership_state=self.get_ownership_statistics() or {},
+            configuration=self.query_engine.query('config') or {},
+            statistics=self.query_engine.query('stats') or {},
+            loaded_functions=self.get_loaded_functions()
+        )
+        
+        return snapshot
+    
+    def get_recent_invocations(
+        self,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get recent invocations."""
+        return self.history_tracker.get_recent_invocations(count)
+    
+    def get_recent_violations(
+        self,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get recent violations."""
+        return self.history_tracker.get_recent_violations(count)
+    
+    def get_invocation_statistics(self) -> Dict[str, Any]:
+        """Get invocation statistics from history."""
+        return self.history_tracker.get_invocation_statistics()
+    
+    def query(self, query_path: str) -> Any:
+        """Execute arbitrary query."""
+        return self.query_engine.query(query_path)
