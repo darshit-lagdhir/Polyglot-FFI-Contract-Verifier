@@ -15,7 +15,8 @@ import os
 import sys
 import struct
 import threading
-from typing import List, Dict, Any, Optional, Type
+import ctypes
+from typing import List, Dict, Any, Optional, Type, Tuple, Union, Callable
 from dataclasses import dataclass, field
 
 
@@ -57,6 +58,38 @@ class VersionIncompatibilityError(PFCVBaseError):
         super().__init__(message, "ERR-VER-004")
 
 
+# --- PAL Specific Exceptions ---
+
+class PrototypeAuthorityError(PFCVBaseError):
+    """Root base class for all interposition and signature reconstruction failures."""
+    def __init__(self, message: str, failure_code: str = "ERR-PAL-006"):
+        super().__init__(message, failure_code)
+
+
+class UnsupportedTypeError(PrototypeAuthorityError):
+    """Raised when the Contract contains a type that cannot be safely mapped to ctypes."""
+    def __init__(self, ir_type: str):
+        super().__init__(f"Unsupported native type: {ir_type}")
+        self.failure_code = "ERR-TYPE-008"
+        self.ir_type = ir_type
+
+
+class ABISignatureMismatchError(PrototypeAuthorityError):
+    """Raised if the arity or signature does not align with the Contract."""
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.failure_code = "ERR-SIG-007"
+
+
+class MarshallingViolationError(PrototypeAuthorityError):
+    """Raised during execution when a Python value violates Contract bit-width bounds."""
+    def __init__(self, param_index: int, contract_type: str, message: str):
+        full_msg = f"Parameter {param_index} ({contract_type}) bounds check failed: {message}"
+        super().__init__(full_msg)
+        self.param_index = param_index
+        self.contract_type = contract_type
+
+
 
 # =============================================================================
 # DATA STRUCTURES
@@ -71,6 +104,8 @@ class EnforcementDescriptor:
     name: str
     calling_convention: str
     is_variadic: bool
+    arg_types: List[str] = field(default_factory=list)
+    return_type: str = "VOID"
     symbol_address: Optional[int] = None
     pre_validators: List[Any] = field(default_factory=list)
     post_validators: List[Any] = field(default_factory=list)
@@ -107,6 +142,198 @@ class EnforcementTable:
     def names(self) -> List[str]:
         """Return a sorted list of registered function names."""
         return sorted(self._descriptors.keys())
+
+
+# =============================================================================
+# ABI TYPE FACTORY
+# =============================================================================
+
+class ABITypeFactory:
+    """
+    Deterministic translation layer from Contract IR types to concrete ctypes objects.
+    Enforces bit-width fidelity and platform-specific ABI alignment (LLP64 vs LP64).
+    """
+    
+    _TYPE_MAP = {
+        # Signed Integers
+        "I8": ctypes.c_int8,
+        "I16": ctypes.c_int16,
+        "I32": ctypes.c_int32,
+        "I64": ctypes.c_int64,
+        # Unsigned Integers
+        "U8": ctypes.c_uint8,
+        "U16": ctypes.c_uint16,
+        "U32": ctypes.c_uint32,
+        "U64": ctypes.c_uint64,
+        # Floats
+        "FLOAT32": ctypes.c_float,
+        "FLOAT64": ctypes.c_double,
+        # Misc
+        "BOOL": ctypes.c_bool,
+        "PTR": ctypes.c_void_p,
+        "VOID": None
+    }
+
+    def get_ctypes_type(self, ir_type: str) -> Any:
+        """Translates IR type string to ctypes type class with O(1) performance."""
+        # Case-sensitive check as per Antigravity standards
+        if ir_type not in self._TYPE_MAP:
+            raise UnsupportedTypeError(ir_type)
+        return self._TYPE_MAP[ir_type]
+
+    def is_supported(self, ir_type: str) -> bool:
+        """Proactive verification for contract metadata validation."""
+        return ir_type in self._TYPE_MAP
+
+
+# =============================================================================
+# INVOCATION PROXY GENERATOR
+# =============================================================================
+
+class InvocationProxy:
+    """
+    High-performance wrapper for bound native functions.
+    Enforces 'Zero-Mistake Marshalling' by validating bit-width boundaries
+    before the native code crossing.
+    """
+    
+    __slots__ = ['descriptor', 'bound_function', '_param_types', '_marshaller_cache']
+    
+    # Pre-computed bounds for Marshalling
+    _BOUNDS = {
+        "I8": (-128, 127),
+        "I16": (-32768, 32767),
+        "I32": (-2147483648, 2147483647),
+        "I64": (-9223372036854775808, 9223372036854775807),
+        "U8": (0, 255),
+        "U16": (0, 65535),
+        "U32": (0, 4294967295),
+        "U64": (0, 18446744073709551615),
+    }
+
+    def __init__(self, descriptor: EnforcementDescriptor, bound_function: Any):
+        self.descriptor = descriptor
+        self.bound_function = bound_function
+        # Extraction of parameter types from descriptor placeholder logic
+        # (Assuming pre_validators or a dedicated field stores the IR type metadata)
+        # For Prompt 02, we'll assume the descriptor carries the arg_types list.
+        # Note: EnforcementDescriptor was defined in P1 without arg_types, 
+        # but PAL requires them. I will update EnforcementDescriptor below.
+        self._param_types: Tuple[str, ...] = tuple(getattr(descriptor, 'arg_types', []))
+
+    def _enforce_integer_bounds(self, arg_value: int, contract_type: str, index: int) -> None:
+        """Strict numeric boundary enforcement. No try-except; O(1) comparison only."""
+        if contract_type not in self._BOUNDS:
+            return
+            
+        lower, upper = self._BOUNDS[contract_type]
+        if arg_value < lower or arg_value > upper:
+            raise MarshallingViolationError(
+                param_index=index,
+                contract_type=contract_type,
+                message=f"Value {arg_value} is out of bounds [{lower}, {upper}]."
+            )
+
+    def __call__(self, *args, **kwargs) -> Any:
+        """Hot-path execution orchestrator."""
+        # Step 1: Arity Check
+        if len(args) != len(self._param_types):
+            raise ABISignatureMismatchError(
+                f"Function {self.descriptor.name} expects {len(self._param_types)} "
+                f"positional arguments, but got {len(args)}."
+            )
+            
+        # Step 2: Marshalling (Iterative, no list creation)
+        idx = 0
+        for val, c_type in zip(args, self._param_types):
+            if isinstance(val, int):
+                self._enforce_integer_bounds(val, c_type, idx)
+            idx += 1
+            
+        # Step 3: Native Invocation
+        # (Final implementation will include Crash Guarding/Exception Translation)
+        return self.bound_function(*args)
+
+
+# =============================================================================
+# PROTOTYPE AUTHORITY LAYER (PAL)
+# =============================================================================
+
+class PrototypeAuthority:
+    """
+    The 'Stack Guardian'. Interposes on ctypes binding, overriding developer
+    declarations with Contract ABI Truth.
+    """
+    
+    __slots__ = ['edt', 'type_factory', 'loaded_libraries', 'bound_symbols', '_lock']
+
+    def __init__(self, edt: EnforcementTable, type_factory: Optional[ABITypeFactory] = None):
+        self.edt = edt
+        self.type_factory = type_factory or ABITypeFactory()
+        self.loaded_libraries: Dict[str, Any] = {}
+        self.bound_symbols: Dict[str, InvocationProxy] = {}
+        self._lock = threading.Lock()
+
+    def _select_convention_factory(self, calling_convention: str) -> Any:
+        """Determines CFUNCTYPE vs WINFUNCTYPE based on silicon target."""
+        # 64-bit Windows unifies conventions; 32-bit requires strict routing.
+        if os.name == "nt":
+            if struct.calcsize("P") == 8:
+                return ctypes.CFUNCTYPE
+            if calling_convention == "stdcall":
+                return ctypes.WINFUNCTYPE
+        
+        return ctypes.CFUNCTYPE
+
+    def bind_symbol(self, library_path: str, symbol_name: str) -> InvocationProxy:
+        """
+        Interposes on native symbol resolution and synthesizes an InvocationProxy.
+        Guarantees O(1) lookup on repeated requests via symbol cache.
+        """
+        # Multi-threaded binding safety
+        with self._lock:
+            # Step 0: Cache Lookup
+            cache_key = f"{library_path}::{symbol_name}"
+            if cache_key in self.bound_symbols:
+                return self.bound_symbols[cache_key]
+                
+            # Step 1: Library loading
+            if library_path not in self.loaded_libraries:
+                try:
+                    # Windows optimization: use WinDLL if stdcall is possible globally, 
+                    # but we prefer CDLL and per-function factory selection for granularity.
+                    self.loaded_libraries[library_path] = ctypes.CDLL(library_path)
+                except OSError as e:
+                    raise ContractLoadError(f"Failed to load native library {library_path}: {str(e)}")
+            
+            lib = self.loaded_libraries[library_path]
+            descriptor = self.edt.get(symbol_name)
+            
+            # Step 2: Symbol Extraction
+            try:
+                raw_func = getattr(lib, symbol_name)
+            except AttributeError:
+                raise ABISignatureMismatchError(f"Symbol {symbol_name} not found in {library_path}")
+            
+            # Step 3: Prototype Synthesis
+            arg_types = [self.type_factory.get_ctypes_type(t) for t in getattr(descriptor, 'arg_types', [])]
+            res_type = self.type_factory.get_ctypes_type(getattr(descriptor, 'return_type', 'VOID'))
+            
+            factory = self._select_convention_factory(descriptor.calling_convention)
+            prototype = factory(res_type, *arg_types)
+            
+            # Step 4: Binding Action
+            bound_func = prototype((symbol_name, lib))
+            
+            # Lock the FFI boundary
+            bound_func.argtypes = arg_types
+            bound_func.restype = res_type
+            
+            # Step 5: Wrap in Proxy
+            proxy = InvocationProxy(descriptor, bound_func)
+            self.bound_symbols[cache_key] = proxy
+            
+            return proxy
 
 
 
@@ -279,6 +506,8 @@ class ContractLoader:
                 name=func_data["name"],
                 calling_convention=func_data.get("calling_convention", "cdecl"),
                 is_variadic=func_data.get("is_variadic", False),
+                arg_types=func_data.get("arg_types", []),
+                return_type=func_data.get("return_type", "VOID"),
                 symbol_address=func_data.get("symbol_address")
             )
             # Placeholder for future expansion of lists/dicts
