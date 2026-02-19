@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](RELEASE_NOTES.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier/actions)
 [![Test Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](tests/)
-[![Tests](https://img.shields.io/badge/tests-2,670%2B-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-2,820%2B-brightgreen.svg)](tests/)
 
 ---
 
@@ -27,7 +27,7 @@ PFCV is built as a modular, 8-stage pipeline where each component performs a spe
 | **Module 06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ Complete 1.0.0 | Formal schema for FFI safety contracts. |
 | **Module 07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ Complete 1.0.0 | Contextual pattern detection & contract generation. |
 | **Module 08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ Complete 1.0.0 | Multi-language runtime enforcement (Python, Rust, C++). |
-| **Module 09** | [Python Adapter Model](docs/modules/PYTHON_ADAPTER_MODEL.md) | 🔄 In Progress (3/22) | Specialized, high-performance Python enforcement. |
+| **Module 09** | [Python Adapter Model](docs/modules/PYTHON_ADAPTER_MODEL.md) | 🔄 In Progress (4/22) | Specialized, high-performance Python enforcement. |
 
 ---
 
@@ -104,8 +104,8 @@ pfcv-synth synthesize ir/my_lib.json -o my_contract.json
 
 ## 📊 Statistics
 - **Modules**: 8 Complete, 1 In Progress
-- **Tests**: 2,670+ Passing
-- **Lines of Code**: 35,000+
+- **Tests**: 2,820+ Passing
+- **Lines of Code**: 39,800+
 - **Languages Supported**: Python, Rust, C++
 - **Coverage**: >95%
 - **Performance Overhead**: <5%

@@ -112,6 +112,30 @@ class PinningContextViolation(MemoryMetrologyError):
         super().__init__(message, "ERR-PIN-011")
 
 
+class RelationalEvaluatorError(PFCVBaseError):
+    """Base class for algebraic engine and cross-parameter constraint failures."""
+    def __init__(self, message: str, failure_code: str = "ERR-RCE-012"):
+        super().__init__(message, failure_code)
+
+
+class ASTCompilationError(RelationalEvaluatorError):
+    """Raised during the load phase if a Contract constraint AST is malformed."""
+    def __init__(self, message: str):
+        super().__init__(message, "ERR-AST-013")
+
+
+class RelationalConstraintViolation(RelationalEvaluatorError):
+    """Raised at runtime when a mathematical parameter invariant is breached."""
+    def __init__(self, message: str):
+        super().__init__(message, "ERR-VIOL-014")
+
+
+class AlgebraicOverflowError(RelationalEvaluatorError):
+    """Raised if an internal AST calculation exceeds safe 64-bit boundaries."""
+    def __init__(self, message: str):
+        super().__init__(message, "ERR-OVF-015")
+
+
 
 # =============================================================================
 # DATA STRUCTURES
@@ -131,6 +155,7 @@ class EnforcementDescriptor:
     symbol_address: Optional[int] = None
     pre_validators: List[Any] = field(default_factory=list)
     post_validators: List[Any] = field(default_factory=list)
+    relational_validators: List['ASTNode'] = field(default_factory=list)
     relational_map: Dict[str, Any] = field(default_factory=dict)
     ownership_slots: Dict[str, Any] = field(default_factory=dict)
 
@@ -323,6 +348,166 @@ class LayoutVerificationEngine:
 
 
 # =============================================================================
+# RELATIONAL CONSTRAINT EVALUATOR (AST ENGINE)
+# =============================================================================
+
+class ASTNode:
+    """Base interface for all algebraic execution graph components."""
+    __slots__ = []
+    def evaluate(self, runtime_args: tuple) -> Any:
+        raise NotImplementedError
+    def __str__(self) -> str:
+        raise NotImplementedError
+
+
+class ConstNode(ASTNode):
+    """Leaf node representing a static numeric constant from the Contract."""
+    __slots__ = ['value']
+    def __init__(self, value: Union[int, float]):
+        self.value = value
+    def evaluate(self, runtime_args: tuple) -> Any:
+        return self.value
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+class ParamNode(ASTNode):
+    """Leaf node representing a reference to a function argument."""
+    __slots__ = ['index']
+    def __init__(self, index: int):
+        self.index = index
+    def evaluate(self, runtime_args: tuple) -> Any:
+        try:
+            return runtime_args[self.index]
+        except IndexError:
+            raise RelationalEvaluatorError(f"Missing runtime argument at index {self.index}")
+    def __str__(self) -> str:
+        return f"arg[{self.index}]"
+
+
+class OpNode(ASTNode):
+    """Branch node for mathematical operations with overflow guarding."""
+    __slots__ = ['left', 'right', 'op_func', 'op_symbol']
+    _LIMIT = 1.84e19  # 64-bit threshold as per Antigravity standards
+
+    def __init__(self, left: ASTNode, right: ASTNode, op_func: Any, op_symbol: str):
+        self.left = left
+        self.right = right
+        self.op_func = op_func
+        self.op_symbol = op_symbol
+
+    def evaluate(self, runtime_args: tuple) -> Any:
+        l_val = self.left.evaluate(runtime_args)
+        r_val = self.right.evaluate(runtime_args)
+        
+        # Type Coercion Guard: Strictly numeric/boolean operands only
+        if not isinstance(l_val, (int, float, bool)) or not isinstance(r_val, (int, float, bool)):
+            raise RelationalEvaluatorError(f"Type mismatch in {self.op_symbol}: encountered non-numeric operand.")
+
+        try:
+            res = self.op_func(l_val, r_val)
+            # Arithmetic Overflow Guard
+            if isinstance(res, (int, float)) and abs(res) > self._LIMIT:
+                raise AlgebraicOverflowError(f"Mathematical result {res} exceeds 64-bit safety limits.")
+            return res
+        except (TypeError, ValueError) as e:
+            raise RelationalEvaluatorError(f"Operation {self.op_symbol} failed: {str(e)}")
+        except ZeroDivisionError:
+            raise RelationalEvaluatorError(f"Zero division detected in {self}")
+
+    def __str__(self) -> str:
+        return f"({self.left} {self.op_symbol} {self.right})"
+
+
+class CompareNode(ASTNode):
+    """Root node for boolean relational invariants."""
+    __slots__ = ['left', 'right', 'comp_func', 'comp_symbol']
+    def __init__(self, left: ASTNode, right: ASTNode, comp_func: Any, comp_symbol: str):
+        self.left = left
+        self.right = right
+        self.comp_func = comp_func
+        self.comp_symbol = comp_symbol
+
+    def evaluate(self, runtime_args: tuple) -> bool:
+        l_val = self.left.evaluate(runtime_args)
+        r_val = self.right.evaluate(runtime_args)
+        return bool(self.comp_func(l_val, r_val))
+
+    def __str__(self) -> str:
+        return f"{self.left} {self.comp_symbol} {self.right}"
+
+
+import operator
+
+class ConstraintCompiler:
+    """Safe, depth-limited factory for transforming JSON AST into executable graphs."""
+    __slots__ = []
+
+    _OP_MAP = {
+        'ADD': (operator.add, '+'),
+        'SUB': (operator.sub, '-'),
+        'MUL': (operator.mul, '*'),
+        'DIV': (operator.truediv, '/'),
+        'FLOORDIV': (operator.floordiv, '//'),
+        'MOD': (operator.mod, '%')
+    }
+
+    _COMPARE_MAP = {
+        'GT': (operator.gt, '>'),
+        'LT': (operator.lt, '<'),
+        'GTE': (operator.ge, '>='),
+        'LTE': (operator.le, '<='),
+        'EQ': (operator.eq, '=='),
+        'NEQ': (operator.ne, '!=')
+    }
+
+    @classmethod
+    def compile(cls, node_dict: dict, current_depth: int = 0) -> ASTNode:
+        """Recursive compilation with strict security perimeters."""
+        if current_depth >= 50:
+            raise ASTCompilationError("AST depth limit (50) exceeded. Abortion triggered.")
+        
+        if not isinstance(node_dict, dict):
+            raise ASTCompilationError("Malformed AST: node must be a dictionary.")
+
+        node_type = node_dict.get("type")
+        
+        if node_type == "Const":
+            val = node_dict.get("value")
+            if not isinstance(val, (int, float)):
+                raise ASTCompilationError(f"Const value must be numeric, got {type(val)}")
+            return ConstNode(val)
+            
+        if node_type == "Param":
+            idx = node_dict.get("index")
+            if not isinstance(idx, int) or idx < 0:
+                raise ASTCompilationError(f"Param index must be non-negative int, got {idx}")
+            return ParamNode(idx)
+            
+        if node_type == "Op":
+            op_name = node_dict.get("operator")
+            if op_name not in cls._OP_MAP:
+                raise ASTCompilationError(f"Undocumented operator: {op_name}")
+            
+            op_func, op_sym = cls._OP_MAP[op_name]
+            l_node = cls.compile(node_dict.get("left", {}), current_depth + 1)
+            r_node = cls.compile(node_dict.get("right", {}), current_depth + 1)
+            return OpNode(l_node, r_node, op_func, op_sym)
+            
+        if node_type == "Compare":
+            comp_name = node_dict.get("operator")
+            if comp_name not in cls._COMPARE_MAP:
+                raise ASTCompilationError(f"Undocumented comparator: {comp_name}")
+            
+            comp_func, comp_sym = cls._COMPARE_MAP[comp_name]
+            l_node = cls.compile(node_dict.get("left", {}), current_depth + 1)
+            r_node = cls.compile(node_dict.get("right", {}), current_depth + 1)
+            return CompareNode(l_node, r_node, comp_func, comp_sym)
+
+        raise ASTCompilationError(f"Unknown node type: {node_type}")
+
+
+# =============================================================================
 # INVOCATION PROXY GENERATOR
 # =============================================================================
 
@@ -370,8 +555,21 @@ class InvocationProxy:
                 message=f"Value {arg_value} is out of bounds [{lower}, {upper}]."
             )
 
+    def _evaluate_relational_constraints(self, runtime_args: tuple) -> None:
+        """Hot-path evaluator for compiled algebraic invariants."""
+        validators = getattr(self.descriptor, 'relational_validators', [])
+        if not validators:
+            return
+            
+        for constraint in validators:
+            if not constraint.evaluate(runtime_args):
+                rule_str = str(constraint)
+                raise RelationalConstraintViolation(
+                    f"Invariant [{rule_str}] failed with arguments {runtime_args}."
+                )
+
     def __call__(self, *args, **kwargs) -> Any:
-        """Hot-path execution orchestrator with Memory Pinning."""
+        """Hot-path execution orchestrator with Memory Pinning & RCE."""
         # Step 1: Arity Check
         if len(args) != len(self._param_types):
             raise ABISignatureMismatchError(
@@ -379,19 +577,20 @@ class InvocationProxy:
                 f"positional arguments, but got {len(args)}."
             )
             
+        # Step 2: Scalar Marshalling
+        # Note: We must check scalar bounds before relational logic to ensure stable math
+        idx = 0
+        for val, c_type in zip(args, self._param_types):
+            if isinstance(val, int):
+                self._enforce_integer_bounds(val, c_type, idx)
+            idx += 1
+            
+        # Step 3: Relational Constraint Evaluation (RCE)
+        self._evaluate_relational_constraints(args)
+            
+        # Step 4: Memory Pinning & Native Crossing
         with MemoryPinningContext() as pin_ctx:
-            # Step 2: Marshalling & Pinning
-            idx = 0
-            pinned_args = []
-            for val, c_type in zip(args, self._param_types):
-                if isinstance(val, int):
-                    self._enforce_integer_bounds(val, c_type, idx)
-                
-                # Pin every argument to guarantee survival across the chasm
-                pinned_args.append(pin_ctx.pin(val))
-                idx += 1
-                
-            # Step 3: Native Invocation
+            pinned_args = [pin_ctx.pin(arg) for arg in args]
             return self.bound_function(*pinned_args)
 
 
@@ -661,6 +860,13 @@ class ContractLoader:
                 return_type=func_data.get("return_type", "VOID"),
                 symbol_address=func_data.get("symbol_address")
             )
+            
+            # 5.a Relational Constraint Compilation
+            constraints = func_data.get("relational_constraints", [])
+            for c_dict in constraints:
+                compiled_node = ConstraintCompiler.compile(c_dict)
+                descriptor.relational_validators.append(compiled_node)
+                
             # Placeholder for future expansion of lists/dicts
             self.table.register(descriptor)
 

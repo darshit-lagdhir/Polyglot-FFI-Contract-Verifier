@@ -21,7 +21,7 @@ The Contract Runtime Loader is the secure entry-point for transforming serialize
 - **Memory Optimization**: Uses `__slots__` in `EnforcementDescriptor` classes to minimize memory footprint in large-scale deployments (10,000+ functions).
 - **Collision Protection**: Enforces single-registration logic to prevent silent constraint shadowing.
 
-**STATUS**: PHASE 3 COMPLETE: MEMORY PINNING AND STRUCTURAL METROLOGY ENGINE ACTIVE.
+**STATUS**: PHASE 4 COMPLETE: RELATIONAL CONSTRAINT EVALUATOR AND AST COMPILER ACTIVE.
 
 ## 2. PROTOTYPE AUTHORITY LAYER
 The Prototype Authority Layer (PAL) intercepts the standard `ctypes` binding process, ensuring that the verified Contract serves as the absolute and only authorized source of truth for FFI signatures.
@@ -61,3 +61,16 @@ The Layout Verification Engine performs recursive metrology on complex structure
 - **Padding Trap Detection**: Calculates byte-offsets and sizes for every field, including nested structs and arrays, to ensure they match the native compiler's layout.
 - **DFS Traversal**: Executes a Depth-First Search over the `ctypes.Structure` metadata to prove alignment at all levels.
 - **O(1) Metrology Cache**: Caches the verification status of struct types using their memory `id()`, eliminating verification overhead on subsequent calls.
+
+## 6. RELATIONAL CONSTRAINT EVALUATOR (RCE)
+The Relational Constraint Evaluator prevents spatial memory violations by proving mathematical invariants between multiple parameters before invocation.
+
+### 6.1 Algebraic Syntax Tree (AST) Architecture
+- **Sandboxed Execution**: Compiles Contract-defined JSON constraints into executable Python memory graphs using optimized `ASTNode` hierarchies.
+- **Parametric Binding**: Uses direct O(1) tuple-indexing for argument substitution, avoiding expensive lookups or copies.
+- **Zero-Allocation Evaluation**: Designed for high-speed hot-path execution with minimal memory pressure.
+
+### 6.2 Deterministic Constraint Compiler
+- **Depth-Limited Parsing**: Enforces a strict recursion depth limit (50) to prevent load-time Stack Overflow DoS attacks.
+- **Hermetically Sealed Operators**: Strictly maps mathematical operators to safe, built-in Python C-functions, preventing `eval()` based code injection.
+- **Overflow Guarding**: Actively monitors internal calculations to prevent bypasses via 64-bit coordinate wrapping.
