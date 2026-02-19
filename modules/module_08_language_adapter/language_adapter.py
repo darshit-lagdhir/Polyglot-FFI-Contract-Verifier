@@ -24,8 +24,187 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
+import sys
 
 __version__ = '0.1.0'
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CONTRACT RUNTIME LOADER COMPONENTS
+# ════════════════════════════════════════════════════════════════════════════
+
+class ContractInitializationError(Exception):
+    """
+    Raised when contract artifact structure is invalid
+    or incompatible with runtime expectations.
+    """
+
+    def __init__(self, message: str, fingerprint: str):
+        self.message = message
+        self.fingerprint = fingerprint
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        return (
+            f"[ContractInitializationError]"
+            f"[fingerprint={self.fingerprint}] "
+            f"{self.message}"
+        )
+
+
+class ABICompatibilityError(Exception):
+    """
+    Raised when contract ABI does not match runtime architecture.
+    """
+
+    def __init__(self, message: str, fingerprint: str):
+        self.message = message
+        self.fingerprint = fingerprint
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        return (
+            f"[ABICompatibilityError]"
+            f"[fingerprint={self.fingerprint}] "
+            f"{self.message}"
+        )
+
+
+@dataclass(frozen=True)
+class EnforcementDescriptor:
+    """
+    Immutable function enforcement descriptor.
+    """
+    function_name: str
+    calling_convention: str
+    arg_types: List[str]
+    return_type: str
+
+
+@dataclass(frozen=True)
+class ContractMetadata:
+    """
+    Immutable contract metadata container.
+    """
+    schema_version: str
+    synthesis_version: str
+    fingerprint: str
+    abi_bits: int
+    descriptors: Dict[str, EnforcementDescriptor]
+
+
+class ContractRuntimeLoader:
+
+    EXPECTED_SCHEMA_VERSION = "1.0"
+
+    def __init__(self, contract_dict: dict):
+        self._raw = contract_dict
+        self._metadata = self._load_and_validate()
+
+    @property
+    def metadata(self) -> ContractMetadata:
+        return self._metadata
+
+    def _load_and_validate(self) -> ContractMetadata:
+
+        if not isinstance(self._raw, dict):
+            raise ContractInitializationError(
+                "Contract artifact must be a dictionary",
+                "UNKNOWN"
+            )
+
+        required_keys = [
+            "schema_version",
+            "synthesis_version",
+            "fingerprint",
+            "abi",
+            "functions",
+        ]
+
+        for key in required_keys:
+            if key not in self._raw:
+                raise ContractInitializationError(
+                    f"Missing required key: {key}",
+                    self._raw.get("fingerprint", "UNKNOWN")
+                )
+
+        schema_version = self._raw["schema_version"]
+        synthesis_version = self._raw["synthesis_version"]
+        fingerprint = self._raw["fingerprint"]
+        abi_bits = self._raw["abi"]
+        functions = self._raw["functions"]
+
+        # Schema validation
+        if schema_version != self.EXPECTED_SCHEMA_VERSION:
+            raise ContractInitializationError(
+                f"Incompatible schema_version: {schema_version}",
+                fingerprint
+            )
+
+        # Fingerprint validation
+        if not isinstance(fingerprint, str) or len(fingerprint) < 16:
+            raise ContractInitializationError(
+                "Invalid fingerprint format",
+                fingerprint
+            )
+
+        # ABI validation
+        runtime_bits = 64 if sys.maxsize > 2**32 else 32
+
+        if runtime_bits != abi_bits:
+            raise ABICompatibilityError(
+                f"Runtime {runtime_bits}-bit incompatible with "
+                f"contract {abi_bits}-bit",
+                fingerprint
+            )
+
+        if not isinstance(functions, dict) or len(functions) == 0:
+            raise ContractInitializationError(
+                "Functions definition invalid or empty",
+                fingerprint
+            )
+
+        descriptors: Dict[str, EnforcementDescriptor] = {}
+
+        for fname in sorted(functions.keys()):
+
+            fdef = functions[fname]
+
+            if not isinstance(fdef, dict):
+                raise ContractInitializationError(
+                    f"Invalid function descriptor for {fname}",
+                    fingerprint
+                )
+
+            for required in ["calling_convention", "arg_types", "return_type"]:
+                if required not in fdef:
+                    raise ContractInitializationError(
+                        f"Incomplete function descriptor for {fname}",
+                        fingerprint
+                    )
+
+            descriptors[fname] = EnforcementDescriptor(
+                function_name=fname,
+                calling_convention=fdef["calling_convention"],
+                arg_types=list(fdef["arg_types"]),
+                return_type=fdef["return_type"],
+            )
+
+        return ContractMetadata(
+            schema_version=schema_version,
+            synthesis_version=synthesis_version,
+            fingerprint=fingerprint,
+            abi_bits=abi_bits,
+            descriptors=descriptors,
+        )
+
+
+def initialize_contract_loader(contract_dict: dict) -> ContractRuntimeLoader:
+    """
+    Initializes and validates contract metadata.
+    Prototype binding will occur in Part 2.
+    """
+    return ContractRuntimeLoader(contract_dict)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -6425,7 +6604,7 @@ class OwnershipValidator:
 # ════════════════════════════════════════════════════════════════════════════
 
 @dataclass
-class ContractMetadata:
+class ContractRichMetadata:
     """
     Rich metadata about contract.
     
@@ -6815,7 +6994,7 @@ class MetadataEnricher:
     Adds context and documentation to errors, diagnostics, and reports.
     """
     
-    def __init__(self, contract_metadata: Optional[ContractMetadata] = None):
+    def __init__(self, contract_metadata: Optional[ContractRichMetadata] = None):
         self.metadata = contract_metadata
     
     def enrich_violation_report(
@@ -6897,10 +7076,10 @@ class IntrospectionAPI:
         self.adapter = adapter
         self.query_engine = QueryEngine(adapter)
         self.history_tracker = HistoryTracker()
-        self.metadata: Optional[ContractMetadata] = None
+        self.metadata: Optional[ContractRichMetadata] = None
         self.enricher = MetadataEnricher()
     
-    def set_metadata(self, metadata: ContractMetadata) -> None:
+    def set_metadata(self, metadata: ContractRichMetadata) -> None:
         """Set contract metadata."""
         self.metadata = metadata
         self.enricher = MetadataEnricher(metadata)
@@ -7620,9 +7799,9 @@ class ContractDocGenerator:
     """
     
     def __init__(self):
-        self.metadata: Optional[ContractMetadata] = None
+        self.metadata: Optional[ContractRichMetadata] = None
     
-    def set_metadata(self, metadata: ContractMetadata) -> None:
+    def set_metadata(self, metadata: ContractRichMetadata) -> None:
         """Set contract metadata."""
         self.metadata = metadata
     

@@ -61,3 +61,42 @@ ctx = adapter.create_enforcement_context('my_native_func')
 
 # ... execution phases ...
 ```
+
+---
+
+## Part 1 — Contract Runtime Loader
+
+The Contract Runtime Loader serves as the foundational authority layer of the runtime adapter. It is responsible for ingesting, validating, and transforming static contract artifacts into immutable runtime metadata structures.
+
+### Loader Responsibility
+- **Artifact Validation**: Ensures the contract JSON follows the required schema for Module 08.
+- **ABI Enforcement**: Validates that the contract's target ABI matches the host machine's architecture (32-bit vs 64-bit).
+- **Metadata IMMUTABILITY**: Translates raw data into frozen dataclasses to prevent runtime tampering.
+- **Fail-Fast Semantics**: The system refuses to initialize if any validation criteria are breached.
+
+### Initialization Flow
+1. **Ingest**: Receive raw dictionary representation of the contract.
+2. **Schema Check**: Verify `schema_version`, `fingerprint`, and root keys.
+3. **Architecture Match**: Compare `sys.maxsize` against the contract's `abi` field.
+4. **Descriptor Construction**: Iterate through the `functions` map and build an alphabetical lookup table.
+
+### Example Contract Structure
+```json
+{
+  "schema_version": "1.0",
+  "synthesis_version": "1.0.0",
+  "fingerprint": "a1b2c3d4e5f6g7h8i9j0",
+  "abi": 64,
+  "functions": {
+    "calculate_hash": {
+      "calling_convention": "cdecl",
+      "arg_types": ["U8*", "U64"],
+      "return_type": "U32"
+    }
+  }
+}
+```
+
+### Failure Semantics
+- **ContractInitializationError**: Raised for missing keys, invalid types, or schema mismatches.
+- **ABICompatibilityError**: Raised exclusively for architecture mismatches (e.g., loading a 64-bit contract on a 32-bit system).
