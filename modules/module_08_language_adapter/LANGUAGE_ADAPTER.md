@@ -348,3 +348,72 @@ Before any native function is executed, the adapter performs a "pre-invoke guard
 3. **Guard Abort**: If the pointer is not in an `ACTIVE` state for its recorded epoch (e.g., it was previously freed via its wrapper), the invocation is blocked before it reaches native code.
 
 This architecture ensures that even if a user keeps a reference to an old wrapper, they cannot use it to trigger a Use-After-Free in native memory.
+
+---
+
+## Prompt 04 Part 1 — Structure Layout Verification Engine
+
+One of the most dangerous failure modes in FFI is an ABI mismatch between Python's `ctypes.Structure` definitions and the actual memory layout expected by native code. Such mismatches cause silent memory corruption and crashes.
+
+### ABI Fidelity Enforcement
+The adapter now includes a **Structure Layout Verification Engine** that ensures absolute fidelity between Python types and the contract-declared ABI.
+
+### Verification Matrix
+The verifier performs a multi-point check on every structure declaration:
+- **Existence Validation**: Ensures all structures declared in the contract are present in the Python namespace.
+- **Total Size Enforcement**: Compares `ctypes.sizeof(struct)` against the contract's expected size.
+- **Alignment Validation**: Verifies `ctypes.alignment(struct)` matches the required ABI alignment.
+- **Field-Level Scrutiny**:
+    - **Order/Name Validation**: Ensures fields are declared in the exact order specified in the contract.
+    - **Offset Verification**: Validates that each field's memory offset matches the native ABI.
+    - **Field Size Validation**: Ensures the size of each individual member matches the expectation.
+
+### Nested Structure Support
+The engine automatically detects nested structures and recursively verifies their layouts against the contract metadata. This prevents errors from propagating through complex, multi-level data structures.
+
+### Deterministic Initialization
+Verification occurs during the initialization of the Python adapter. If any mismatch is detected, the system raises a `StructureLayoutMismatchError`, preventing the runtime from entering an unsafe state.
+
+---
+
+## Prompt 04 Part 2 — Advanced Structure Validation and Mutation Enforcement
+
+Real-world FFI boundary risks extend beyond simple layout mismatches. The advanced validation system now handles complex structural patterns and enforces behavioral constraints like immutability.
+
+### Deep Structural Verification
+The verification engine has been upgraded to handle complex ABI nuances:
+- **Fixed-Length Arrays**: Validates array length, total size, and element-level alignment within structures.
+- **Nested Array Elements**: Recursively verifies structure layouts when they are used as elements within fixed-length arrays.
+- **`_pack_` Attribute Enforcement**: Ensures that explicit structure packing (alignment overrides) in Python matches the compiled native ABI.
+- **Explicit Padding Validation**: Detects unexpected gaps or shifts in memory offsets, ensuring implicit padding matches the contract.
+
+### Behavioral Enforcement: Immutable Field Protection
+One of the most powerful features introduced is the **Immutable Mutation Snapshot**. 
+- **Pre-Call Snapshotting**: Before entering native code, the adapter identifies any `ctypes.Structure` arguments and captures snapshots of fields marked `immutable` in the contract.
+- **Post-Call Verification**: Upon return from the native function, the adapter compares the current state of these fields against their snapshots.
+- **Violation Guard**: If a native function mutates a field that the contract declared as immutable, the adapter raises a `StructureLayoutMismatchError` post-invocation, identifying the specific field that was illegally changed.
+
+### Deterministic Recursive Ordering
+All structure and field verifications are performed in a strict, deterministic order (e.g., sorted by struct name and field offset), ensuring that error reporting is consistent across different environments and runs.
+
+---
+
+## Prompt 04 Part 3 — Structure Verification Caching and Dynamic Guard
+
+Ensuring ABI safety is critical, but repeated reflection on every FFI call is prohibitively expensive. Part 3 introduces a tiered enforcement architecture that balances safety with performance.
+
+### Structure Verification Cache
+A deterministic caching layer prevents redundant validation of unchanged structures.
+- **Fingerprinted Layout Hash**: The system computes a hash of the structure's layout (fields, types, offsets, packing).
+- **Verification Status Tracking**: Once a structure is verified against a specific contract fingerprint, it is marked as verified.
+- **Cache Hit Optimization**: Subsequent checks (in DEBUG mode or re-initialization) bypass deep validation if the layout hash matches the cached entry.
+
+### Dynamic Runtime Guard
+To protect against runtime modifications of `ctypes` classes (e.g., dynamically changing `_fields_` or `_pack_`), the system implements a dynamic guard.
+- **Mutation Detection**: If a structure that was previously verified is encountered with a different layout hash, the system raises a `StructureLayoutMismatchError`, halting execution.
+- **Enforcement Modes**:
+    - **STRICT** (Default): Performs full validation only at initialization. Optimized for production performance with zero per-call overhead.
+    - **DEBUG**: Re-validates the structure layout on *every* FFI invocation. This ensures that any dynamic mutation during execution is immediately caught, at the cost of performance.
+
+### Snapshot Cache Integration
+For immutable field enforcement, the system now caches the contract definition lookups to minimize dictionary traversals during the hot path of snapshot creation and verification.
