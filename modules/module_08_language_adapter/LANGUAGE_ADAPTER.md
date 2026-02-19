@@ -417,3 +417,66 @@ To protect against runtime modifications of `ctypes` classes (e.g., dynamically 
 
 ### Snapshot Cache Integration
 For immutable field enforcement, the system now caches the contract definition lookups to minimize dictionary traversals during the hot path of snapshot creation and verification.
+
+---
+
+## Prompt 05 Part 1 — Memory Pinning Controller
+
+A critical safety risk in Python FFI is the potential for garbage collection or movement of objects that are backing memory shared with native code. Part 1 introduces a dedicated **Memory Pinning Controller** to guarantee buffer stability.
+
+### PinContext Model
+The `PinContext` is a transient lifecycle manager instantiated during every FFI invocation.
+- **Automatic Pinning**: It iterates over all validated arguments and identifies "buffer-like" objects (`bytes`, `bytearray`, `memoryview`, `ctypes` arrays, `ctypes.Structure`).
+- **Reference Holding**: Identified objects are added to a strong-reference list within the context. This prevents the Python Garbage Collector from deallocating the object while the native function is executing.
+- **Deterministic Release**: The context is guaranteed to clear its references in a `finally` block, ensuring no memory leaks occur after the call returns.
+
+### Contiguity Enforcement
+Passing non-contiguous memory (e.g., a sliced `memoryview` with a stride) to a C function expecting a contiguous buffer is a common source of bugs.
+- **Validation**: The controller explicitly checks `memoryview` objects for contiguity.
+- **Rejection**: If a non-contiguous buffer is detected, the system raises a `MemoryPinningError` before any native code is executed.
+
+### Structure Pinning
+While `ctypes` handles some liveliness validation, the pinning controller provides an additional explicit guarantee that `ctypes.Structure` instances (and their underlying fields) remain rooted throughout the entire duration of the native call, protecting against complex edge cases in nested or custom-allocator scenarios.
+
+---
+
+## Prompt 05 Part 2 — Buffer Boundary Defense System
+
+While memory pinning prevents deallocation, it does not prevent a native function from writing beyond the bounds of a buffer. Part 2 introduces the **Buffer Boundary Defense System** to enforce contractual length limits and data integrity.
+
+### Snapshot-Based Integrity
+For buffers designated as `read-only` or `inspect_memory` in the contract, the system captures a deterministic snapshot of the buffer's content *before* the native call.
+- **Post-Call Verification**: After the call returns, the system compares the current buffer state against the snapshot.
+- **Violation Detection**: If a read-only buffer has been modified, a `BufferBoundaryViolationError` is raised.
+
+### Relational Length Reinforcement
+The system explicitly links buffer arguments to their corresponding length parameters (defined in the contract).
+- **Pre-Call Validation**: Before invoking the native function, the system verifies that the declared length (passed as an integer argument) does not exceed the actual allocated size of the buffer object (e.g., `len(buffer) >= length_param`).
+- **Fail-Fast**: If the contract specifies a length greater than the buffer's capacity, the call is rejected immediately, preventing potential heap corruption in native code.
+
+### Write-Allowed Semantics
+The system differentiates between `write_allowed` (mutable) and `read-only` buffers.
+- **Mutable Buffers**: Are pinned and length-checked but allowed to change content.
+- **Read-Only Buffers**: Are strictly enforced to be immutable via snapshot comparison (if inspection is enabled), ensuring that "input-only" parameters are not silently corrupted by the native implementation.
+
+---
+
+## Prompt 05 Part 3 — Crash Isolation and Deterministic Diagnostics
+
+The final layer of Phase 1 enforcement addresses the reality of native runtime failures. FFI boundaries are inherently unstable; a crash in C code can bring down the entire Python interpreter if not carefully managed.
+
+### Native Crash Guard
+The adapter wraps every raw native invocation in a structured `try-except` guard.
+- **Exceptions**: Python-level exceptions raised during argument conversion or internal ctypes execution are caught and re-raised as `NativeCrashError`.
+- **Isolation**: While this cannot trap OS-level segfaults (which require out-of-process isolation), it ensures that all Python-level failures are escalated through a standard, deterministic error channel.
+
+### Error Code Semantics
+Many C APIs return integer error codes rather than raising exceptions. The adapter now enforces these contract-defined semantics:
+- **Automatic Checking**: If `error_semantics` are defined for a function (e.g., `error_code: -1`), the adapter automatically checks the return value.
+- **Violation**: If the return value matches the error code, a `ContractViolationError` is raised, treating the "soft" C error as a "hard" Python exception.
+
+### Deterministic Diagnostics
+To aid debugging without introducing nondeterminism into logs:
+- **Diagnostic Object**: A `DeterministicDiagnostic` record is attached to exceptions in `DEBUG` mode.
+- **Stable Formatting**: This record serializes contextual information (function name, clause, observed vs expected values) using a strict, sorted format.
+- **No Randomness**: The system deliberately avoids timestamps, memory addresses (unless normalized), or unordered dictionary dumps to ensure that error logs remain bit-for-bit identical across identical runs.
