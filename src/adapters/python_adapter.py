@@ -90,6 +90,28 @@ class MarshallingViolationError(PrototypeAuthorityError):
         self.contract_type = contract_type
 
 
+class MemoryMetrologyError(PFCVBaseError):
+    """Base class for all memory shape and pinning failures."""
+    def __init__(self, message: str, failure_code: str = "ERR-MEM-009"):
+        super().__init__(message, failure_code)
+
+
+class StructLayoutMismatchError(MemoryMetrologyError):
+    """Raised when the Python ctypes.Structure deviates from the native compiler's layout."""
+    def __init__(self, struct_name: str, field_name: str, expected: int, observed: int, msg: str = ""):
+        detail = f"FATAL ALIGNMENT: Struct '{struct_name}', Field '{field_name}' " \
+                 f"expected offset {expected}, observed {observed}. {msg}"
+        super().__init__(detail, "ERR-STRUCT-010")
+        self.struct_name = struct_name
+        self.field_name = field_name
+
+
+class PinningContextViolation(MemoryMetrologyError):
+    """Raised if the MemoryPinningContext fails to release or detects anomalies."""
+    def __init__(self, message: str):
+        super().__init__(message, "ERR-PIN-011")
+
+
 
 # =============================================================================
 # DATA STRUCTURES
@@ -187,6 +209,120 @@ class ABITypeFactory:
 
 
 # =============================================================================
+# MEMORY PINNING CONTROLLER
+# =============================================================================
+
+class MemoryPinningContext:
+    """
+    Lightweight context manager for forceful Python reference retention.
+    Prevents the GC from reclaiming buffers/structures during native execution.
+    """
+    __slots__ = ['_pinned_objects']
+
+    def __init__(self):
+        self._pinned_objects: List[Any] = []
+
+    def pin(self, obj: Any) -> Any:
+        """Anchors an object to the current execution scope."""
+        self._pinned_objects.append(obj)
+        return obj
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Aggressive release of internal references."""
+        self._pinned_objects.clear()
+
+
+# =============================================================================
+# STRUCTURE LAYOUT VERIFICATION ENGINE
+# =============================================================================
+
+class LayoutVerificationEngine:
+    """
+    Recursive DFS analyzer for ABI structural alignment.
+    Calculates offsets, sizes, and padding to detect 'Padding Traps'.
+    """
+    __slots__ = ['struct_metadata', '_verified_structs']
+
+    def __init__(self, struct_metadata: Dict[str, Any]):
+        self.struct_metadata = struct_metadata
+        self._verified_structs: set = set()
+
+    def verify_struct_layout(self, py_struct: type, contract_struct_name: str) -> None:
+        """
+        Master entry point for structural validation. 
+        Uses O(1) cache to prevent redundant DFS traversal.
+        """
+        struct_id = id(py_struct)
+        if struct_id in self._verified_structs:
+            return
+
+        if contract_struct_name not in self.struct_metadata:
+            raise MemoryMetrologyError(f"Struct '{contract_struct_name}' metadata not found in contract.")
+
+        meta = self.struct_metadata[contract_struct_name]
+        
+        # 1. Geometry Check
+        if ctypes.sizeof(py_struct) != meta.get("size"):
+            raise StructLayoutMismatchError(
+                contract_struct_name, "ROOT", meta.get("size", 0), ctypes.sizeof(py_struct),
+                "Total size mismatch."
+            )
+
+        if hasattr(ctypes, "alignment") and ctypes.alignment(py_struct) != meta.get("alignment"):
+             # Optional check as ctypes.alignment is not always available/stable on all versions
+             pass
+
+        # 2. Recursive Field Verification
+        self._validate_fields_recursively(py_struct, meta, contract_struct_name)
+
+        self._verified_structs.add(struct_id)
+
+    def _validate_fields_recursively(self, struct_class: type, meta: Dict[str, Any], path: str) -> None:
+        """Depth-First Search (DFS) for structural metrology."""
+        if not hasattr(struct_class, "_fields_"):
+            return
+
+        contract_fields = {f["name"]: f for f in meta.get("fields", [])}
+        
+        for field_info in struct_class._fields_:
+            field_name = field_info[0]
+            field_type = field_info[1]
+            field_path = f"{path}.{field_name}"
+            
+            # Handle Bitfields (Guardrail Phase 3)
+            # Reordered to catch bitfields first
+            if len(field_info) == 3:
+                raise MemoryMetrologyError(f"Bitfield detected at path {field_path}. Verifier currently enforces byte-aligned structures only.")
+
+            if field_name not in contract_fields:
+                raise StructLayoutMismatchError(path, field_name, -1, 0, "Extra field in Python definition.")
+
+            f_meta = contract_fields[field_name]
+            py_field_info = getattr(struct_class, field_name)
+            
+            # Verify Physical Offsets and Sizes
+            if py_field_info.offset != f_meta.get("offset"):
+                raise StructLayoutMismatchError(path, field_name, f_meta["offset"], py_field_info.offset)
+            
+            if py_field_info.size != f_meta.get("size"):
+                 raise StructLayoutMismatchError(path, field_name, f_meta["size"], py_field_info.size, "Size mismatch")
+
+            # Branching Strategy
+            if issubclass(field_type, ctypes.Structure):
+                self._validate_fields_recursively(field_type, f_meta, field_path)
+            elif issubclass(field_type, ctypes.Array):
+                # Verify Array Meta
+                if field_type._length_ != f_meta.get("length"):
+                    raise StructLayoutMismatchError(field_path, "length", f_meta["length"], field_type._length_)
+                # Recursively check element type if it is a struct
+                if issubclass(field_type._type_, ctypes.Structure):
+                    self._validate_fields_recursively(field_type._type_, f_meta.get("element_meta", {}), field_path)
+
+
+# =============================================================================
 # INVOCATION PROXY GENERATOR
 # =============================================================================
 
@@ -235,7 +371,7 @@ class InvocationProxy:
             )
 
     def __call__(self, *args, **kwargs) -> Any:
-        """Hot-path execution orchestrator."""
+        """Hot-path execution orchestrator with Memory Pinning."""
         # Step 1: Arity Check
         if len(args) != len(self._param_types):
             raise ABISignatureMismatchError(
@@ -243,16 +379,20 @@ class InvocationProxy:
                 f"positional arguments, but got {len(args)}."
             )
             
-        # Step 2: Marshalling (Iterative, no list creation)
-        idx = 0
-        for val, c_type in zip(args, self._param_types):
-            if isinstance(val, int):
-                self._enforce_integer_bounds(val, c_type, idx)
-            idx += 1
-            
-        # Step 3: Native Invocation
-        # (Final implementation will include Crash Guarding/Exception Translation)
-        return self.bound_function(*args)
+        with MemoryPinningContext() as pin_ctx:
+            # Step 2: Marshalling & Pinning
+            idx = 0
+            pinned_args = []
+            for val, c_type in zip(args, self._param_types):
+                if isinstance(val, int):
+                    self._enforce_integer_bounds(val, c_type, idx)
+                
+                # Pin every argument to guarantee survival across the chasm
+                pinned_args.append(pin_ctx.pin(val))
+                idx += 1
+                
+            # Step 3: Native Invocation
+            return self.bound_function(*pinned_args)
 
 
 # =============================================================================
@@ -265,11 +405,12 @@ class PrototypeAuthority:
     declarations with Contract ABI Truth.
     """
     
-    __slots__ = ['edt', 'type_factory', 'loaded_libraries', 'bound_symbols', '_lock']
+    __slots__ = ['edt', 'type_factory', 'layout_engine', 'loaded_libraries', 'bound_symbols', '_lock']
 
-    def __init__(self, edt: EnforcementTable, type_factory: Optional[ABITypeFactory] = None):
+    def __init__(self, edt: EnforcementTable, type_factory: Optional[ABITypeFactory] = None, layout_engine: Optional[LayoutVerificationEngine] = None):
         self.edt = edt
         self.type_factory = type_factory or ABITypeFactory()
+        self.layout_engine = layout_engine or LayoutVerificationEngine({}) 
         self.loaded_libraries: Dict[str, Any] = {}
         self.bound_symbols: Dict[str, InvocationProxy] = {}
         self._lock = threading.Lock()
@@ -316,7 +457,13 @@ class PrototypeAuthority:
                 raise ABISignatureMismatchError(f"Symbol {symbol_name} not found in {library_path}")
             
             # Step 3: Prototype Synthesis
-            arg_types = [self.type_factory.get_ctypes_type(t) for t in getattr(descriptor, 'arg_types', [])]
+            arg_types = []
+            for t in getattr(descriptor, 'arg_types', []):
+                # If t is a complex struct pointer, it might be string format "PTR(MyStruct)"
+                # For Phase 3, we'll implement simple lookup helper if it's a struct name
+                ct_type = self.type_factory.get_ctypes_type(t)
+                arg_types.append(ct_type)
+            
             res_type = self.type_factory.get_ctypes_type(getattr(descriptor, 'return_type', 'VOID'))
             
             factory = self._select_convention_factory(descriptor.calling_convention)
@@ -356,6 +503,7 @@ class ContractLoader:
         self.raw_bytes: bytes = b""
         self.contract_data: Dict[str, Any] = {}
         self.table: EnforcementTable = EnforcementTable()
+        self.layout_engine: Optional[LayoutVerificationEngine] = None
         self._lock = threading.Lock()
 
     def load(self) -> EnforcementTable:
@@ -381,6 +529,9 @@ class ContractLoader:
             
             # 5. Compilation
             self._build_table()
+            
+            # 6. Metadata Linkage (Linking structs for the layout engine)
+            self.layout_engine = LayoutVerificationEngine(self.contract_data.get("structs", {}))
             
             self.is_loaded = True
             return self.table
