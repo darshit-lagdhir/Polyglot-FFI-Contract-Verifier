@@ -25,6 +25,16 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import sys
+import ctypes
+from typing import Any
+
+try:
+    import cffi
+    from _cffi_backend import CData as _CffiCData
+    _CFFI_AVAILABLE = True
+except ImportError:
+    _CFFI_AVAILABLE = False
+    _CffiCData = type(None)
 
 __version__ = '0.1.0'
 
@@ -66,6 +76,26 @@ class ABICompatibilityError(Exception):
         return (
             f"[ABICompatibilityError]"
             f"[fingerprint={self.fingerprint}] "
+            f"{self.message}"
+        )
+
+
+class PrototypeMismatchError(Exception):
+    """
+    Raised when runtime binding does not match contract descriptor.
+    """
+
+    def __init__(self, function_name: str, message: str, fingerprint: str):
+        self.function_name = function_name
+        self.message = message
+        self.fingerprint = fingerprint
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        return (
+            f"[PrototypeMismatchError]"
+            f"[fingerprint={self.fingerprint}] "
+            f"Function={self.function_name} "
             f"{self.message}"
         )
 
@@ -205,6 +235,177 @@ def initialize_contract_loader(contract_dict: dict) -> ContractRuntimeLoader:
     Prototype binding will occur in Part 2.
     """
     return ContractRuntimeLoader(contract_dict)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PROTOTYPE AUTHORITY LAYER COMPONENTS
+# ════════════════════════════════════════════════════════════════════════════
+
+_CTYPES_TYPE_MAP = {
+    "int32": ctypes.c_int32,
+    "uint32": ctypes.c_uint32,
+    "int64": ctypes.c_int64,
+    "uint64": ctypes.c_uint64,
+    "float": ctypes.c_float,
+    "double": ctypes.c_double,
+    "char_ptr": ctypes.c_char_p,
+    "void_ptr": ctypes.c_void_p,
+    "void": None,
+}
+
+
+class AdapterInitializationState:
+    """
+    Tracks initialization lifecycle state.
+    Ensures deterministic single-pass initialization.
+    """
+
+    def __init__(self):
+        self.initialized = False
+        self.bound_functions = []
+        self.failed = False
+
+    def mark_bound(self, fname: str):
+        self.bound_functions.append(fname)
+
+    def mark_initialized(self):
+        self.initialized = True
+
+    def mark_failed(self):
+        self.failed = True
+
+
+class PrototypeAuthorityLayer:
+
+    def __init__(self, loader: ContractRuntimeLoader, library_handle: Any):
+        self._metadata = loader.metadata
+        self._library = library_handle
+        self._fingerprint = loader.metadata.fingerprint
+        self._state = AdapterInitializationState()
+        self._bind_all_functions()
+
+    def is_initialized(self) -> bool:
+        return self._state.initialized and not self._state.failed
+
+    def _bind_all_functions(self) -> None:
+        try:
+            for fname in sorted(self._metadata.descriptors.keys()):
+                descriptor = self._metadata.descriptors[fname]
+                self._bind_single_function(descriptor)
+                self._state.mark_bound(fname)
+
+            # Final verification
+            self._verify_binding_integrity()
+
+            self._state.mark_initialized()
+
+        except Exception:
+            self._state.mark_failed()
+            raise
+
+    def _verify_binding_integrity(self) -> None:
+        expected = set(self._metadata.descriptors.keys())
+        actual = set(self._state.bound_functions)
+
+        if expected != actual:
+            missing = expected - actual
+            raise PrototypeMismatchError(
+                "INITIALIZATION",
+                f"Incomplete binding. Missing: {sorted(list(missing))}",
+                self._fingerprint
+            )
+
+    def _bind_single_function(self, descriptor: EnforcementDescriptor) -> None:
+
+        if not hasattr(self._library, descriptor.function_name):
+            raise PrototypeMismatchError(
+                descriptor.function_name,
+                "Symbol not found in library",
+                self._fingerprint
+            )
+
+        raw_func = getattr(self._library, descriptor.function_name)
+
+        # Detect ctypes binding
+        if isinstance(raw_func, ctypes._CFuncPtr):
+            self._bind_ctypes(raw_func, descriptor)
+            return
+
+        # Detect cffi binding
+        if _CFFI_AVAILABLE and isinstance(raw_func, _CffiCData):
+            self._validate_cffi(raw_func, descriptor)
+            return
+
+        raise PrototypeMismatchError(
+            descriptor.function_name,
+            "Unsupported function binding type",
+            self._fingerprint
+        )
+
+    def _bind_ctypes(self, func, descriptor: EnforcementDescriptor) -> None:
+
+        ctypes_argtypes = []
+        for t in descriptor.arg_types:
+            if t not in _CTYPES_TYPE_MAP:
+                raise ContractInitializationError(
+                    f"Unknown type mapping: {t}",
+                    self._fingerprint
+                )
+            ctypes_argtypes.append(_CTYPES_TYPE_MAP[t])
+
+        if descriptor.return_type not in _CTYPES_TYPE_MAP:
+            raise ContractInitializationError(
+                f"Unknown return type mapping: {descriptor.return_type}",
+                self._fingerprint
+            )
+
+        func.argtypes = ctypes_argtypes
+        func.restype = _CTYPES_TYPE_MAP[descriptor.return_type]
+
+        # Preserve name
+        func.__name__ = descriptor.function_name
+
+    def _validate_cffi(self, func, descriptor: EnforcementDescriptor) -> None:
+
+        # Extract cffi signature string if possible
+        try:
+            # Note: cffi introspection is limited without specific hacks, 
+            # we follow the prompt requirement for existence and class-based name check
+            cffi_signature = func.__class__.__name__
+        except Exception:
+            raise PrototypeMismatchError(
+                descriptor.function_name,
+                "Unable to introspect cffi signature",
+                self._fingerprint
+            )
+
+        # NOTE:
+        # We do NOT coerce cffi signatures.
+        # We validate that function exists and rely on later validation stage.
+        # For now, ensure existence only.
+
+        if not hasattr(self._library, descriptor.function_name):
+            raise PrototypeMismatchError(
+                descriptor.function_name,
+                "cffi symbol not found",
+                self._fingerprint
+            )
+
+
+def initialize_python_adapter(contract_dict: dict, library_handle: Any):
+    """
+    Full adapter initialization: loader + prototype authority.
+    """
+    loader = ContractRuntimeLoader(contract_dict)
+    authority = PrototypeAuthorityLayer(loader, library_handle)
+
+    if not authority.is_initialized():
+        raise ContractInitializationError(
+            "Prototype authority failed to initialize deterministically",
+            loader.metadata.fingerprint
+        )
+
+    return loader, authority
 
 
 # ════════════════════════════════════════════════════════════════════════════
