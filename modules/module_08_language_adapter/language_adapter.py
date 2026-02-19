@@ -123,6 +123,31 @@ class ContractViolationError(Exception):
         )
 
 
+class OwnershipViolationError(Exception):
+    """
+    Raised when pointer ownership contract is violated.
+    """
+
+    def __init__(self, function_name: str,
+                 pointer_value: int,
+                 message: str,
+                 fingerprint: str):
+        self.function_name = function_name
+        self.pointer_value = pointer_value
+        self.message = message
+        self.fingerprint = fingerprint
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        return (
+            f"[OwnershipViolationError]"
+            f"[fingerprint={self.fingerprint}] "
+            f"Function={self.function_name} "
+            f"Pointer=0x{self.pointer_value:x} "
+            f"{self.message}"
+        )
+
+
 @dataclass(frozen=True)
 class EnforcementDescriptor:
     """
@@ -133,6 +158,8 @@ class EnforcementDescriptor:
     arg_types: List[str]
     return_type: str
     relational_rules: List[dict] = field(default_factory=list)
+    ownership: dict = field(default_factory=dict)
+    arg_ownership: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -244,8 +271,26 @@ class ContractRuntimeLoader:
                     fingerprint
                 )
 
-            # Deterministic rule ordering
             rules = sorted(rules, key=lambda r: r.get("id", ""))
+
+            ownership = fdef.get("ownership", {})
+            if not isinstance(ownership, dict):
+                raise ContractInitializationError(
+                    f"Invalid ownership metadata for {fname}",
+                    fingerprint
+                )
+
+            # Extract per-argument ownership
+            arg_ownership = []
+            if "parameters" in fdef and isinstance(fdef["parameters"], list):
+                for p in fdef["parameters"]:
+                    arg_ownership.append(p.get("ownership", "borrowed"))
+            
+            # Pad or truncate to match arg_types length
+            expected_args = len(fdef.get("arg_types", []))
+            while len(arg_ownership) < expected_args:
+                arg_ownership.append("borrowed")
+            arg_ownership = arg_ownership[:expected_args]
 
             descriptors[fname] = EnforcementDescriptor(
                 function_name=fname,
@@ -253,6 +298,8 @@ class ContractRuntimeLoader:
                 arg_types=list(fdef["arg_types"]),
                 return_type=fdef["return_type"],
                 relational_rules=rules,
+                ownership=ownership,
+                arg_ownership=arg_ownership,
             )
 
         return ContractMetadata(
@@ -294,6 +341,267 @@ _INT_RANGES = {
     "int64": (-2**63, 2**63 - 1),
     "uint64": (0, 2**64 - 1),
 }
+
+
+class ContractPointerWrapper:
+    """
+    Controlled wrapper for caller-owned native pointers.
+    Prevents unsafe raw usage and enforces ownership checks.
+    """
+
+    def __init__(self,
+                 pointer_value: int,
+                 registry: Any,
+                 fingerprint: str):
+        self._pointer = pointer_value
+        self._registry = registry
+        self._fingerprint = fingerprint
+        # Link to the current epoch at time of creation
+        self._epoch = registry.get_current_epoch(pointer_value)
+
+    @property
+    def address(self) -> int:
+        return self._pointer
+
+    def free(self, function_name: str):
+        self._registry.mark_freed(
+            self._pointer,
+            function_name,
+            self._fingerprint,
+            epoch=self._epoch
+        )
+
+    def __int__(self):
+        return self._pointer
+
+    def __repr__(self):
+        return (
+            f"<ContractPointerWrapper "
+            f"0x{self._pointer:x}>"
+        )
+
+
+def _extract_pointer_address(value) -> Optional[int]:
+    """
+    Extract canonical integer pointer address.
+    Supports ctypes pointer types and ContractPointerWrapper.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    if hasattr(value, 'address') and isinstance(value.address, int):
+        return value.address
+
+    try:
+        if hasattr(value, 'contents'):
+             return ctypes.addressof(value.contents)
+        return ctypes.cast(value, ctypes.c_void_p).value
+    except Exception:
+        return None
+
+
+class PointerState:
+    UNOBSERVED = "unobserved"
+    ACTIVE_CALLER_OWNED = "active_caller_owned"
+    ACTIVE_CALLEE_OWNED = "active_callee_owned"
+    BORROWED_INPUT = "borrowed_input"
+    FREED = "freed"
+    INVALID = "invalid"
+
+
+def _canonical_pointer_key(pointer: int,
+                           fingerprint: str,
+                           epoch: int) -> tuple:
+    return (fingerprint, pointer, epoch)
+
+
+@dataclass
+class PointerOwnershipRecord:
+    pointer: int
+    fingerprint: str
+    epoch: int
+    origin_function: str
+    state: str
+    ownership_type: str
+    history: list = field(default_factory=list)
+
+
+class OwnershipRegistry:
+
+    def __init__(self):
+        self._registry = {}
+        self._epoch_counter = {}
+        self._wrapper_map = {}
+
+    def get_current_epoch(self, pointer: int) -> int:
+        return self._epoch_counter.get(pointer, 0)
+
+    def attach_wrapper(self,
+                       pointer: int,
+                       fingerprint: str,
+                       wrapper: ContractPointerWrapper):
+
+        epoch = self._epoch_counter.get(pointer, 0)
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+
+        if key not in self._registry:
+            raise OwnershipViolationError(
+                "WRAPPER_ATTACH",
+                pointer,
+                "Attempting to attach wrapper to unregistered pointer",
+                fingerprint
+            )
+
+        if key in self._wrapper_map:
+            # Alias detected
+            raise OwnershipViolationError(
+                "WRAPPER_ATTACH",
+                pointer,
+                "Alias wrapper detected for same pointer epoch",
+                fingerprint
+            )
+
+        self._wrapper_map[key] = wrapper
+
+    def has_wrapper_for_current_epoch(self, pointer: int, fingerprint: str) -> bool:
+        epoch = self._epoch_counter.get(pointer, 0)
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        return key in self._wrapper_map
+
+    def register(self,
+                 pointer: int,
+                 function_name: str,
+                 ownership_type: str,
+                 fingerprint: str):
+
+        epoch = self._epoch_counter.get(pointer, 0)
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+
+        if key in self._registry:
+            # Already tracked
+            raise OwnershipViolationError(
+                function_name,
+                pointer,
+                "Pointer already registered in current epoch",
+                fingerprint
+            )
+
+        record = PointerOwnershipRecord(
+            pointer=pointer,
+            fingerprint=fingerprint,
+            epoch=epoch,
+            origin_function=function_name,
+            state=PointerState.ACTIVE_CALLER_OWNED,
+            ownership_type=ownership_type,
+            history=[("register", function_name)]
+        )
+
+        self._registry[key] = record
+
+    def register_borrowed(self,
+                          pointer: int,
+                          function_name: str,
+                          fingerprint: str):
+        epoch = self._epoch_counter.get(pointer, 0)
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+
+        if key in self._registry:
+            return  # Already tracked
+
+        record = PointerOwnershipRecord(
+            pointer=pointer,
+            fingerprint=fingerprint,
+            epoch=epoch,
+            origin_function=function_name,
+            state=PointerState.BORROWED_INPUT,
+            ownership_type="borrowed",
+            history=[("borrow", function_name)]
+        )
+        self._registry[key] = record
+
+    def mark_freed(self,
+                   pointer: int,
+                   function_name: str,
+                   fingerprint: str,
+                   epoch: Optional[int] = None):
+
+        if epoch is None:
+            epoch = self._epoch_counter.get(pointer, 0)
+        
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+
+        if key not in self._registry:
+            raise OwnershipViolationError(
+                function_name,
+                pointer,
+                "Freeing untracked pointer",
+                fingerprint
+            )
+
+        record = self._registry[key]
+
+        # Step 9: Transition validation
+        self._validate_transition(record, PointerState.FREED, function_name, fingerprint)
+
+        if record.state == PointerState.FREED:
+            raise OwnershipViolationError(
+                function_name,
+                pointer,
+                "Double free detected",
+                fingerprint
+            )
+
+        record.state = PointerState.FREED
+        record.history.append(("freed", function_name))
+
+        # Increment epoch for potential reuse
+        self._epoch_counter[pointer] = epoch + 1
+
+    def ensure_active(self,
+                      pointer: int,
+                      function_name: str,
+                      fingerprint: str,
+                      epoch: Optional[int] = None):
+
+        if epoch is None:
+            epoch = self._epoch_counter.get(pointer, 0)
+        
+        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+
+        if key not in self._registry:
+            return  # not tracked
+
+        record = self._registry[key]
+
+        if record.state == PointerState.FREED:
+            raise OwnershipViolationError(
+                function_name,
+                pointer,
+                "Use-after-free detected",
+                fingerprint
+            )
+
+    def _validate_transition(self, record, new_state,
+                             function_name, fingerprint):
+
+        allowed = {
+            PointerState.ACTIVE_CALLER_OWNED: [PointerState.FREED],
+            PointerState.ACTIVE_CALLEE_OWNED: [],
+            PointerState.BORROWED_INPUT: [],
+            PointerState.FREED: [],
+        }
+
+        if new_state not in allowed.get(record.state, []):
+            raise OwnershipViolationError(
+                function_name,
+                record.pointer,
+                f"Invalid state transition "
+                f"{record.state} -> {new_state}",
+                fingerprint
+            )
 
 
 class AdapterInitializationState:
@@ -349,6 +657,15 @@ class PrototypeAuthorityLayer:
         self._fingerprint = loader.metadata.fingerprint
         self._state = AdapterInitializationState()
         self._proxy_registry = InvocationProxyRegistry()
+        self._ownership_registry = OwnershipRegistry()
+
+        # Identify free functions
+        self._free_functions = {
+            desc.ownership.get("free_function")
+            for desc in self._metadata.descriptors.values()
+            if desc.ownership.get("free_function")
+        }
+
         self._bind_all_functions()
 
     def is_initialized(self) -> bool:
@@ -408,7 +725,49 @@ class PrototypeAuthorityLayer:
                 validated_args
             )
 
-            result = raw_func(*validated_args)
+            # Ownership: Pre-invocation Guard (Step 6, 7, 8)
+            validated_args_list = list(validated_args)
+            for i, val in enumerate(args):
+                is_wrapper = isinstance(val, ContractPointerWrapper)
+                ptr = val.address if is_wrapper else _extract_pointer_address(val)
+                effective_epoch = val._epoch if is_wrapper else None
+
+                if ptr is not None:
+                    # Register borrowed if not already tracked
+                    if i < len(descriptor.arg_ownership) and descriptor.arg_ownership[i] == "borrowed":
+                        self._ownership_registry.register_borrowed(
+                            ptr, name, fingerprint
+                        )
+
+                    # Handle free function enforcement
+                    if i == 0 and name in self._free_functions:
+                        # Step 8: Prevent Raw Pointer Free Bypass
+                        if self._ownership_registry.has_wrapper_for_current_epoch(ptr, fingerprint) and not is_wrapper:
+                             raise OwnershipViolationError(
+                                 name,
+                                 ptr,
+                                 "Free must be invoked via wrapper",
+                                 fingerprint
+                             )
+
+                        # Step 6: Free via wrapper if possible
+                        if is_wrapper:
+                             val.free(name)
+                        else:
+                             self._ownership_registry.mark_freed(
+                                 ptr, name, fingerprint
+                             )
+                        continue
+                    
+                    # Step 7: Pre-invoke ownership guard
+                    self._ownership_registry.ensure_active(
+                        ptr, name, fingerprint, epoch=effective_epoch
+                    )
+                    
+                    if is_wrapper:
+                         validated_args_list[i] = int(ptr)
+
+            result = raw_func(*tuple(validated_args_list))
 
             # Return type validation stage
             if descriptor.return_type in _INT_RANGES:
@@ -451,6 +810,26 @@ class PrototypeAuthorityLayer:
                 validated_args,
                 result
             )
+
+            # Ownership: Register and Wrap returned pointer (Step 5)
+            if (descriptor.return_type.endswith("_ptr") or descriptor.return_type == "void_ptr") \
+               and descriptor.ownership.get("return") == "caller_owned":
+                ptr = _extract_pointer_address(result)
+                if ptr is not None:
+                    self._ownership_registry.register(
+                        ptr, name, "caller_owned", fingerprint
+                    )
+                    wrapper = ContractPointerWrapper(
+                        ptr,
+                        self._ownership_registry,
+                        fingerprint
+                    )
+                    self._ownership_registry.attach_wrapper(
+                        ptr,
+                        fingerprint,
+                        wrapper
+                    )
+                    return wrapper
 
             return result
 
@@ -574,6 +953,19 @@ class PrototypeAuthorityLayer:
                         fname,
                         idx,
                         f"Null not allowed for type {type_name}",
+                        fingerprint
+                    )
+
+            # Wrapper support
+            if isinstance(value, ContractPointerWrapper):
+                if type_name.endswith("_ptr") or type_name == "void_ptr":
+                     normalized_args.append(value.address)
+                     continue
+                else:
+                    raise ContractViolationError(
+                        fname,
+                        idx,
+                        f"Wrapper not allowed for type {type_name}",
                         fingerprint
                     )
 
@@ -1231,7 +1623,7 @@ class ContractProjector:
 # SECTION 8: OWNERSHIP REGISTRY
 # ════════════════════════════════════════════════════════════════════════════
 
-class OwnershipRegistry:
+class OwnershipRichRegistry:
     """Tracks pointer ownership across FFI boundaries."""
     
     def __init__(self):
@@ -1845,7 +2237,7 @@ class LanguageAdapter:
     def __init__(self, config: Optional[AdapterConfig] = None):
         self.config = config or AdapterConfig()
         self.projector = ContractProjector()
-        self.ownership_registry = OwnershipRegistry()
+        self.ownership_registry = OwnershipRichRegistry()
         self.validation_engine = ValidationEngine()
         self.orchestrator = InvocationOrchestrator(
             self.validation_engine,
@@ -2051,7 +2443,7 @@ class InvocationOrchestrator:
     def __init__(
         self,
         validation_engine: ValidationEngine,
-        ownership_registry: OwnershipRegistry,
+        ownership_registry: OwnershipRichRegistry,
         config: Optional[PipelineConfig] = None
     ):
         self.validation_engine = validation_engine
@@ -5509,7 +5901,7 @@ class ReturnValueViolationError(ContractRichViolationError):
     pass
 
 
-class OwnershipViolationError(ContractRichViolationError):
+class OwnershipRichViolationError(ContractRichViolationError):
     """Exception for ownership constraint violations."""
     pass
 
@@ -5890,8 +6282,8 @@ class PythonExceptionTranslator(ExceptionTranslator):
                 remediation_hints=violation_report.remediation_hints
             )
         
-        elif 'ownership' in clause_type_lower:
-            return OwnershipViolationError(
+        elif clause_type_lower == 'ownership':
+            return OwnershipRichViolationError(
                 violation_report.message,
                 violation_report.function_name,
                 violation_report.clause_id,

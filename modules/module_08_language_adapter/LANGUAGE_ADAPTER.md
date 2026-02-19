@@ -268,3 +268,83 @@ This phase introduces a structural hook for post-call reconciliation. While curr
 ### Relational Violation Example
 - **Mismatched Length**: `Relational rule LENGTH_MATCH failed: 1024 != 512` (where `length` was expected to match `buffer_capacity`).
 - **Constraint Violation**: `Relational rule MIN_STRIDE failed: 640 < 1280` (where `stride` must be at least the image `width`).
+
+---
+
+## Prompt 03 Part 1 — Ownership Registry Engine
+
+Memory management is the most critical failure point in FFI systems. The Ownership Registry Engine provides foundational tracking of native pointer lifecycles to prevent catastrophic memory errors.
+
+### Pointer Lifecycle Tracking
+The engine monitors the state of pointers from the moment they are returned by a native allocator until they are passed to a deallocator. This explicit tracking bridges the gap between Python's garbage collector and native memory management.
+
+### Foundational Governance
+This phase implements the base governance for pointer safety:
+- **Canonical Identity**: Every pointer is reduced to its absolute memory address for tracking, regardless of its `ctypes` wrapper type.
+- **State Records**: Each tracked pointer is associated with a `PointerOwnershipRecord` containing its origin function, current state (`active` or `freed`), and ownership type.
+- **Double-Free Prevention**: The registry detects when a pointer is passed to a deallocation function multiple times, raising an immediate `OwnershipViolationError`.
+- **Use-After-Free Detection**: Any attempt to pass a pointer that has been marked as `freed` into a native function triggers a violation before the native call is made.
+
+### Free Function Enforcement
+The adapter identifies deallocation functions through contract metadata. When a function marked as a `free_function` is invoked, the registry automatically transitions the subject pointer to the `freed` state.
+
+### Explicit Return Ownership
+Pointers returned by native functions can be marked as `caller_owned`. When such a pointer is returned, the adapter automatically registers it in the active tracking pool, ensuring its future lifecycle is governed by the enforcement engine.
+
+### Deterministic Failure Reporting
+Ownership violations follow a strict, reproducible reporting format including the function name, the pointer address in hexadecimal, and a specific message detailing the nature of the violation.
+
+---
+
+## Prompt 03 Part 2 — Ownership State Machine and Epoch Model
+
+To handle real-world native memory behavior, the Ownership Registry has been upgraded to a formal State Machine utilizing a Pointer Epoch Model to address address-reuse collisions.
+
+### The Address Reuse Problem
+Native allocators frequently recycle memory addresses. A simple registry based solely on address will fail if a pointer is freed and then a new allocation is made at the same address. The simple registry would see the new pointer as already freed (a false positive use-after-free).
+
+### Epoch-Based Canonical Identity
+The system now uses a three-part canonical key for pointer identity: `(contract_fingerprint, pointer_address, epoch)`. 
+- **Epoch**: A per-address counter that increments every time a pointer is freed. This effectively separates the identities of two different allocations that happen to share the same memory address over time.
+
+### State Machine Lifecycle
+Pointers transition through a strict set of lifecycle states:
+- `ACTIVE_CALLER_OWNED`: Memory that the Python caller is responsible for deallocating.
+- `BORROWED_INPUT`: Pointers passed into a function for temporary use. They cannot be freed by the callee.
+- `FREED`: The terminal state for an allocation in its current epoch.
+- `UNOBSERVED`: Pointers that are not currently tracked by the adapter.
+
+### Transition Enforcement
+Every state change is validated against an allowed transition matrix. For example:
+- `ACTIVE_CALLER_OWNED` can transition to `FREED`.
+- `BORROWED_INPUT` **cannot** transition to `FREED` through a deallocator call. Any attempt to do so triggers an `OwnershipViolationError` for an invalid state transition.
+
+### Deterministic History Tracking
+Each `PointerOwnershipRecord` maintains a chronological history of all transitions, including the function that triggered the change. This provides a deterministic "black box" recording for debugging memory safety violations.
+
+---
+
+## Prompt 03 Part 3 — Pointer Wrapper and Alias Enforcement
+
+To prevent users from bypassing ownership rules using raw memory manipulation, the adapter now enforces usage through a controlled object boundary using Pointer Wrapper Objects.
+
+### Wrapper Object Philosophy
+When a native function returns a `caller_owned` pointer, the user no longer receives a raw integer or `ctypes` object. Instead, they receive a `ContractPointerWrapper`. This object acts as a proxy for the native memory, ensuring every access is governed by the registry.
+
+### Proper Deallocation Enforcement
+One of the most common FFI errors is calling a deallocator on a raw pointer address that has already been freed. With wrapper enforcement:
+- **Free via Wrapper**: Users must call `wrapper.free(function_name)` or pass the wrapper object to a designated `free_function`.
+- **Raw Bypass Prevention**: If a user attempts to call a `free_function` using a raw integer address that is currently governed by a wrapper, the system raises an `OwnershipViolationError`. This prevents "silent" double-frees occurring outside the managed lifecycle.
+
+### Alias Detection Strategy
+The system prevents "aliasing" where multiple independent Python objects attempt to manage the same native pointer. 
+- **Unique Mapping**: The `OwnershipRegistry` maintains a `_wrapper_map` that links a specific `(fingerprint, address, epoch)` key to exactly one `ContractPointerWrapper`.
+- **Collision Rejection**: Any attempt to attach a second wrapper to the same pointer identity (alias) is rejected, ensuring a strict one-to-one relationship between the Python management object and the native allocation.
+
+### Pre-Invocation Ownership Guard
+Before any native function is executed, the adapter performs a "pre-invoke guard" sweep:
+1. **Unwrap Arguments**: Any `ContractPointerWrapper` arguments are identified and unwrapped to their raw native addresses.
+2. **Liveness Check**: The unwrapped pointer's canonical identity is checked against the registry.
+3. **Guard Abort**: If the pointer is not in an `ACTIVE` state for its recorded epoch (e.g., it was previously freed via its wrapper), the invocation is blocked before it reaches native code.
+
+This architecture ensures that even if a user keeps a reference to an old wrapper, they cannot use it to trigger a Use-After-Free in native memory.
