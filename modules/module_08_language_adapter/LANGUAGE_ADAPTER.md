@@ -171,3 +171,100 @@ The PAL enforces alphabetical processing of function symbols. This guarantees th
 
 ### Integration Hardening Strategy
 By isolating the initialization state and enforcing strict post-binding verification, the adapter provides a hardened boundary that resists inconsistent environment states and developer errors.
+
+---
+
+## Prompt 02 Part 1 — Invocation Proxy Generator
+
+The Invocation Proxy Generator establishes a deterministic enforcement boundary between the Python runtime and native code. By interposing a controlled callable wrapper for every bound function, the system ensures that every cross-language invocation can be validated, audited, and isolated.
+
+### Why raw invocation is unsafe
+Directly calling raw `ctypes` or `cffi` functions bypasses all contract enforcement logic. Without an interposition layer, there is no mechanism to verify spatial memory constraints, relational invariants, or ownership transitions before the native boundary is crossed.
+
+### Enforcement Boundary Concept
+The proxy acts as a shell that surrounds the raw native call. This shell provides hooks for multiple stages of enforcement:
+1. **Pre-call Validation**: Arity, types, and mathematical invariants.
+2. **Ownership Management**: Pointer state transitions.
+3. **Execution**: The actual native invocation.
+4. **Post-call Validation**: Return value checks and pointer side-effects.
+5. **Exception Translation**: Mapping native signals to Python exceptions.
+
+### Proxy Replacement Model
+During initialization, the `PrototypeAuthorityLayer` generates a unique proxy wrapper for every function defined in the contract. It then **forcibly replaces** the original attribute on the library handle with the proxy. Once the adapter is active, the developer can only access the native code through these proxies.
+
+### Raw Function Retention in Registry
+To prevent loss of access to the underlying native entry points, the original raw function pointers are stored in an internal `InvocationProxyRegistry`. This registry is private to the adapter and is the only authorized way to perform the final dispatch.
+
+### Deterministic Wrapper Generation
+Proxies are built in a fixed alphabetical sequence, ensuring that the initialization state and internal registry ordering are consistent across different runs and environments.
+
+### Future Insertion Points for Validation Stages
+While Part 1 focuses on the structural wrap, the proxy is designed to allow high-speed insertion of relational constraint evaluation and ownership tracking in subsequent phases without requiring changes to the core dispatch logic.
+
+### No-trust direct invocation philosophy
+The system operates on the principle that no raw library attribute can be trusted. Every callable exposed on a verified library handle MUST traverse the proxy boundary, or the system is considered compromised.
+
+---
+
+## Prompt 02 Part 2 — Validation Execution Core (Parameter-Level)
+
+The Validation Execution Core transforms the passive proxy wrapper into an active enforcement boundary. In this stage, every parameter and return value is explicitly validated against the contract descriptor before and after the native FFI boundary is crossed.
+
+### Argument count enforcement
+The system explicitly verifies that the number of arguments provided in Python matches the `arg_types` definition in the contract. This prevents common C-level stack corruption bugs caused by mismatched arity.
+
+### Range enforcement philosophy
+Python integers have arbitrary precision, while C integers have fixed widths. The adapter enforces strict bounds for `int32`, `uint32`, `int64`, and `uint64`. This ensures that negative values are not passed to unsigned parameters and that overflow/truncation errors are caught in Python before they reach native memory.
+
+### No implicit truncation rule
+In raw `ctypes`, assigning a 65-bit integer to a `ctypes.c_int32` will result in silent truncation. The Language Adapter rejects any integer that does not fit exactly within the target type's range, ensuring mathematical integrity across the boundary.
+
+### Nullability enforcement
+The system enforces strict nullability rules. `None` is only permitted for types explicitly marked as pointers (`*_ptr` or `void_ptr`). Passing `None` to a scalar type (e.g., `int32`) triggers an immediate `ContractViolationError`.
+
+### Return type validation
+Post-invocation validation ensures that the native code produced a result compatible with the contract's expectations. This includes range checks for integer returns and `None` verification for `void` return types.
+
+### Deterministic error format
+When a violation occurs, the system raises a `ContractViolationError` containing:
+- The function name.
+- The 0-indexed parameter index (or -1 for global/return errors).
+- A specific, human-readable violation message.
+- The contract fingerprint.
+
+### Boundary enforcement examples
+- **Violation**: Passing `-1` to a `uint32` parameter.
+- **Violation**: Passing `123` to a function expecting `0` arguments.
+- **Violation**: A `void` function returning a non-zero integer.
+- **Violation**: Passing `None` to a `double` parameter.
+
+---
+
+## Prompt 02 Part 3 — Relational Constraint Evaluator
+
+While parameter-level validation ensures that individual values are safe, FFI correctness often depends on the relationship between multiple parameters. The Relational Constraint Evaluator enforces cross-parameter invariants.
+
+### Cross-parameter invariants
+Many C APIs require that a length parameter matches the size of a buffer, or that coordinates (width, height) do not exceed the capacity of a passed array. These are relational constraints that cannot be verified by looking at a single parameter in isolation.
+
+### Supported Operators
+The evaluator supports the following relational operators:
+- `==`: Exact equality (e.g., `count == buffer_size`).
+- `>=`: Greater than or equal (e.g., `stride >= width`).
+- `<=`: Less than or equal (e.g., `offset <= total_size`).
+
+### Conditional Rule Model (if_nonzero)
+To support optional buffers or variable-length API patterns, the evaluator supports the `if_nonzero` condition. If a rule is marked with this condition, the validation logic is only executed if the `left_index` value is non-zero. This prevents false positives when a pointer is null and its associated size is zero.
+
+### Deterministic Rule Ordering
+To ensure that error messages are consistent and reproducible, relational rules are sorted by their unique `id` during contract loading. Rules are always evaluated in this fixed alphabetical order.
+
+### Failure Semantics
+Mismatched relational constraints raise a `ContractViolationError`. The error points to the `left_index` (the primary subject of the rule) and includes the rule ID and the observed values that caused the mismatch.
+
+### Post-call Reconciliation Hook
+This phase introduces a structural hook for post-call reconciliation. While currently acting as a pass-through, this hook is the architectural insertion point for future ownership state transitions and pointer validity checks that must occur after the native code has completed execution.
+
+### Relational Violation Example
+- **Mismatched Length**: `Relational rule LENGTH_MATCH failed: 1024 != 512` (where `length` was expected to match `buffer_capacity`).
+- **Constraint Violation**: `Relational rule MIN_STRIDE failed: 640 < 1280` (where `stride` must be at least the image `width`).

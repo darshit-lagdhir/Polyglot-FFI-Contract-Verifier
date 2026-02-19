@@ -26,7 +26,7 @@ PFCV is built as a modular, 8-stage pipeline where each component performs a spe
 | **Module 05** | [IR Normalization](modules/module_05_ir_normalization/) | ✅ Complete 1.0.0 | Universal IR projection (scalar, pointer, struct). |
 | **Module 06** | [Contract Schema](modules/module_06_contract_schema/) | ✅ Complete 1.0.0 | Formal schema for FFI safety contracts. |
 | **Module 07** | [Synthesis Engine](modules/module_07_contract_synthesis/) | ✅ Complete 1.0.0 | Contextual pattern detection & contract generation. |
-| **Module 08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ Initialization Layer Complete | Multi-language runtime enforcement (Python, Rust, C++). |
+| **Module 08** | [Language Adapter](modules/module_08_language_adapter/) | ✅ Relational Enforcement Active | Multi-language runtime enforcement (Python, Rust, C++). |
 | **Module 09** | [Python Adapter Model](docs/modules/PYTHON_ADAPTER_MODEL.md) | 🔄 In Progress (4/22) | Specialized, high-performance Python enforcement. |
 
 ---

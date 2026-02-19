@@ -100,6 +100,29 @@ class PrototypeMismatchError(Exception):
         )
 
 
+class ContractViolationError(Exception):
+    """
+    Raised when parameter validation fails before invocation.
+    """
+
+    def __init__(self, function_name: str, parameter_index: int,
+                 message: str, fingerprint: str):
+        self.function_name = function_name
+        self.parameter_index = parameter_index
+        self.message = message
+        self.fingerprint = fingerprint
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        return (
+            f"[ContractViolationError]"
+            f"[fingerprint={self.fingerprint}] "
+            f"Function={self.function_name} "
+            f"ParamIndex={self.parameter_index} "
+            f"{self.message}"
+        )
+
+
 @dataclass(frozen=True)
 class EnforcementDescriptor:
     """
@@ -109,6 +132,7 @@ class EnforcementDescriptor:
     calling_convention: str
     arg_types: List[str]
     return_type: str
+    relational_rules: List[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -213,11 +237,22 @@ class ContractRuntimeLoader:
                         fingerprint
                     )
 
+            rules = fdef.get("relational_rules", [])
+            if not isinstance(rules, list):
+                raise ContractInitializationError(
+                    f"Invalid relational_rules for {fname}",
+                    fingerprint
+                )
+
+            # Deterministic rule ordering
+            rules = sorted(rules, key=lambda r: r.get("id", ""))
+
             descriptors[fname] = EnforcementDescriptor(
                 function_name=fname,
                 calling_convention=fdef["calling_convention"],
                 arg_types=list(fdef["arg_types"]),
                 return_type=fdef["return_type"],
+                relational_rules=rules,
             )
 
         return ContractMetadata(
@@ -253,6 +288,13 @@ _CTYPES_TYPE_MAP = {
     "void": None,
 }
 
+_INT_RANGES = {
+    "int32": (-2**31, 2**31 - 1),
+    "uint32": (0, 2**32 - 1),
+    "int64": (-2**63, 2**63 - 1),
+    "uint64": (0, 2**64 - 1),
+}
+
 
 class AdapterInitializationState:
     """
@@ -275,6 +317,30 @@ class AdapterInitializationState:
         self.failed = True
 
 
+class InvocationProxyRegistry:
+    """
+    Stores mapping between function names and proxy wrappers.
+    Ensures deterministic lookup and replacement.
+    """
+
+    def __init__(self):
+        self._proxies = {}
+        self._raw_functions = {}
+
+    def register(self, name: str, raw_func, proxy_func):
+        self._raw_functions[name] = raw_func
+        self._proxies[name] = proxy_func
+
+    def get_proxy(self, name: str):
+        return self._proxies.get(name)
+
+    def get_raw(self, name: str):
+        return self._raw_functions.get(name)
+
+    def names(self):
+        return sorted(self._proxies.keys())
+
+
 class PrototypeAuthorityLayer:
 
     def __init__(self, loader: ContractRuntimeLoader, library_handle: Any):
@@ -282,6 +348,7 @@ class PrototypeAuthorityLayer:
         self._library = library_handle
         self._fingerprint = loader.metadata.fingerprint
         self._state = AdapterInitializationState()
+        self._proxy_registry = InvocationProxyRegistry()
         self._bind_all_functions()
 
     def is_initialized(self) -> bool:
@@ -297,11 +364,266 @@ class PrototypeAuthorityLayer:
             # Final verification
             self._verify_binding_integrity()
 
+            # Generate proxies and replace library attributes
+            self._generate_proxies()
+
             self._state.mark_initialized()
 
         except Exception:
             self._state.mark_failed()
             raise
+
+    def get_raw_function(self, name: str):
+        return self._proxy_registry.get_raw(name)
+
+    def _generate_proxies(self) -> None:
+        """
+        Generates proxies for all bound functions and replaces
+        original library attributes.
+        """
+        for fname in sorted(self._metadata.descriptors.keys()):
+            raw_func = getattr(self._library, fname)
+            descriptor = self._metadata.descriptors[fname]
+
+            proxy = self._build_proxy(fname, raw_func, descriptor)
+
+            # Replace library attribute with proxy
+            setattr(self._library, fname, proxy)
+
+            self._proxy_registry.register(fname, raw_func, proxy)
+
+    def _build_proxy(self, name: str, raw_func, descriptor: EnforcementDescriptor):
+        """
+        Structural proxy builder for high-speed FFI interposition.
+        """
+        fingerprint = self._fingerprint
+
+        def proxy_callable(*args):
+            # Parameter validation stage
+            validated_args = self._validate_arguments(descriptor, args)
+
+            # Relational evaluation
+            self._evaluate_relational_constraints(
+                descriptor,
+                validated_args
+            )
+
+            result = raw_func(*validated_args)
+
+            # Return type validation stage
+            if descriptor.return_type in _INT_RANGES:
+                if not isinstance(result, int):
+                    raise ContractViolationError(
+                        name,
+                        -1,
+                        "Return type mismatch (expected int)",
+                        fingerprint
+                    )
+
+                min_val, max_val = _INT_RANGES[descriptor.return_type]
+                if not (min_val <= result <= max_val):
+                    raise ContractViolationError(
+                        name,
+                        -1,
+                        "Return integer out of range",
+                        fingerprint
+                    )
+            elif descriptor.return_type == "void":
+                if result is not None:
+                    raise ContractViolationError(
+                        name,
+                        -1,
+                        "Expected void return (None)",
+                        fingerprint
+                    )
+            elif descriptor.return_type in ("float", "double"):
+                if not isinstance(result, (float, int)):
+                    raise ContractViolationError(
+                        name,
+                        -1,
+                        "Return type mismatch (expected float)",
+                        fingerprint
+                    )
+
+            # Post-call reconciliation
+            result = self._post_call_reconciliation(
+                descriptor,
+                validated_args,
+                result
+            )
+
+            return result
+
+        proxy_callable.__name__ = name
+        proxy_callable.__doc__ = raw_func.__doc__
+        proxy_callable._ffi_contract_fingerprint = fingerprint
+        proxy_callable._ffi_descriptor = descriptor
+
+        return proxy_callable
+
+    def _evaluate_relational_constraints(self,
+                                         descriptor: EnforcementDescriptor,
+                                         args: tuple):
+
+        fingerprint = self._fingerprint
+        fname = descriptor.function_name
+
+        if not descriptor.relational_rules:
+            return
+
+        # Sort rules by id for deterministic evaluation order
+        # (Though they should already be sorted by the loader)
+        for rule in descriptor.relational_rules:
+
+            rule_id = rule.get("id", "UNKNOWN")
+            left_index = rule.get("left_index")
+            right_index = rule.get("right_index")
+            condition = rule.get("condition")
+            operator = rule.get("operator")
+
+            if left_index is None or right_index is None:
+                raise ContractViolationError(
+                    fname,
+                    -1,
+                    f"Malformed relational rule {rule_id}",
+                    fingerprint
+                )
+
+            left_value = args[left_index]
+            right_value = args[right_index]
+
+            if condition == "if_nonzero":
+                if left_value == 0:
+                    continue
+
+            if operator == "==":
+                if not (left_value == right_value):
+                    raise ContractViolationError(
+                        fname,
+                        left_index,
+                        f"Relational rule {rule_id} failed: "
+                        f"{left_value} != {right_value}",
+                        fingerprint
+                    )
+
+            elif operator == ">=":
+                if not (left_value >= right_value):
+                    raise ContractViolationError(
+                        fname,
+                        left_index,
+                        f"Relational rule {rule_id} failed: "
+                        f"{left_value} < {right_value}",
+                        fingerprint
+                    )
+
+            elif operator == "<=":
+                if not (left_value <= right_value):
+                    raise ContractViolationError(
+                        fname,
+                        left_index,
+                        f"Relational rule {rule_id} failed: "
+                        f"{left_value} > {right_value}",
+                        fingerprint
+                    )
+
+            else:
+                raise ContractViolationError(
+                    fname,
+                    -1,
+                    f"Unsupported operator in relational rule {rule_id}",
+                    fingerprint
+                )
+
+    def _post_call_reconciliation(self,
+                                  descriptor: EnforcementDescriptor,
+                                  args: tuple,
+                                  result):
+
+        # For now, no ownership checks.
+        # Placeholder for later phases.
+        return result
+
+    def _validate_arguments(self, descriptor: EnforcementDescriptor,
+                            args: tuple):
+
+        fingerprint = self._fingerprint
+        fname = descriptor.function_name
+
+        expected_count = len(descriptor.arg_types)
+
+        if len(args) != expected_count:
+            raise ContractViolationError(
+                fname,
+                -1,
+                f"Expected {expected_count} arguments, got {len(args)}",
+                fingerprint
+            )
+
+        normalized_args = []
+
+        for idx, (value, type_name) in enumerate(
+            zip(args, descriptor.arg_types)
+        ):
+            # Nullability enforcement
+            if value is None:
+                if type_name.endswith("_ptr") or type_name == "void_ptr":
+                    normalized_args.append(value)
+                    continue
+                else:
+                    raise ContractViolationError(
+                        fname,
+                        idx,
+                        f"Null not allowed for type {type_name}",
+                        fingerprint
+                    )
+
+            # Integer enforcement
+            if type_name in _INT_RANGES:
+                if not isinstance(value, int):
+                    raise ContractViolationError(
+                        fname,
+                        idx,
+                        f"Expected int for type {type_name}",
+                        fingerprint
+                    )
+
+                min_val, max_val = _INT_RANGES[type_name]
+                if not (min_val <= value <= max_val):
+                    raise ContractViolationError(
+                        fname,
+                        idx,
+                        f"Integer out of range for {type_name}",
+                        fingerprint
+                    )
+
+                normalized_args.append(value)
+                continue
+
+            # Float enforcement
+            if type_name in ("float", "double"):
+                if not isinstance(value, (float, int)):
+                    raise ContractViolationError(
+                        fname,
+                        idx,
+                        f"Expected float-compatible type",
+                        fingerprint
+                    )
+                normalized_args.append(float(value))
+                continue
+
+            # Pointer enforcement
+            if type_name.endswith("_ptr") or type_name == "void_ptr":
+                normalized_args.append(value)
+                continue
+
+            raise ContractViolationError(
+                fname,
+                idx,
+                f"Unsupported validation type {type_name}",
+                fingerprint
+            )
+
+        return tuple(normalized_args)
 
     def _verify_binding_integrity(self) -> None:
         expected = set(self._metadata.descriptors.keys())
@@ -5124,7 +5446,7 @@ class AdapterException(Exception):
         }
 
 
-class ContractViolationError(AdapterException):
+class ContractRichViolationError(AdapterException):
     """
     Exception raised when contract validation fails.
     
@@ -5162,7 +5484,7 @@ class ContractViolationError(AdapterException):
         return '\n'.join(parts)
 
 
-class ParameterViolationError(ContractViolationError):
+class ParameterViolationError(ContractRichViolationError):
     """Exception for parameter validation failures."""
     
     def __init__(
@@ -5182,12 +5504,12 @@ class ParameterViolationError(ContractViolationError):
         self.parameter_name = parameter_name
 
 
-class ReturnValueViolationError(ContractViolationError):
+class ReturnValueViolationError(ContractRichViolationError):
     """Exception for return value validation failures."""
     pass
 
 
-class OwnershipViolationError(ContractViolationError):
+class OwnershipViolationError(ContractRichViolationError):
     """Exception for ownership constraint violations."""
     pass
 
@@ -5272,13 +5594,13 @@ class ExceptionFormatter:
     
     def format_contract_violation(
         self,
-        error: ContractViolationError
+        error: ContractRichViolationError
     ) -> str:
         """
         Format contract violation error.
         
         Args:
-            error: ContractViolationError instance
+            error: ContractRichViolationError instance
             
         Returns:
             Formatted error message
@@ -5360,7 +5682,7 @@ class ExceptionFormatter:
         Returns:
             Short error message
         """
-        if isinstance(error, ContractViolationError):
+        if isinstance(error, ContractRichViolationError):
             return (
                 f"{error.function_name}: {error.clause_id} failed "
                 f"({error.expected} vs {error.observed})"
@@ -5392,7 +5714,7 @@ class ErrorRecoveryHandler:
     
     def __init__(self):
         self.strategies: Dict[type, ErrorRecoveryStrategy] = {
-            ContractViolationError: ErrorRecoveryStrategy.PROPAGATE,
+            ContractRichViolationError: ErrorRecoveryStrategy.PROPAGATE,
             NativeCrashError: ErrorRecoveryStrategy.PROPAGATE,
             ConfigurationError: ErrorRecoveryStrategy.PROPAGATE
         }
@@ -5532,7 +5854,7 @@ class PythonExceptionTranslator(ExceptionTranslator):
         self,
         violation_report: ViolationReport,
         enforcement_context: Optional[EnforcementContext] = None
-    ) -> ContractViolationError:
+    ) -> ContractRichViolationError:
         """
         Translate violation report to Python exception.
         
@@ -5541,7 +5863,7 @@ class PythonExceptionTranslator(ExceptionTranslator):
             enforcement_context: Enforcement context
             
         Returns:
-            ContractViolationError instance
+            ContractRichViolationError instance
         """
         clause_type_lower = violation_report.clause_type.lower()
         
@@ -5580,7 +5902,7 @@ class PythonExceptionTranslator(ExceptionTranslator):
             )
         
         else:
-            return ContractViolationError(
+            return ContractRichViolationError(
                 violation_report.message,
                 violation_report.function_name,
                 violation_report.clause_id,
@@ -5908,7 +6230,7 @@ class PythonInvocationPipeline:
             Function result
             
         Raises:
-            ContractViolationError: If validation fails
+            ContractRichViolationError: If validation fails
             NativeCrashError: If native code crashes
         """
         start_time = datetime.utcnow()
@@ -6130,7 +6452,7 @@ class PythonAdapterComplete(PythonAdapter):
             Function result
             
         Raises:
-            ContractViolationError: If validation fails
+            ContractRichViolationError: If validation fails
             NativeCrashError: If native crashes
         """
         return self.pipeline.execute(
