@@ -22,12 +22,13 @@ import uuid
 import threading
 from datetime import datetime
 from pathlib import Path
+import multiprocessing
+import traceback
+import sys
+import ctypes
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
-import sys
-import ctypes
-from typing import Any
 
 try:
     import cffi
@@ -1182,6 +1183,226 @@ class StructureLayoutVerifier:
             last_size = cf["size"]
 
 
+class ContractNamespace:
+    """
+    Isolated enforcement namespace per contract.
+    """
+
+    def __init__(self,
+                 fingerprint: str,
+                 authority: 'PrototypeAuthorityLayer'):
+
+        self.fingerprint = fingerprint
+        self.authority = authority
+
+
+class AdapterManager:
+    """
+    Manages multiple active adapter instances.
+    """
+
+    def __init__(self):
+        self._namespaces = {}
+        self._lock = threading.Lock()
+
+    def register(self,
+                 fingerprint: str,
+                 authority: 'PrototypeAuthorityLayer'):
+
+        with self._lock:
+            if fingerprint in self._namespaces:
+                raise ContractInitializationError(
+                    f"Contract fingerprint already registered: {fingerprint}",
+                    fingerprint
+                )
+
+            self._namespaces[fingerprint] = ContractNamespace(
+                fingerprint,
+                authority
+            )
+
+    def get(self, fingerprint: str):
+        return self._namespaces.get(fingerprint)
+
+    def all_fingerprints(self):
+        return sorted(self._namespaces.keys())
+
+
+_ADAPTER_MANAGER = AdapterManager()
+
+
+class ExecutionMode:
+    IN_PROCESS = "in_process"
+    SANDBOXED = "sandboxed"
+
+
+def _sandbox_worker(conn,
+                    function_name,
+                    args,
+                    fingerprint,
+                    library_loader):
+
+    try:
+        library = library_loader()
+        raw_func = getattr(library, function_name)
+        result = raw_func(*args)
+        conn.send(("ok", result))
+    except Exception as e:
+        conn.send(("error", str(e), traceback.format_exc()))
+    finally:
+        conn.close()
+
+
+class SandboxedExecutor:
+
+    def __init__(self,
+                 authority,
+                 library_loader):
+        self._authority = authority
+        self._library_loader = library_loader
+
+    def execute(self,
+                function_name,
+                args,
+                fingerprint):
+
+        parent_conn, child_conn = multiprocessing.Pipe()
+
+        process = multiprocessing.Process(
+            target=_sandbox_worker,
+            args=(child_conn,
+                  function_name,
+                  args,
+                  fingerprint,
+                  self._library_loader)
+        )
+
+        process.start()
+        process.join()
+
+        if parent_conn.poll():
+            status, *payload = parent_conn.recv()
+        else:
+            raise NativeCrashError(
+                function_name,
+                "Sandbox process terminated without response",
+                fingerprint
+            )
+
+        if status == "ok":
+            return payload[0]
+
+        if status == "error":
+            raise NativeCrashError(
+                function_name,
+                f"Sandbox error: {payload[0]}",
+                fingerprint
+            )
+
+        raise NativeCrashError(
+            function_name,
+            "Unknown sandbox response",
+            fingerprint
+        )
+
+
+class StructuredLogRecord:
+
+    def __init__(self,
+                 fingerprint: str,
+                 function_name: str,
+                 event_type: str,
+                 detail: str):
+
+        self.fingerprint = fingerprint
+        self.function_name = function_name
+        self.event_type = event_type
+        self.detail = detail
+
+    def serialize(self) -> str:
+        return (
+            f"[Log]"
+            f"[fingerprint={self.fingerprint}] "
+            f"Function={self.function_name} "
+            f"Event={self.event_type} "
+            f"Detail={self.detail}"
+        )
+
+
+class RateLimiter:
+
+    def __init__(self, max_per_window=5):
+        self._counts = {}
+        self._max = max_per_window
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        with self._lock:
+            count = self._counts.get(key, 0)
+            if count >= self._max:
+                return False
+            self._counts[key] = count + 1
+            return True
+
+
+class InvocationMetricsTracker:
+
+    def __init__(self):
+        self._invocations = {}
+        self._violations = {}
+        self._lock = threading.Lock()
+
+    def record_invocation(self, fingerprint, function_name):
+        with self._lock:
+            key = (fingerprint, function_name)
+            self._invocations[key] = self._invocations.get(key, 0) + 1
+
+    def record_violation(self, fingerprint, function_name):
+        with self._lock:
+            key = (fingerprint, function_name)
+            self._violations[key] = self._violations.get(key, 0) + 1
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "invocations": dict(self._invocations),
+                "violations": dict(self._violations)
+            }
+
+
+class ObservabilityManager:
+
+    def __init__(self, enabled=False):
+        self._enabled = enabled
+        self._rate_limiter = RateLimiter()
+        self._metrics = InvocationMetricsTracker()
+
+    def enabled(self):
+        return self._enabled
+
+    def record_invocation(self, fingerprint, function_name):
+        if not self._enabled:
+            return
+        self._metrics.record_invocation(fingerprint, function_name)
+
+    def record_violation(self, fingerprint, function_name, detail):
+        if not self._enabled:
+            return
+        self._metrics.record_violation(fingerprint, function_name)
+        key = f"{fingerprint}:{function_name}:{detail}"
+        if self._rate_limiter.allow(key):
+            record = StructuredLogRecord(
+                fingerprint,
+                function_name,
+                "violation",
+                detail
+            )
+            print(record.serialize())
+
+    def metrics_snapshot(self):
+        return self._metrics.snapshot()
+
+
 class AdapterInitializationState:
     """
     Tracks initialization lifecycle state.
@@ -1255,7 +1476,13 @@ class PrecompiledClausePlan:
 
 class PrototypeAuthorityLayer:
 
-    def __init__(self, loader: ContractRuntimeLoader, library_handle: Any, mode: str = RuntimeEnforcementMode.STRICT):
+    def __init__(self,
+                 loader: ContractRuntimeLoader,
+                 library_handle: Any,
+                 mode: str = RuntimeEnforcementMode.STRICT,
+                 execution_mode=ExecutionMode.IN_PROCESS,
+                 library_loader=None,
+                 observability_enabled=False):
         self._metadata = loader.metadata
         self._library = library_handle
         self._fingerprint = loader.metadata.fingerprint
@@ -1265,6 +1492,22 @@ class PrototypeAuthorityLayer:
         self._ownership_registry = OwnershipRegistry(self._context_stack)
         self._mode = mode
         self._struct_snapshot_cache = {}
+
+        # Part 2
+        self._execution_mode = execution_mode
+        self._library_loader = library_loader
+        if execution_mode == ExecutionMode.SANDBOXED and library_loader is None:
+            raise ContractInitializationError(
+                "Sandbox mode requires library_loader",
+                self._fingerprint
+            )
+
+        self._sandbox_executor = None
+        if execution_mode == ExecutionMode.SANDBOXED:
+            self._sandbox_executor = SandboxedExecutor(self, library_loader)
+
+        # Part 3
+        self._observability = ObservabilityManager(enabled=observability_enabled)
         
         # We need access to the verifier if in DEBUG mode, but validation happens outside in initialize usually.
         # However, to re-validate in DEBUG mode, the prompt implies we call verifier.verify(namespace).
@@ -1328,6 +1571,7 @@ class PrototypeAuthorityLayer:
     def _build_proxy(self, name: str, raw_func, descriptor: EnforcementDescriptor):
         """
         Structural proxy builder for high-speed FFI interposition.
+        Now with multi-library isolation, sandboxing, and observability.
         """
         fingerprint = self._fingerprint
         local_descriptor = descriptor
@@ -1364,8 +1608,6 @@ class PrototypeAuthorityLayer:
 
         if descriptor.return_type != "void":
             plan.return_validator = True
-            # For non-void return, we generally leave fast_path=False if it's not a simple int/float
-            # but for now let's be conservative. If we have return validation, it's not "minimal".
             plan.fast_path = False
 
         has_structs = any(t in self._metadata.structs for t in descriptor.arg_types)
@@ -1378,16 +1620,23 @@ class PrototypeAuthorityLayer:
              plan.error_semantics = descriptor.error_semantics
              plan.fast_path = False
 
+        # Part 2: Sandbox mode is NEVER fast path
+        if self._execution_mode == ExecutionMode.SANDBOXED:
+            plan.fast_path = False
+
         def proxy_callable(*args):
             # Local bind for speed
             raw = raw_func
             local_plan = plan
+            
+            # Step 1: Record invocation (Prompt 7 Part 3)
+            self._observability.record_invocation(local_fingerprint, name)
 
-            # Step 1: Fast Path Check
-            if local_plan.fast_path and local_mode != RuntimeEnforcementMode.DEBUG:
+            # Step 2: Fast Path Check
+            if local_plan.fast_path and local_mode != RuntimeEnforcementMode.DEBUG and self._execution_mode != ExecutionMode.SANDBOXED:
                 return raw(*args)
 
-            # Step 2: Transactional Context
+            # Step 3: Transactional Context
             context = CallContext()
             local_context_stack.push(context)
 
@@ -1473,9 +1722,10 @@ class PrototypeAuthorityLayer:
                         if rule.get("inspect_memory") and not rule.get("write_allowed", True):
                             buffer_snapshots.append((idx, BufferSnapshot(snapshot_target, length_value)))
 
-                # Memory Pinning
+                # High-Assurance Lifecycle Guard
                 pin_context = PinContext()
                 try:
+                    # Memory Pinning
                     for arg in validated_args_list:
                         if _is_buffer_like(arg) and _validate_contiguity(arg): pin_context.pin(arg)
                         elif isinstance(arg, ctypes.Structure): pin_context.pin(arg)
@@ -1486,8 +1736,21 @@ class PrototypeAuthorityLayer:
 
                     # Wrapped Invocation
                     try:
-                        result = raw(*tuple(validated_args_list))
+                        if self._execution_mode == ExecutionMode.SANDBOXED:
+                            result = self._sandbox_executor.execute(
+                                name,
+                                validated_args_list,
+                                local_fingerprint
+                            )
+                        else:
+                            result = raw(*tuple(validated_args_list))
                     except Exception as e:
+                        # Record violation on fatal invocation failure
+                        self._observability.record_violation(local_fingerprint, name, str(e))
+
+                        if isinstance(e, (NativeCrashError, ContractViolationError, OwnershipViolationError)):
+                            raise
+
                         msg = f"Native invocation raised exception: {str(e)}"
                         if local_mode == RuntimeEnforcementMode.DEBUG:
                             msg += f" {DeterministicDiagnostic(name, local_fingerprint, 'ExceptionGuard', str(e), 'Success').serialize()}"
@@ -1537,10 +1800,19 @@ class PrototypeAuthorityLayer:
                     context.commit()
                     return final_result
 
-                except Exception:
+                except Exception as e:
+                    # Rollback for any failure during or after invocation
                     context.rollback()
+                    # Avoid double recording if recorded in inner try
+                    if not isinstance(e, NativeCrashError):
+                         self._observability.record_violation(local_fingerprint, name, str(e))
                     raise
 
+            except Exception as e:
+                # Catch pre-invocation failures (validation, relational, etc.)
+                context.rollback()
+                self._observability.record_violation(local_fingerprint, name, str(e))
+                raise
             finally:
                 local_context_stack.pop()
 
@@ -1826,78 +2098,57 @@ class PrototypeAuthorityLayer:
             )
 
 
-def initialize_python_adapter(contract_dict: dict, library_handle: Any, mode: str = RuntimeEnforcementMode.STRICT):
+def initialize_python_adapter(contract_dict: dict,
+                              library_handle: Any,
+                              mode: str = RuntimeEnforcementMode.STRICT,
+                              execution_mode=ExecutionMode.IN_PROCESS,
+                              library_loader=None,
+                              observability_enabled=False):
     """
     Full adapter initialization: loader + prototype authority.
+    Now with multi-library orchestration, isolation, and observability.
     """
     loader = ContractRuntimeLoader(contract_dict)
-    
+    fingerprint = loader.metadata.fingerprint
+
+    # Step 8 (Part 1): Prevent double-wrap of same library
+    for fp in _ADAPTER_MANAGER.all_fingerprints():
+        ns = _ADAPTER_MANAGER.get(fp)
+        if ns and ns.authority._library is library_handle:
+             raise ContractInitializationError(
+                 "Library already wrapped by adapter",
+                 fingerprint
+             )
+
     # Structure Layout Verification
     if loader.metadata.structs:
-        # Use caller's globals() or the library_handle's namespace if it's a module
-        # Typically we want the namespace where the user defined their ctypes structs.
-        # Since initialize_python_adapter is called by the user, we can try to look at their frame
-        # but for now we follow the prompt's namespace requirement.
-        # We'll expect them to be in the same namespace or passed in some way.
-        # For testing, we'll pass a namespace or rely on globals() of the calling module if we can.
-        # The prompt says: verifier.verify(globals())
         import inspect
         caller_frame = inspect.currentframe().f_back
         namespace = caller_frame.f_globals if caller_frame else globals()
-        
-        # We create a verifier. Note: PrototypeAuthorityLayer will create its own for DEBUG re-verification.
-        # Ideally we share the cache.
-        # Let's verify here first using a temporary one or pass it?
-        # The prompt says "Inside initialize_python_adapter... Call verifier.verify".
-        # And "Inside PrototypeAuthorityLayer... Accept mode... In proxy... Call verifier.verify".
-        # So authoritative verifier should be in AuthorityLayer or shared.
-        # We will let AuthorityLayer own the verifier with the cache, and we can call it if we expose it,
-        # or we verify here separately.
-        # TO ensure cache sharing (Step 2 says Integrate Cache into Verifier),
-        # validation at init is mandatory.
-        
-        # Let's perform initial verification using a verifier instance.
+
         verifier = StructureLayoutVerifier(
             loader.metadata,
-            loader.metadata.fingerprint
+            fingerprint
         )
         verifier.verify(namespace)
-        
-        # Note: PrototypeAuthorityLayer creates its own verifier in __init__.
-        # This implies standard Init verification + Runtime verification.
-        # If we want shared cache, we should pass the verifier to AuthorityLayer.
-        # BUT Prompt 5 says: "Inside PrototypeAuthorityLayer.__init__: Accept optional mode... Store: self._mode".
-        # It doesn't explicitly say pass the verifier.
-        # However, to avoid double verification overhead in DEBUG mode (if it starts fresh), 
-        # sharing cache would be best.
-        # Given "STRICT EXECUTION RULES" and "Step 1... Step 2...", we follow strictly.
-        # Step 2: Integrate Cache into Verifier.
-        # Step 6: In proxy... Call verifier.verify.
-        # If we create a NEW verifier in AuthorityLayer, it has empty cache.
-        # So we should probably pass the verifier or rely on the one in AuthorityLayer to be used.
-        # But initialize_python_adapter does verification BEFORE creating AuthorityLayer (Prompt 4 Part 1).
-        
-        # Revised approach: 
-        # 1. Create Verifier.
-        # 2. Verify.
-        # 3. Pass Verifier to AuthorityLayer? The prompt doesn't say update AuthorityLayer signature for verifier.
-        # It says "Inside PrototypeAuthorityLayer.__init__... Accept optional mode".
-        # We'll stick to creating it inside, or maybe we can pass it via a hidden arg if needed, 
-        # but to keep it simple and strictly following prompts:
-        # We will perform mandatory init verification here.
-        # And AuthorityLayer will satisfy the "Dynamic Validation Guard" requirement which *uses* a verifier.
-        # If AuthorityLayer makes its own verifier, it has its own cache.
-        # If STRICT mode, it doesn't verify in proxy, so cache doesn't matter (0 overhead).
-        # If DEBUG mode, it verifies. It will populate its cache on first run.
-        # This seems acceptable.
-        
-    authority = PrototypeAuthorityLayer(loader, library_handle, mode)
+
+    authority = PrototypeAuthorityLayer(
+        loader,
+        library_handle,
+        mode=mode,
+        execution_mode=execution_mode,
+        library_loader=library_loader,
+        observability_enabled=observability_enabled
+    )
 
     if not authority.is_initialized():
         raise ContractInitializationError(
             "Prototype authority failed to initialize deterministically",
-            loader.metadata.fingerprint
+            fingerprint
         )
+
+    # Step 4 (Part 1): Register with global manager
+    _ADAPTER_MANAGER.register(fingerprint, authority)
 
     return loader, authority
 
@@ -6686,66 +6937,7 @@ class OwnershipRichViolationError(ContractRichViolationError):
     pass
 
 
-class NativeCrashError(AdapterException):
-    """
-    Exception raised when native code crashes.
-    
-    Includes crash context and native error information.
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        crash_type: str,
-        crash_address: Optional[int] = None,
-        enforcement_context: Optional[EnforcementContext] = None,
-        remediation_hints: Optional[List[str]] = None
-    ):
-        super().__init__(message, enforcement_context, remediation_hints)
-        self.crash_type = crash_type
-        self.crash_address = crash_address
-    
-    def __str__(self) -> str:
-        """Detailed string representation."""
-        parts = [f"Native crash: {self.crash_type}"]
-        
-        if self.crash_address is not None:
-            parts.append(f"Address: {hex(self.crash_address)}")
-        
-        if self.remediation_hints:
-            parts.append(f"Hints: {', '.join(self.remediation_hints)}")
-        
-        return '\n'.join(parts)
-
-
-class SegmentationFaultError(NativeCrashError):
-    """Exception for segmentation faults."""
-    
-    def __init__(
-        self,
-        message: str,
-        crash_address: Optional[int] = None,
-        **kwargs
-    ):
-        super().__init__(
-            message, 'segmentation_fault',
-            crash_address, **kwargs
-        )
-
-
-class AccessViolationError(NativeCrashError):
-    """Exception for access violations (Windows)."""
-    
-    def __init__(
-        self,
-        message: str,
-        crash_address: Optional[int] = None,
-        **kwargs
-    ):
-        super().__init__(
-            message, 'access_violation',
-            crash_address, **kwargs
-        )
+# Standardized exceptions moved to module beginning.
 
 
 class ConfigurationError(AdapterException):

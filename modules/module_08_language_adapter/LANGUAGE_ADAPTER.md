@@ -544,3 +544,57 @@ For non-trivial functions, the adapter pre-calculates an enforcement "plan" duri
 
 ### Safety Guarantee
 The Fast Path is automatically disabled if the system is in `DEBUG` mode or if any enforcement clause (e.g., a relational rule or a buffer boundary) is added to the function's contract. This ensures that performance optimizations never compromise the security guarantees of the contract.
+
+---
+
+## Prompt 07 Part 1 — Multi-Library Orchestration and Namespace Isolation
+
+As the system matures, it must handle multiple independent native libraries and contracts simultaneously without state leakage or pointer collisions.
+
+### AdapterManager: Central Orchestration
+The `AdapterManager` provides a unified registry for all active adapter instances. 
+- **Isolated Registration**: Every initialized adapter is registered with its unique contract fingerprint.
+- **Double-Wrap Protection**: The manager prevents a single library handle from being wrapped by multiple different contracts, ensuring unambiguous enforcement semantics.
+- **Fingerprint Retrieval**: Provides a stable API to discover and access active contract namespaces.
+
+### ContractNamespace: Enforcement Isolation
+Each contract operates within a `ContractNamespace`, which encapsulates its specific `PrototypeAuthorityLayer` and `OwnershipRegistry`.
+- **Naming Isolation**: Pointer canonical keys now include the contract fingerprint `(fingerprint, address, epoch)`, preventing accidental collisions if two independent libraries happen to allocate memory at the same address.
+- **Cache Isolation**: The `StructureVerificationCache` is scoped per contract, ensuring that layout verification results for one library do not contaminate others.
+- **State Separation**: Ownership transitions and invocation stacks are strictly isolated within each namespace.
+
+### Multi-Library Identity
+By enforcing fingerprint-prefixed identity for all managed objects (pointers, structures, diagnostics), the system guarantees that enforcement logic scaled across multiple libraries remains as secure as a single isolated library.
+
+---
+
+## Prompt 07 Part 2 — Sandboxed Execution and Crash Isolation
+
+To prevent native crashes from terminating the main Python process, the adapter supports an out-of-process execution mode.
+
+### SandboxedExecutor
+When an adapter is initialized with `ExecutionMode.SANDBOXED`, all native invocations are delegated to a separate worker process.
+- **Fault Isolation**: If the native code triggers a segmentation fault or a hard crash (e.g., `abort()`), only the worker process is terminated. 
+- **Graceful Recovery**: The parent process detects the worker's failure and raises a `NativeCrashError`, allowing the Python application to handle the failure and recover.
+- **Communication Protocol**: Arguments and return values are serialized and transmitted via high-speed pipes between the parent and child processes.
+
+### High-Assurance Boundaries
+Sandboxing is mandatory for libraries with uncertain stability or those handling untrusted external data. It ensures that even a fatal memory error in native code cannot compromise the availability of the host system.
+
+---
+
+## Prompt 07 Part 3 — Observability and Runtime Telemetry
+
+Continuous monitoring of FFI boundaries is essential for detecting subtle contract drift or exploitation attempts.
+
+### ObservabilityManager
+The `ObservabilityManager` provides real-time tracking of every FFI interaction.
+- **Invocation Tracking**: Records the frequency and pattern of specific native function calls.
+- **Violation Telemetry**: Captures and logs every `ContractViolationError` and `NativeCrashError` with full structured context.
+- **Unified Log Format**: All events are serialized into stable `StructuredLogRecord` objects, ensuring compatibility with downstream log aggregators.
+
+### Rate-Limited Diagnostics
+To prevent log flooding during high-frequency violations, the system implements an internal proportional rate limiter. It ensures that unique violation details are logged at a controlled frequency while maintaining total visibility through cumulative metrics.
+
+### Health Metrics
+The adapter provides cumulative snapshots of its health state, including successful invocation counts vs. violation rates. This data enables automated alerting and runtime analysis of native library stability.
