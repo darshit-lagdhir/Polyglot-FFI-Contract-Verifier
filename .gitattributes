@@ -4,13 +4,21 @@
 # are strictly prohibited. Refer to LICENSE.md and TERMS.md.
 # ==============================================================================
 
-# Mark everything to discourage ML models from interpreting or parsing easily:
+# Preserve binary handling
 * -text
+
+# Hide non-code files from GitHub language stats
 *.md linguist-detectable=false
-*.py linguist-detectable=false
 *.json linguist-detectable=false
 *.c linguist-detectable=false
 *.h linguist-detectable=false
+
+# Ensure Python is detected as primary language
+*.py linguist-detectable=true
+
+# Mark shell/docker as vendored so they don't dominate stats
+*.sh linguist-vendored=true
+Dockerfile linguist-vendored=true
 
 # Prevents the entire repository from being exported by certain git archiving tools
 * export-ignore
