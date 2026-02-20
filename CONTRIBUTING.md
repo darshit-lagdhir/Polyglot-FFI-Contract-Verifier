@@ -1,94 +1,39 @@
 # Contributing to Polyglot FFI Contract Verifier
 
-Thank you for your interest in contributing to the **Polyglot FFI Contract Verifier (PFCV)**! We are building a high-assurance bridge for the multi-language ecosystem, and we welcome your expertise.
+Thank you for your interest in contributing to the Polyglot FFI Contract Verifier (PFCV) ecosystem. 
 
-## 🚀 Getting Started
-Before you start contributing, please ensure you have read the project's [ARCHITECTURE_DEEP_DIVE.md](docs/ARCHITECTURE_DEEP_DIVE.md) and understand the 8-stage verification pipeline.
+PFCV operates under a highly structured governance framework designed to protect the integrity of the project's intellectual property and architectural innovations. We welcome contributions from the community, provided they align with our structural protocols and legal requirements.
 
----
+## 1. Contributor License Agreement (CLA)
 
-## 🧭 Project Navigation
-PFCV is organized as a monorepo with 8 core modules:
-- `modules/module_01_ffi_verifier`: System Architecture
-- `modules/module_02_verification_pipeline`: Orchestration
-- `modules/module_03_build_process`: Build Systems
-- `modules/module_04_native_interface_ingestion`: Ingestion
-- `modules/module_05_ir_normalization`: IR / Types
-- `modules/module_06_contract_schema`: Schema / Enforcement
-- `modules/module_07_contract_synthesis`: Synthesis Engine
-- `modules/module_08_language_adapter`: Multi-Language Adapters
+All contributions are accepted exclusively under the PFCV Contributor License Agreement. By submitting a Pull Request, you explicitly agree to the following terms, which are enforceable under the laws of the Republic of India, with jurisdiction in Bengaluru, Karnataka:
 
----
+* **Affirmation of Originality**: You warrant that your contribution is your original creation and that you possess the necessary rights to submit it.
+* **Rights Transfer**: You grant Darshit Lagdhir and Team LOGLORE an irrevocable, worldwide, royalty-free, transferable, and sublicensable right and license to use, modify, distribute, reproduce, and commercially license your contribution in any form.
+* **Retention of Authorship**: You retain authorship and moral rights over your original work, but you agree not to assert claims against the maintainers or their commercial licensees regarding the use of your contribution.
 
-## 🛠️ Development Setup
+### 1.1 CLA Sign-Off Requirement
+All commits must include a Developer Certificate of Origin (DCO) sign-off. You can sign off your commits using the `-s` flag in Git:
 
-### 1. Prerequisites
-- **Python 3.8+** (3.11+ recommended)
-- **pip** and **venv**
-- **libclang** (required for Module 04 development)
-- **Rust Toolchain** (required for Rust adapter development)
-- **C++17 Compiler** (required for C++ adapter development)
+`git commit -s -m "Your commit message"`
 
-### 2. Environment Setup
-```bash
-# Clone the repository
-git clone https://github.com/darshit-lagdhir/Polyglot-FFI-Contract-Verifier.git
-cd Polyglot-FFI-Contract-Verifier
+A sign-off looks like this:
+`Signed-off-by: Your Name <your.email@example.com>`
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\\Scripts\\activate
+## 2. Trademark and Branding Policies
 
-# Install in development mode with all dependencies
-pip install -e ".[dev]"
-```
+* “Polyglot FFI Contract Verifier,” “MOVEX,” “Antigravity Enforcement,” and “Team LOGLORE” are reserved trademarks.
+* If you fork this repository, you **must not** use these marks in a manner that implies endorsement, origin, or official status. If your fork diverges significantly, you must rebrand your project to avoid consumer confusion.
 
----
+## 3. Legal Linting and Compliance Sentry
 
-## 🧪 Testing Standards
-We maintain a massive test suite (**2,220+ tests**) to ensure FFI safety.
-- **Run all tests**: `pytest tests/`
-- **Coverage**: All new code must maintain the **>95% coverage** baseline.
-- **Performance**: New validation predicates must be benchmarked to ensure they don't break the <5% overhead target.
+Our Continuous Integration (CI) pipeline includes a mandatory `legal_linting` stage. 
+* The **Compliance Sentry** tool automatically injects or verifies the presence of the ASTPL file header in all source code files. 
+* Any Pull Request that fails the Compliance Sentry check will be automatically rejected.
+* Do not manually bypass, modify, or delete the ASTPL headers in the source files.
 
----
+## 4. No Machine Training
 
-## 🚔 Code Style & Linting
-- **Python**: PEP 8 compliance, Black formatting, and strict Mypy type hints.
-- **Rust**: Follow `rustfmt` and `clippy` standards for Rust adapter code.
-- **C++**: Follow `clang-format` (LLVM style) for C++ adapter components.
+By interacting with this repository, you acknowledge that the codebase is strictly off-limits for Machine Training Use (e.g., LLM fine-tuning, dataset creation) as set forth in the ASTPL. Contributing to the repository does not grant you the right to scrape it for AI research.
 
----
-
-## 📬 Pull Request Process
-1.  **Issue First**: Please open an issue to discuss significant changes before starting work.
-2.  **Branching**: Use `feat/`, `fix/`, or `docs/` prefixes for your branches.
-3.  **Tests**: Your code must pass all 2,220+ existing tests and include comprehensive new tests.
-4.  **Documentation**: Update the relevant `.md` files in `docs/` and root.
-5.  **Review**: At least one maintainer must approve your PR before merging.
-
----
-
-## 📜 Commit Message Format
-We follow the conventional commits format: `type(module): description`
-- `feat(module_08): add rust ownership tracking`
-- `fix(module_04): correct struct alignment on windows`
-- `docs(root): update readme for v1.0.0`
-
----
-
-## 🆕 Adding a New Language Adapter
-To add a new language adapter (e.g., Go, Java):
-1. Create a sub-package in `modules/module_08_language_adapter/`.
-2. Implement the `LanguageAdapter` base class.
-3. Add the language to the `UniversalType` system in `cross_language.py`.
-4. Provide a full suite of implementation tests (refer to `tests/test_rust_adapter.py` for a template).
-
----
-
-## ⚖️ Code of Conduct
-By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
-
----
-
-Thank you for contributing to the future of safe FFI! 🚀
+Thank you for respecting the governance architecture of PFCV. Collaboration thrives within well-defined boundaries.

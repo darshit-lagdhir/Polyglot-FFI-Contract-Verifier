@@ -1,0 +1,30 @@
+name: Legal Linting - ASTPL Compliance
+
+on:
+  pull_request:
+    branches: [ "*" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  compliance-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Run Compliance Sentry in Verify Mode
+        run: |
+          echo "Executing Copyright Integrity Engine / Compliance Sentry..."
+          python scripts/compliance_sentry.py --verify
+          
+      - name: Compliance Status
+        if: ${{ failure() }}
+        run: |
+          echo "::error::Legal Linting Failed! The submitted pull request contains files with missing, modified, or outdated ASTPL headers. Please run `python scripts/compliance_sentry.py` locally to automatically inject or update the required legal headers before merging."
+          exit 1

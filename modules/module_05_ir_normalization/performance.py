@@ -1,30 +1,19 @@
-"""
-Module 05: Performance Optimization and Profiling
-
-Performance profiling, optimization, and benchmarking.
-"""
-
-import hashlib
-import json
-import time
-from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Iterator
-
-# Optional numpy for vectorization
-try:
-    import numpy as np  # type: ignore
-
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
-
-from .ir_entities import EntityKind, IREntity, PaddingEntity
-
-# ============================================================================
-# PERFORMANCE PROFILER
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 8ba9a4b1b3a0ca4f
+# ==============================================================================
 
 class PerformanceProfiler:
     """Profiles pipeline performance."""

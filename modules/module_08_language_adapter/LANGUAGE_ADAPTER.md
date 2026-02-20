@@ -1,3 +1,20 @@
+<!-- ============================================================================== -->
+<!-- Polyglot FFI Contract Verifier -->
+<!-- Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved. -->
+<!--  -->
+<!-- This file is part of the Polyglot FFI Contract Verifier ecosystem. -->
+<!-- It is licensed under the Antigravity Source-Available and Technical  -->
+<!-- Protection License (ASTPL). -->
+<!--  -->
+<!-- PROHIBITED USES: Commercial Use, Network Access Provision, and Machine  -->
+<!-- Training Use are strictly prohibited absent explicit written authorization. -->
+<!--  -->
+<!-- Removal or alteration of this header may constitute a violation of the  -->
+<!-- repository's governing agreements. -->
+<!--  -->
+<!-- File Integrity Identifier: ec63fb1624e9342a -->
+<!-- ============================================================================== -->
+
 # Language Adapter - Runtime FFI Enforcement
 
 ## Overview
@@ -719,3 +736,69 @@ The `TraceRecorder` instance is managed atomically by the `ConfigurationControll
 
 ### Order Stability Guarantees
 The system guarantees that the sequence of events in the trace is determined solely by the native call graph and the contract rules, which are themselves sorted alphabetically or by `clause_id`. This makes the trace an authoritative, mathematical proof of the execution path.
+---
+
+## Prompt 10 Part 1 — Formal Pointer Lifecycle State Machine
+
+The pointer ownership logic has been re-architected from procedural checks into a **Formal State Machine** governed by a static transition matrix. This ensures that every pointer lifecycle event is deterministic, auditable, and impossible to bypass.
+
+### Static Transition Matrix
+All lifecycle changes are validated against a pre-defined matrix that identifies legal versus illegal state changes.
+- **Allowed Transitions**: For example, `UNREGISTERED` -> `REGISTERED_CALLER_OWNED` or `REGISTERED_CALLER_OWNED` -> `FREED`.
+- **Illegal Transitions**: Any attempt to move from `FREED` to `REGISTERED_CALLER_OWNED` (recycling a dead pointer) or `BORROWED_ACTIVE` to `FREED` (invalid deallocation) is blocked.
+- **Terminal States**: States like `TERMINAL_INVALID` and `ESCAPED` are final; once a pointer enters these states, it can never be used again.
+
+### Transition Coordinator
+A centralized `TransitionCoordinator` acts as the sole authority for state mutation. 
+- **Validation**: Every request is checked against the matrix before the change is recorded.
+- **Reason Codes**: Every transition is assigned a deterministic reason code (e.g., `FREE_REQUEST`, `EPOCH_INCREMENT`, `INVALID_USAGE`).
+- **Audit Trail**: Each pointer maintains an immutable history of `TransitionAuditRecord`s, capped at 50 entries. This provides a clear, timestamp-free sequence of why and how a pointer's state changed.
+
+### Enhanced Lifecycle States
+The system now recognizes advanced states to cover complex FFI patterns:
+- `BORROWED_ACTIVE`: Pointer is temporarily lent to a native function.
+- `TRANSFER_PENDING`: Ownership is in the process of being transferred.
+- `INVALIDATED_BY_EPOCH`: Formal terminal state for pointers whose address has been recycled.
+- `ESCAPED`: Pointer has leaked into untracked native memory.
+
+---
+
+## Prompt 10 Part 2 — Structure Mutation Governance Engine
+
+To prevent "hidden" side effects in native code, the adapter now enforces field-level immutability and recursive structural stability.
+
+### Structure Mutation Policy
+The system pre-compiles a `StructureMutationPolicy` for every structure defined in the contract.
+- **Field-Level Immutability**: Individual fields can be marked as `immutable`. Any modification to these fields by native code will trigger a contract violation.
+- **Write-Once Semantics**: (Planned) Support for fields that can be set once and then never changed.
+- **Recursive Governance**: Mutation policies are applied recursively to nested structures and embedded arrays.
+
+### Pre-Invocation Snapshot Engine
+Before entering the native FFI boundary, the adapter captures a deep, bit-level snapshot of all managed structures.
+- **Raw Byte Stability**: For complex types (nested structs, arrays), the system stores the raw memory bytes to ensure that even subtle alignment or padding shifts are detected.
+- **Path Tracking**: Snapshots are mapped to their parameter index and nested path (e.g., `param[0].header.flags`).
+
+### Post-Invocation Comparison
+Upon return from native execution, the `StructureMutationValidator` performs a recursive comparison between the current state and the pre-call snapshot.
+- **Deterministic Violation Reporting**: If a mutation is detected, the system identifies the exact field and path that was violated, providing a high-assurance explanation for the crash or integrity failure.
+
+---
+
+## Prompt 10 Part 3 — Buffer Boundary Defense System
+
+Beyond simple length checks, the system now implements an active spatial defense mechanism to protect against out-of-bounds writes and heap corruption.
+
+### Buffer Policy Model
+Every buffer parameter is governed by a `BufferPolicy` that defines its safety constraints.
+- **Min/Max Size Enforcement**: Ensures the underlying allocation meets the contract's minimum requirements.
+- **Guard Zone (Canary) Integration**: (Architecturally Ready) Support for trailing guard zones to detect "off-by-one" overflows.
+
+### Snapshot-Based Boundary Verification
+For critical buffers (especially those marked as read-only or inspect-memory):
+- **Content Stability**: The adapter captures the raw byte content of the buffer before the call.
+- **Invariant Enforcement**: Post-call, it verifies that no bytes were modified outside of authorized ranges or that the buffer remains exactly identical if marked read-only.
+
+### Transactional Rollback Integration
+Both the Structure Mutation and Buffer Defense engines are integrated into the FFI's transactional model. If a mutation or boundary violation is detected post-call:
+- **Registry Rollback**: Any staged ownership changes (like registering a returned pointer) are discarded.
+- **State Preservation**: The system ensures that the Python-side state remains consistent with a "failed call" even if the native side partially succeeded, preventing the propagation of corrupted data.

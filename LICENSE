@@ -1,21 +1,155 @@
-MIT License
+ANTIGRAVITY SOURCE-AVAILABLE AND TECHNICAL PROTECTION LICENSE (ASTPL)
+Version 1.1
+Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE
+All Rights Reserved
 
-Copyright (c) 2024-2026 PFCV Team
+PREAMBLE
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The Polyglot FFI Contract Verifier (“PFCV”) is a high-integrity computational architecture developed to analyze, verify, and enforce correctness across foreign function interfaces and polyglot runtime boundaries. The Software embodies structured constraint evaluation models, execution graph validation logic, ownership registry concepts, and cross-language verification methodologies designed to preserve memory safety and interface integrity.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The Antigravity Source-Available and Technical Protection License (“ASTPL”) is established to enable public transparency, technical auditability, and academic experimentation while preventing unauthorized commercial exploitation, service-based wrapping, artificial intelligence ingestion, or derivative monetization of the Software and its underlying methodologies.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This License is not an open-source license. It is a restrictive source-available agreement. Accessing, downloading, cloning, copying, modifying, or otherwise using the Software constitutes acceptance of this License as a binding legal agreement.
+
+1. DEFINITIONS
+
+1.1 “Software” means the PFCV repository in its entirety, including source code, object code, documentation, architectural descriptions, constraint schemas, execution graphs, contract definitions, testing frameworks, prompts, configuration files, and related materials.
+
+1.2 “Protected Technical Methodologies” means the computational logic, algebraic constraint systems, recursive structural alignment techniques, ownership modeling constructs, validation strategies, runtime enforcement mechanisms, and architectural interaction patterns embodied in the Software.
+
+1.3 “Commercial Use” means any use that directly or indirectly generates revenue, commercial advantage, strategic benefit, operational efficiency, or business value for a for-profit entity. Commercial Use includes, without limitation:
+(a) sale, licensing, or monetization of the Software;
+(b) embedding the Software within a commercial product;
+(c) integration into paid services or subscription platforms;
+(d) internal operational deployment within a for-profit organization;
+(e) use by venture-backed or investor-funded entities;
+(f) integration into compliance, infrastructure, DevOps, or production systems;
+(g) use that contributes to cost reduction, risk mitigation, or business advantage in a commercial context.
+
+1.4 “Non-Commercial Use” means personal experimentation, academic research, scholarly analysis, and educational use that does not generate revenue or confer commercial competitive advantage.
+
+1.5 “Network Access Provision” means making the functionality of the Software, or derivative functionality based upon it, available through APIs, SaaS platforms, hosted environments, remote execution systems, or any network-accessible interface.
+
+1.6 “Machine Training Use” means ingestion, scraping, automated extraction, dataset compilation, fine-tuning, model weight adjustment, model distillation, pattern extraction, or any activity intended to train, enhance, or improve artificial intelligence or machine learning systems.
+
+2. LICENSE GRANT
+
+Subject to strict compliance with this License, the Licensor grants a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to:
+
+(a) View and inspect the source code;
+(b) Download the Software for Non-Commercial Use;
+(c) Modify the Software solely for personal, academic, or educational research;
+(d) Conduct independent security audits and technical reviews for Non-Commercial purposes.
+
+All rights not expressly granted herein are reserved.
+
+3. COMMERCIAL RESTRICTIONS
+
+3.1 Commercial Use of the Software is strictly prohibited absent a separately negotiated written commercial license executed by Darshit Lagdhir.
+
+3.2 Limited internal evaluation, technical review, or proof-of-concept experimentation by a for-profit entity does not constitute Commercial Use, provided that:
+(a) the Software is not deployed in production;
+(b) the Software is not integrated into operational systems;
+(c) no services are provided to third parties using the Software;
+(d) no revenue or commercial advantage is derived from such evaluation.
+
+3.3 Any operational deployment, integration into workflows, embedding into products, offering as a feature, or incorporation into business processes constitutes Commercial Use.
+
+4. SAAS AND NETWORK RESTRICTIONS
+
+4.1 Providing access to the Software or its derivative functionality over a network constitutes Commercial Use.
+
+4.2 Deployment, hosting, API exposure, or wrapping of the Software as a remote verification service or SaaS offering is prohibited without explicit written authorization from the Licensor.
+
+5. MACHINE LEARNING AND AI RESTRICTIONS
+
+5.1 The Software is designated as a Controlled Access Source.
+
+5.2 Machine Training Use is strictly prohibited.
+
+5.3 The following activities are expressly forbidden:
+(a) automated scraping for dataset creation;
+(b) inclusion in large language model training corpora;
+(c) fine-tuning AI systems using the Software;
+(d) extraction of constraint logic or architectural patterns for model training;
+(e) use within model distillation or training pipelines.
+
+5.4 Public availability of the Software does not constitute consent for Machine Training Use.
+
+5.5 Automated retrieval of the Software constitutes constructive notice of this License and acceptance of its terms.
+
+6. DERIVATIVE WORKS
+
+Derivative works are defined according to applicable copyright law.
+
+Modifications of the Software remain subject to this License.
+
+Independent works that do not incorporate substantial portions of the Software are not restricted by this License. However, reproductions or adaptations that substantially replicate Protected Technical Methodologies may constitute derivative works under applicable law.
+
+7. TRADEMARKS
+
+The names “Polyglot FFI Contract Verifier,” “Antigravity Enforcement,” and “Team LOGLORE” are reserved by the Licensor.
+
+No rights to use trademarks, logos, service marks, or branding are granted under this License.
+
+Modified or derivative versions may not use identical or confusingly similar names.
+
+8. CONTRIBUTIONS
+
+Contributions are governed by a separate Contributor License Agreement (CLA) included in the repository.
+
+Contributors must warrant originality and grant the Licensor an irrevocable, worldwide license to use, modify, sublicense, and commercially license contributions.
+
+9. REDISTRIBUTION
+
+Redistribution of the Software for permitted Non-Commercial Use must retain this License and all copyright notices.
+
+Removal or alteration of legal notices is prohibited.
+
+10. TERMINATION
+
+Violation of any provision of this License results in automatic termination of granted rights.
+
+Upon termination, the user must cease all use and destroy all copies of the Software.
+
+11. ENFORCEMENT
+
+The Licensor reserves the right to pursue:
+(a) injunctive relief;
+(b) recovery of reasonable legal fees where permitted by law;
+(c) statutory damages where applicable;
+(d) equitable remedies.
+
+12. DISCLAIMER OF WARRANTY
+
+THE SOFTWARE IS PROVIDED “AS IS” WITHOUT WARRANTY OF ANY KIND.
+
+THE LICENSOR DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+13. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR DATA LOSS, SECURITY INCIDENTS, SYSTEM FAILURE, INDIRECT DAMAGES, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF THE SOFTWARE.
+
+14. INDEMNIFICATION
+
+Users agree to indemnify and hold harmless Darshit Lagdhir and Team LOGLORE from claims arising from unauthorized, improper, or unlawful use of the Software.
+
+15. GOVERNING LAW AND JURISDICTION
+
+This License shall be governed by the laws of the Republic of India.
+
+All disputes arising under this License shall be subject to the exclusive jurisdiction of the courts located in Bengaluru, Karnataka, India.
+
+16. SEVERABILITY
+
+If any provision is held unenforceable, the remaining provisions shall remain in full force and effect.
+
+17. ENTIRE AGREEMENT
+
+This License constitutes the entire agreement governing the Software.
+
+18. COMMERCIAL LICENSING
+
+Entities seeking to engage in Commercial Use must contact Darshit Lagdhir to negotiate a separate commercial license.
+
+This License serves as a structural legal safeguard, preserving the architectural integrity of the Software while permitting controlled inspection and research use.

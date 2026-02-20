@@ -1,3 +1,20 @@
+<!-- ============================================================================== -->
+<!-- Polyglot FFI Contract Verifier -->
+<!-- Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved. -->
+<!--  -->
+<!-- This file is part of the Polyglot FFI Contract Verifier ecosystem. -->
+<!-- It is licensed under the Antigravity Source-Available and Technical  -->
+<!-- Protection License (ASTPL). -->
+<!--  -->
+<!-- PROHIBITED USES: Commercial Use, Network Access Provision, and Machine  -->
+<!-- Training Use are strictly prohibited absent explicit written authorization. -->
+<!--  -->
+<!-- Removal or alteration of this header may constitute a violation of the  -->
+<!-- repository's governing agreements. -->
+<!--  -->
+<!-- File Integrity Identifier: 02c23f8290240549 -->
+<!-- ============================================================================== -->
+
 # Module 07: Contract Synthesis Engine
 
 ## Overview
@@ -119,8 +136,10 @@ Projects calling convention requirements from IR to contract.
 **Supported Conventions:**
 - cdecl (C default)
 - stdcall (Windows API)
-- astcall (register-based)
-- ectorcall (SIMD)
+- 
+astcall (register-based)
+- 
+ectorcall (SIMD)
 
 ### ABI Compatibility Constraints
 Binds contract to specific compiled artifact fingerprints.

@@ -1,29 +1,19 @@
-"""
-Module 05: IR Orchestration Pipeline
-
-Complete end-to-end orchestration of IR normalization.
-"""
-
-import hashlib
-import json
-import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from .ir_diff import IRDiffComputer, recommend_version_bump
-from .ir_entities import InterfaceUnit, TypeRegistry
-from .ir_serialization import IRArtifact, IRArtifactManager, compute_artifact_hash
-from .ir_validation import IRValidationOrchestrator, ValidationReport
-from .type_normalization import (
-    TypedefResolver,
-)
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 055051a8e4d01e84
+# ==============================================================================
 
 @dataclass
 class IRNormalizationConfig:

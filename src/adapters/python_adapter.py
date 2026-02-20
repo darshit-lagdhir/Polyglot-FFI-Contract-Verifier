@@ -1,28 +1,19 @@
-"""
-Polyglot FFI Contract Verifier (PFCV)
-Module 09: Python Adapter Model
-Phase 1: Infrastructural Ingestion & Cryptographic Anchoring
-
-This module implements the secure, deterministic contract runtime loader for 
-the Python environment, providing SHA-256 integrity verification, 
-ABI interrogation, and memory-optimized enforcement descriptors.
-"""
-
-import json
-import hashlib
-import hmac
-import os
-import sys
-import struct
-import threading
-import ctypes
-from typing import List, Dict, Any, Optional, Type, Tuple, Union, Callable
-from dataclasses import dataclass, field
-
-
-# =============================================================================
-# EXCEPTION TAXONOMY
-# =============================================================================
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 61558ca2fcd06aa3
+# ==============================================================================
 
 class PFCVBaseError(Exception):
     """Root class for all Polyglot FFI Contract Verifier exceptions."""

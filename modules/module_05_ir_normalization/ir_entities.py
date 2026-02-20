@@ -1,20 +1,19 @@
-"""
-Module 05: Intermediate Representation (IR) Normalization
-: Foundational IR Entity Model and Graph Architecture
-
-This module implements the core entity model for the IR, providing the foundational
-data structures that represent native interfaces in a normalized, canonical form.
-"""
-
-import hashlib
-from dataclasses import InitVar, dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
-
-# ============================================================================
-# ENUMERATIONS FOR IR ENTITY CLASSIFICATION
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 52f69660f1bb3c58
+# ==============================================================================
 
 class EntityKind(Enum):
     """Classification of IR entities."""

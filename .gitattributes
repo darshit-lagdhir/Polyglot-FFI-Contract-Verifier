@@ -1,0 +1,16 @@
+# ==============================================================================
+# NO MACHINE TRAINING - PROTECTED REPOSITORY
+# Automated scraping, extraction, dataset compilation, and machine training use
+# are strictly prohibited. Refer to LICENSE.md and TERMS.md.
+# ==============================================================================
+
+# Mark everything to discourage ML models from interpreting or parsing easily:
+* -text
+*.md linguist-detectable=false
+*.py linguist-detectable=false
+*.json linguist-detectable=false
+*.c linguist-detectable=false
+*.h linguist-detectable=false
+
+# Prevents the entire repository from being exported by certain git archiving tools
+* export-ignore

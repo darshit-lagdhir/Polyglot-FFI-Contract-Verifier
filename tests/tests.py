@@ -1,3 +1,20 @@
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: bb8ddcdb7f6b5d04
+# ==============================================================================
+
 import pytest
 import os
 import sys
@@ -68198,4 +68215,3 @@ def generate_large_ir(num_functions=1, num_types=1):
 
 def test_placeholder():
     pass
-

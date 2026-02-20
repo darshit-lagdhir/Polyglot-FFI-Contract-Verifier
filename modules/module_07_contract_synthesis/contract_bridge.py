@@ -1,38 +1,19 @@
-"""
-Module 07: Contract Bridge (Prompt 4/15)
-
-Bridge between Module 07 (Synthesis Engine) and Module 06 (Contract Schema).
-
-Responsibilities:
-- Validate generated clauses against schema
-- Assemble contract documents
-- Link provenance
-- Ensure Module 06 compliance
-"""
-
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Set
-from pathlib import Path
-from datetime import datetime
-import logging
-
-# Module 06 imports
-from module_06_contract_schema.contract_entities import (
-    ContractDocument, ContractHeader, ContractClause, GenerationMetadata,
-    ClauseType, GenerationMode
-)
-# Assuming ContractValidator exists; if not, use placeholder or generic.
-try:
-    from module_06_contract_schema.contract_validation import ContractValidator
-except ImportError:
-    # If not implemented yet, fallback or raise error. 
-    pass
-
-logger = logging.getLogger(__name__)
-
-# ============================================================================
-# BRIDGE EXCEPTIONS
-# ============================================================================
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: dae8c10eccb4720a
+# ==============================================================================
 
 class ContractBridgeError(Exception):
     """Base exception for contract bridge errors."""

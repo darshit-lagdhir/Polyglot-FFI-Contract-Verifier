@@ -1,15 +1,19 @@
-"""
-Module 05: Documentation Generation
-
-Automatic documentation generation for IR normalization.
-"""
-
-from pathlib import Path
-from typing import Any, Dict, List
-
-# ============================================================================
-# ERROR CATALOG
-# ============================================================================
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: a1394ba325e4fd80
+# ==============================================================================
 
 ERROR_CATALOG = {
     "E1001": {

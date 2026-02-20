@@ -1,22 +1,19 @@
-"""
-Module 06: Contract Schema - Entity Model
-
-Foundational entity model for FFI contract representation.
-Establishes the semantic layer above IR that encodes explicit assumptions
-about FFI usage, ownership, nullability, and correctness.
-"""
-
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Union
-from enum import Enum
-from datetime import datetime
-import hashlib
-import json
-
-# ============================================================================
-# ENUMERATIONS
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: ed58bdd0cb308323
+# ==============================================================================
 
 class SchemaVersion(Enum):
     """Contract schema version."""

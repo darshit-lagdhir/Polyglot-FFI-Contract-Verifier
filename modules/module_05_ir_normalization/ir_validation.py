@@ -1,37 +1,19 @@
-"""
-Module 05: IR Validation Framework
-
-Comprehensive validation of normalized IR artifacts.
-Ensures structural integrity, type safety, ABI consistency, and completeness.
-"""
-
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Sequence
-
-from .ir_entities import (
-    ArrayKind,
-    ArrayType,
-    CallingConvention,
-    EnumerationType,
-    FieldEntity,
-    FunctionPointerType,
-    FunctionSymbol,
-    InterfaceUnit,
-    IREntity,
-    PointerType,
-    ScalarType,
-    StructureType,
-    SymbolEntity,
-    TypeEntity,
-    TypeRegistry,
-    UnionType,
-    VariableSymbol,
-)
-
-# ============================================================================
-# VALIDATION REPORT
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 6b4703d57d7085a1
+# ==============================================================================
 
 @dataclass
 class ValidationReport:

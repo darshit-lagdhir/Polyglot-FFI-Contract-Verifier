@@ -1,29 +1,19 @@
-"""
-Module 06: Contract Schema - Validation Framework
-
-Three-layer validation framework for contracts:
-    1. Schema validation (structural correctness)
-2. Referential validation (IR entity resolution)
-3. Constraint validation (semantic correctness)
-"""
-
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any, Set
-from enum import Enum
-
-from .contract_entities import (
-    ContractDocument,
-    ContractClause,
-    SubjectReference,
-    ConstraintParameter,
-    ClauseType,
-    SubjectKind,
-)
-
-# ============================================================================
-# VALIDATION RESULT TYPES
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: c316e9948c291706
+# ==============================================================================
 
 class ValidationLayer(Enum):
     """Validation layer identifier."""

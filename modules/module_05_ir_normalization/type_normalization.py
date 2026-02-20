@@ -1,38 +1,19 @@
-"""
-Module 05: Type Normalization Pipeline
-
-Transforms raw compiler-extracted types into canonical IR types.
-"""
-
-from .ir_entities import AttributeEntity, FunctionSymbol, VariableSymbol
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
-
-from .ir_entities import (
-    ArrayKind,
-    ArrayType,
-    CallingConvention,
-    EnumerationType,
-    FieldEntity,
-    FunctionPointerType,
-    InterfaceUnit,
-    PaddingEntity,
-    ParameterEntity,
-    PointerType,
-    ReturnEntity,
-    ReturnMechanism,
-    ScalarKind,
-    ScalarType,
-    StructureType,
-    TypeEntity,
-    TypeRegistry,
-    UnionType,
-)
-
-# ============================================================================
-# RAW TYPE DATA STRUCTURES (INPUT FROM MODULE 04)
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: b007b2d3cc5f1823
+# ==============================================================================
 
 @dataclass
 class RawTypeData:

@@ -1,36 +1,19 @@
-"""
-Module 05: CLI Interface
-
-Command-line interface for IR normalization.
-"""
-
-import argparse
-import json
-import sys
-from pathlib import Path
-
-from .ir_diff import IRDiffComputer, recommend_version_bump
-from .ir_entities import TypeRegistry
-from .ir_orchestrator import (
-    ConfigError,
-    IRNormalizationConfig,
-    IROrchestrator,
-    OrchestrationError,
-    OrchestrationReport,
-)
-from .ir_serialization import IRArtifact, deserialize_compressed
-from .ir_validation import IRValidationOrchestrator
-
-# ============================================================================
-# VERSION
-# ============================================================================
-
-__version__ = "1.0.0"
-
-# ============================================================================
-# OUTPUT FORMATTING
-# ============================================================================
-
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 8ef448d7e8565f9c
+# ==============================================================================
 
 class OutputFormatter:
     """Formats CLI output."""

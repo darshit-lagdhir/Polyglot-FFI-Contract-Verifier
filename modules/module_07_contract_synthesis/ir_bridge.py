@@ -1,32 +1,19 @@
-"""
-Module 07: IR Bridge (Prompt 4/15)
-
-Bridge between Module 05 (IR Normalization) and Module 07 (Synthesis Engine).
-
-Responsibilities:
-- Validate IR artifacts
-- Transform IR entities to synthesis format
-- Handle errors gracefully
-- Maintain traceability
-"""
-
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, Set
-from pathlib import Path
-import logging
-
-# Module 05 imports
-from module_05_ir_normalization.ir_entities import (
-    InterfaceUnit, TypeEntity, FunctionSymbol, ParameterEntity, 
-    EntityKind, StructureType, UnionType, PointerType, ArrayType,
-    FieldEntity
-)
-
-logger = logging.getLogger(__name__)
-
-# ============================================================================
-# BRIDGE EXCEPTIONS
-# ============================================================================
+# ==============================================================================
+# Polyglot FFI Contract Verifier
+# Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
+#
+# This file is part of the Polyglot FFI Contract Verifier ecosystem.
+# It is licensed under the Antigravity Source-Available and Technical
+# Protection License (ASTPL).
+#
+# PROHIBITED USES: Commercial Use, Network Access Provision, and Machine
+# Training Use are strictly prohibited absent explicit written authorization.
+#
+# Removal or alteration of this header may constitute a violation of the
+# repository's governing agreements.
+#
+# File Integrity Identifier: 125ba4791be22d19
+# ==============================================================================
 
 class IRBridgeError(Exception):
     """Base exception for IR bridge errors."""
