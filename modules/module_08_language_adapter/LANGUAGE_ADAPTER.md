@@ -598,3 +598,55 @@ To prevent log flooding during high-frequency violations, the system implements 
 
 ### Health Metrics
 The adapter provides cumulative snapshots of its health state, including successful invocation counts vs. violation rates. This data enables automated alerting and runtime analysis of native library stability.
+
+---
+
+## Prompt 08 Part 1 — Dynamic Runtime Configuration Controller
+
+The system now supports real-time tuning of its enforcement policies without requiring an application restart.
+
+### ConfigurationController
+The `ConfigurationController` manages a thread-safe `RuntimeConfiguration` object that governs the adapter's behavior at the moment of invocation.
+- **Atomic Switching**: Changes to enforcement modes (STRICT vs. DEBUG), execution modes (IN_PROCESS vs. SANDBOXED), and observability status are applied atomically.
+- **In-Flight Protection**: The configuration is resolved at the start of each FFI call. An update to the configuration affects only subsequent calls, ensuring that currently executing (in-flight) invocations maintain a consistent policy state throughout their lifecycle.
+- **Dynamic Sandbox Toggling**: The system can dynamically move a library into a sandbox if stability degrades, or pull it back into the main process for performance tuning, provided a `library_loader` was provided during initialization.
+
+### Enforcement Mode Determinism
+By centralizing configuration management, the system ensures that enforcement logic remains deterministic even as policies change. All mode shifts are audited and reflected in the system's observability telemetry.
+
+---
+
+## Prompt 08 Part 2 — Long-Run Stability and Registry Sweep Policy
+
+To support production workloads running for months or years, the adapter implements rigorous memory pressure management for its internal state.
+
+### Deterministic Lifecycle Tracking
+The `OwnershipRegistry` now utilizes a global access counter to provide deterministic timestamps for every pointer event.
+- **Creation & Access Indices**: Every `PointerOwnershipRecord` tracks its `creation_index` and `last_access_index`, enabling precise calculation of entry age regardless of wall-clock time.
+- **History Truncation**: To prevent unbounded memory growth, the audit history for each pointer is capped, retaining only the most recent transitions.
+
+### Explicit Registry Sweeping
+Instead of non-deterministic background garbage collection, the system implements an explicit `sweep` mechanism.
+- **Aged Entry Purging**: Completed (`FREED`) entries that have exceeded a configurable `retention_threshold` are purged from the registry.
+- **Leak Detection**: Active pointers that exceed the threshold without being freed are flagged as potential leaks. In `STRICT` mode, these triggers an `OwnershipViolationError`.
+- **Memory Stability**: Regular sweeping ensures that the internal tracking overhead remains constant even in applications performing millions of FFI operations.
+
+---
+
+## Prompt 08 Part 3 — Contract Integrity Hardening and Tamper Resistance
+
+The adapter's architectural security is reinforced through immutability and strict attribute isolation.
+
+### Metadata Freezing
+Once the contract is loaded and the adapter is initialized, the enforcement metadata is "frozen" to prevent runtime tampering.
+- **FrozenEnforcementDescriptor**: A recursive immutable wrapper that prevents any modification to function rules, types, or ownership semantics.
+- **Immutable Rule Collections**: All rule lists and dictionaries are converted to sorted tuples during initialization, ensuring that even accidental mutations are caught by the runtime.
+
+### Instance Hardening
+The `PrototypeAuthorityLayer` utilizes advanced Python safety features to protect its internal state.
+- **Instance Slots**: By using `__slots__`, the adapter prevents the injection of unauthorized attributes, reducing the attack surface for malicious state manipulation.
+- **Private Fingerprint**: The contract fingerprint is stored in a private slot and exposed via a read-only property, ensuring it remains a stable, tamper-proof identity for the entire session.
+- **Enforcement Table Isolation**: The internal mapping of functions to descriptors is stored as an immutable tuple, protecting the dispatch table from being redirected or altered.
+
+### Integrity Verification
+The system provides a `verify_integrity()` method that performs a deep scan of the adapter's internal structures to ensure that all descriptors remain frozen and that the enforcement boundary has not been compromised.

@@ -280,11 +280,31 @@ class EnforcementDescriptor:
     calling_convention: str
     arg_types: List[str]
     return_type: str
-    relational_rules: List[dict] = field(default_factory=list)
+    relational_rules: Tuple[dict, ...] = field(default_factory=tuple)
     ownership: dict = field(default_factory=dict)
-    arg_ownership: List[str] = field(default_factory=list)
-    buffer_rules: dict = field(default_factory=dict)
-    error_semantics: dict = field(default_factory=dict)
+    arg_ownership: Tuple[str, ...] = field(default_factory=tuple)
+    buffer_rules: Tuple[Tuple[int, dict], ...] = field(default_factory=tuple)
+    error_semantics: Tuple[Tuple[str, Any], ...] = field(default_factory=tuple)
+
+
+class FrozenEnforcementDescriptor:
+    """
+    Immutable wrapper around EnforcementDescriptor.
+    Prevents runtime mutation.
+    """
+
+    __slots__ = ("_inner",)
+
+    def __init__(self, inner):
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, item):
+        return getattr(self._inner, item)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(
+            "EnforcementDescriptor is immutable after initialization"
+        )
 
 
 @dataclass(frozen=True)
@@ -433,18 +453,27 @@ class ContractRuntimeLoader:
                 )
 
             error_semantics = fdef.get("error_semantics", {})
+            
+            # Freeze rule collections (Part 3 Step 2)
+            frozen_relational_rules = tuple(sorted(rules, key=lambda x: x.get('id', '')))
+            frozen_arg_ownership = tuple(arg_ownership)
+            frozen_buffer_rules = tuple(sorted(buffer_rules.items()))
+            frozen_error_semantics = tuple(sorted(error_semantics.items()))
 
-            descriptors[fname] = EnforcementDescriptor(
+            descriptor = EnforcementDescriptor(
                 function_name=fname,
                 calling_convention=fdef["calling_convention"],
                 arg_types=list(fdef["arg_types"]),
                 return_type=fdef["return_type"],
-                relational_rules=rules,
+                relational_rules=frozen_relational_rules,
                 ownership=ownership,
-                arg_ownership=arg_ownership,
-                buffer_rules=buffer_rules,
-                error_semantics=error_semantics
+                arg_ownership=frozen_arg_ownership,
+                buffer_rules=frozen_buffer_rules,
+                error_semantics=frozen_error_semantics
             )
+            
+            # Wrap in frozen layer (Part 3 Step 3)
+            descriptors[fname] = FrozenEnforcementDescriptor(descriptor)
 
         return ContractMetadata(
             schema_version=schema_version,
@@ -683,6 +712,13 @@ class PointerOwnershipRecord:
     state: str
     ownership_type: str
     history: list = field(default_factory=list)
+    creation_index: int = 0
+    last_access_index: int = 0
+
+    def append_history(self, event, function_name):
+        self.history.append((event, function_name))
+        if len(self.history) > 20:
+            self.history.pop(0)
 
 
 class OwnershipRegistry:
@@ -694,6 +730,11 @@ class OwnershipRegistry:
         self._locks = {}
         self._global_lock = threading.Lock()
         self._context_stack = context_stack
+        self._global_access_counter = 0
+
+    def _increment_access(self, record: PointerOwnershipRecord):
+        self._global_access_counter += 1
+        record.last_access_index = self._global_access_counter
 
     def _get_lock_for_pointer(self, pointer: int):
         with self._global_lock:
@@ -769,8 +810,10 @@ class OwnershipRegistry:
                 origin_function=function_name,
                 state=PointerState.BORROWED_INPUT, # Temporary state until confirmed
                 ownership_type=ownership_type,
-                history=[("register", function_name)]
+                creation_index=self._global_access_counter + 1
             )
+            record.append_history("register", function_name)
+            self._increment_access(record)
 
             context = self._context_stack.current() if self._context_stack else None
             if context:
@@ -804,8 +847,10 @@ class OwnershipRegistry:
                 origin_function=function_name,
                 state=PointerState.BORROWED_INPUT,
                 ownership_type="borrowed",
-                history=[("borrow", function_name)]
+                creation_index=self._global_access_counter + 1
             )
+            record.append_history("borrow", function_name)
+            self._increment_access(record)
             self._registry[key] = record
 
     def mark_freed(self,
@@ -830,6 +875,7 @@ class OwnershipRegistry:
                 )
 
             record = self._registry[key]
+            self._increment_access(record)
 
             if record.state == PointerState.FREED:
                 raise OwnershipViolationError(
@@ -856,7 +902,7 @@ class OwnershipRegistry:
                 # Increment epoch for potential reuse
                 self._epoch_counter[pointer] = epoch + 1
 
-            record.history.append(("freed", function_name))
+            record.append_history("freed", function_name)
 
     def ensure_active(self,
                       pointer: int,
@@ -875,6 +921,8 @@ class OwnershipRegistry:
                 return  # not tracked
 
             record = self._registry[key]
+            self._increment_access(record)
+            record.append_history("ensure_active", function_name)
 
             if record.state == PointerState.FREED:
                 raise OwnershipViolationError(
@@ -902,6 +950,55 @@ class OwnershipRegistry:
                 f"{record.state} -> {new_state}",
                 fingerprint
             )
+
+    def sweep(self,
+              fingerprint: str,
+              retention_threshold: int,
+              strict: bool = False):
+        """
+        Explicitly sweep the registry for aged and leaked entries.
+        """
+        removed = []
+        violations = []
+
+        with self._global_lock:
+            current_index = self._global_access_counter
+            # Deterministic iteration order
+            keys = sorted(self._registry.keys())
+
+            for key in keys:
+                record = self._registry[key]
+
+                if record.state == PointerState.FREED:
+                    age = current_index - record.last_access_index
+                    if age > retention_threshold:
+                        removed.append(key)
+                        del self._registry[key]
+                        # Also remove lock and wrapper if present
+                        p_val = record.pointer
+                        if p_val in self._locks:
+                            # Not removing lock to avoid races if reuse occurs, but entry is gone.
+                            pass
+                        if key in self._wrapper_map:
+                            del self._wrapper_map[key]
+                else:
+                    # Active pointer potential leak
+                    age = current_index - record.creation_index
+                    if age > retention_threshold:
+                        violations.append(key)
+
+        if strict and violations:
+            raise OwnershipViolationError(
+                "SWEEP",
+                -1,
+                "Leak detected: Active pointer retention threshold exceeded",
+                fingerprint
+            )
+
+        return {
+            "removed": len(removed),
+            "potential_leaks": len(violations)
+        }
 
 
 class StructureVerificationCache:
@@ -1453,6 +1550,36 @@ class RuntimeEnforcementMode:
     DEBUG = "debug"
 
 
+class RuntimeConfiguration:
+    def __init__(self,
+                  enforcement_mode=RuntimeEnforcementMode.STRICT,
+                  execution_mode=ExecutionMode.IN_PROCESS,
+                  observability_enabled=False,
+                  deep_inspection=False,
+                  leak_detection_enabled=False,
+                  leak_retention_threshold=100000):
+        self.enforcement_mode = enforcement_mode
+        self.execution_mode = execution_mode
+        self.observability_enabled = observability_enabled
+        self.deep_inspection = deep_inspection
+        self.leak_detection_enabled = leak_detection_enabled
+        self.leak_retention_threshold = leak_retention_threshold
+
+
+class ConfigurationController:
+    def __init__(self, initial_config: RuntimeConfiguration):
+        self._lock = threading.Lock()
+        self._config = initial_config
+
+    def get(self) -> RuntimeConfiguration:
+        with self._lock:
+            return self._config
+
+    def update(self, new_config: RuntimeConfiguration):
+        with self._lock:
+            self._config = new_config
+
+
 class PrecompiledClausePlan:
     """
     Holds precompiled validation steps for a function.
@@ -1475,6 +1602,24 @@ class PrecompiledClausePlan:
 
 
 class PrototypeAuthorityLayer:
+    __slots__ = (
+        "__fingerprint",
+        "_metadata",
+        "_library",
+        "_state",
+        "_proxy_registry",
+        "_context_stack",
+        "_ownership_registry",
+        "_config_controller",
+        "_struct_snapshot_cache",
+        "_library_loader",
+        "_sandbox_executor",
+        "_observability",
+        "_verifier",
+        "_free_functions",
+        "_function_table",
+        "_function_lookup"
+    )
 
     def __init__(self,
                  loader: ContractRuntimeLoader,
@@ -1483,40 +1628,34 @@ class PrototypeAuthorityLayer:
                  execution_mode=ExecutionMode.IN_PROCESS,
                  library_loader=None,
                  observability_enabled=False):
+        self.__fingerprint = loader.metadata.fingerprint
         self._metadata = loader.metadata
         self._library = library_handle
-        self._fingerprint = loader.metadata.fingerprint
         self._state = AdapterInitializationState()
         self._proxy_registry = InvocationProxyRegistry()
         self._context_stack = InvocationContextStack()
         self._ownership_registry = OwnershipRegistry(self._context_stack)
-        self._mode = mode
-        self._struct_snapshot_cache = {}
-
-        # Part 2
-        self._execution_mode = execution_mode
-        self._library_loader = library_loader
-        if execution_mode == ExecutionMode.SANDBOXED and library_loader is None:
-            raise ContractInitializationError(
-                "Sandbox mode requires library_loader",
-                self._fingerprint
+        
+        # Step 3: Integrate Config Controller
+        self._config_controller = ConfigurationController(
+            RuntimeConfiguration(
+                enforcement_mode=mode,
+                execution_mode=execution_mode,
+                observability_enabled=observability_enabled,
+                deep_inspection=False
             )
+        )
 
+        self._struct_snapshot_cache = {}
+        self._library_loader = library_loader
+        
+        # Sandbox executor (reused if present)
         self._sandbox_executor = None
         if execution_mode == ExecutionMode.SANDBOXED:
             self._sandbox_executor = SandboxedExecutor(self, library_loader)
 
-        # Part 3
         self._observability = ObservabilityManager(enabled=observability_enabled)
-        
-        # We need access to the verifier if in DEBUG mode, but validation happens outside in initialize usually.
-        # However, to re-validate in DEBUG mode, the prompt implies we call verifier.verify(namespace).
-        # We need the verifier instance or create one.
-        # Ideally, passed from initialize. But we can recreate it cheaply or pass it.
-        # For this step, we will instantiate a new one if needed, or better, accept it.
-        # But instructions said "Inside initialize_python_adapter" create verifier.
-        # We'll create a stored verifier here.
-        self._verifier = StructureLayoutVerifier(loader.metadata, self._fingerprint)
+        self._verifier = StructureLayoutVerifier(loader.metadata, self.__fingerprint)
 
         # Identify free functions
         self._free_functions = {
@@ -1525,7 +1664,81 @@ class PrototypeAuthorityLayer:
             if desc.ownership.get("free_function")
         }
 
+        # Step 4 of Part 3: Freeze enforcement table
+        self._function_table = tuple(sorted(self._metadata.descriptors.items()))
+        self._function_lookup = dict(self._function_table)
+
         self._bind_all_functions()
+
+    @property
+    def fingerprint(self):
+        return self.__fingerprint
+
+    def update_runtime_configuration(self,
+                                     enforcement_mode=None,
+                                     execution_mode=None,
+                                     observability_enabled=None,
+                                     deep_inspection=None,
+                                     leak_detection_enabled=None,
+                                     leak_retention_threshold=None):
+
+        current = self._config_controller.get()
+
+        new_config = RuntimeConfiguration(
+            enforcement_mode=enforcement_mode or current.enforcement_mode,
+            execution_mode=execution_mode or current.execution_mode,
+            observability_enabled=(
+                observability_enabled
+                if observability_enabled is not None
+                else current.observability_enabled
+            ),
+            deep_inspection=(
+                deep_inspection
+                if deep_inspection is not None
+                else current.deep_inspection
+            ),
+            leak_detection_enabled=(
+                leak_detection_enabled
+                if leak_detection_enabled is not None
+                else current.leak_detection_enabled
+            ),
+            leak_retention_threshold=(
+                leak_retention_threshold
+                if leak_retention_threshold is not None
+                else current.leak_retention_threshold
+            )
+        )
+
+        # Step 5 of Part 1: Dynamic sandbox switch update
+        if new_config.execution_mode == ExecutionMode.SANDBOXED and self._sandbox_executor is None:
+            if self._library_loader is None:
+                raise ContractInitializationError(
+                    "Sandbox mode requires library_loader",
+                    self.__fingerprint
+                )
+            self._sandbox_executor = SandboxedExecutor(self, self._library_loader)
+
+        self._config_controller.update(new_config)
+
+    def perform_registry_sweep(self):
+        config = self._config_controller.get()
+
+        if not config.leak_detection_enabled:
+            return {"removed": 0, "potential_leaks": 0}
+
+        result = self._ownership_registry.sweep(
+            self.__fingerprint,
+            config.leak_retention_threshold,
+            strict=(config.enforcement_mode == RuntimeEnforcementMode.STRICT)
+        )
+
+        return result
+
+    def verify_integrity(self):
+        for name, descriptor in self._function_lookup.items():
+            if not isinstance(descriptor, FrozenEnforcementDescriptor):
+                raise RuntimeError("Descriptor integrity compromised")
+        return True
 
     def is_initialized(self) -> bool:
         return self._state.initialized and not self._state.failed
@@ -1568,17 +1781,16 @@ class PrototypeAuthorityLayer:
 
             self._proxy_registry.register(fname, raw_func, proxy)
 
-    def _build_proxy(self, name: str, raw_func, descriptor: EnforcementDescriptor):
+    def _build_proxy(self, name: str, raw_func, descriptor: FrozenEnforcementDescriptor):
         """
         Structural proxy builder for high-speed FFI interposition.
-        Now with multi-library isolation, sandboxing, and observability.
+        Now with dynamic configuration and hardening.
         """
-        fingerprint = self._fingerprint
         local_descriptor = descriptor
         local_registry = self._ownership_registry
-        local_fingerprint = fingerprint
+        local_fingerprint = self.__fingerprint
         local_context_stack = self._context_stack
-        local_mode = self._mode
+        local_config_controller = self._config_controller
 
         plan = PrecompiledClausePlan()
 
@@ -1625,24 +1837,37 @@ class PrototypeAuthorityLayer:
             plan.fast_path = False
 
         def proxy_callable(*args):
+            # Step 1: Dynamic Configuration Resolution (Prompt 8 Part 1)
+            config = local_config_controller.get()
+            mode = config.enforcement_mode
+            execution_mode = config.execution_mode
+            observability_enabled = config.observability_enabled
+            deep_inspection = config.deep_inspection
+
             # Local bind for speed
             raw = raw_func
             local_plan = plan
             
-            # Step 1: Record invocation (Prompt 7 Part 3)
-            self._observability.record_invocation(local_fingerprint, name)
+            # Step 2: Record invocation (Prompt 7 Part 3 / Prompt 8 Part 1)
+            if observability_enabled:
+                self._observability.record_invocation(local_fingerprint, name)
 
-            # Step 2: Fast Path Check
-            if local_plan.fast_path and local_mode != RuntimeEnforcementMode.DEBUG and self._execution_mode != ExecutionMode.SANDBOXED:
-                return raw(*args)
+            # Step 3: Fast Path Check (Prompt 8 Part 1)
+            if local_plan.fast_path and mode != RuntimeEnforcementMode.DEBUG and execution_mode != ExecutionMode.SANDBOXED:
+                try:
+                    return raw(*args)
+                except Exception as e:
+                    if observability_enabled:
+                         self._observability.record_violation(local_fingerprint, name, str(e))
+                    raise NativeCrashError(name, str(e), local_fingerprint)
 
-            # Step 3: Transactional Context
+            # Step 4: Transactional Context
             context = CallContext()
             local_context_stack.push(context)
 
             try:
                 # Debug Mode: Dynamic Structure Re-verification
-                if local_mode == RuntimeEnforcementMode.DEBUG and self._metadata.structs:
+                if mode == RuntimeEnforcementMode.DEBUG and self._metadata.structs:
                     import inspect
                     caller_frame = inspect.currentframe().f_back
                     namespace = caller_frame.f_globals if caller_frame else globals()
@@ -1719,7 +1944,8 @@ class PrototypeAuthorityLayer:
                         if hasattr(snapshot_target, "__len__") and len(snapshot_target) < length_value:
                              raise BufferBoundaryViolationError(name, idx, "Declared length exceeds buffer size", local_fingerprint)
 
-                        if rule.get("inspect_memory") and not rule.get("write_allowed", True):
+                        # Deep inspection check
+                        if deep_inspection and rule.get("inspect_memory") and not rule.get("write_allowed", True):
                             buffer_snapshots.append((idx, BufferSnapshot(snapshot_target, length_value)))
 
                 # High-Assurance Lifecycle Guard
@@ -1736,7 +1962,10 @@ class PrototypeAuthorityLayer:
 
                     # Wrapped Invocation
                     try:
-                        if self._execution_mode == ExecutionMode.SANDBOXED:
+                        if execution_mode == ExecutionMode.SANDBOXED:
+                            if self._sandbox_executor is None:
+                                 # Fallback if somehow not initialized
+                                 raise RuntimeError("Sandbox executor not available")
                             result = self._sandbox_executor.execute(
                                 name,
                                 validated_args_list,
@@ -1746,13 +1975,14 @@ class PrototypeAuthorityLayer:
                             result = raw(*tuple(validated_args_list))
                     except Exception as e:
                         # Record violation on fatal invocation failure
-                        self._observability.record_violation(local_fingerprint, name, str(e))
+                        if observability_enabled:
+                            self._observability.record_violation(local_fingerprint, name, str(e))
 
                         if isinstance(e, (NativeCrashError, ContractViolationError, OwnershipViolationError)):
                             raise
 
                         msg = f"Native invocation raised exception: {str(e)}"
-                        if local_mode == RuntimeEnforcementMode.DEBUG:
+                        if mode == RuntimeEnforcementMode.DEBUG:
                             msg += f" {DeterministicDiagnostic(name, local_fingerprint, 'ExceptionGuard', str(e), 'Success').serialize()}"
                         raise NativeCrashError(name, msg, local_fingerprint) from e
                     finally:
@@ -1779,9 +2009,11 @@ class PrototypeAuthorityLayer:
                         
                         # Error semantics enforcement
                         if local_plan.error_semantics:
-                            if result == local_plan.error_semantics.get("error_code"):
-                                 msg = local_plan.error_semantics.get("description", "Native error")
-                                 if local_mode == RuntimeEnforcementMode.DEBUG:
+                            # error_semantics is now a tuple of tuples
+                            error_map = dict(local_plan.error_semantics)
+                            if result == error_map.get("error_code"):
+                                 msg = error_map.get("description", "Native error")
+                                 if mode == RuntimeEnforcementMode.DEBUG:
                                       msg += f" {DeterministicDiagnostic(name, local_fingerprint, 'ErrorSemantics', str(result), 'Valid').serialize()}"
                                  raise ContractViolationError(name, -1, msg, local_fingerprint)
 
@@ -1817,7 +2049,8 @@ class PrototypeAuthorityLayer:
                 local_context_stack.pop()
 
         proxy_callable.__name__ = name
-        proxy_callable._ffi_contract_fingerprint = fingerprint
+        proxy_callable.__name__ = name
+        proxy_callable._ffi_contract_fingerprint = self.fingerprint
         proxy_callable._ffi_descriptor = descriptor
         proxy_callable._clause_plan = plan
 
@@ -1827,7 +2060,7 @@ class PrototypeAuthorityLayer:
                                          descriptor: EnforcementDescriptor,
                                          args: tuple):
 
-        fingerprint = self._fingerprint
+        fingerprint = self.fingerprint
         fname = descriptor.function_name
 
         if not descriptor.relational_rules:
@@ -1908,7 +2141,7 @@ class PrototypeAuthorityLayer:
     def _validate_arguments(self, descriptor: EnforcementDescriptor,
                             args: tuple):
 
-        fingerprint = self._fingerprint
+        fingerprint = self.fingerprint
         fname = descriptor.function_name
 
         expected_count = len(descriptor.arg_types)
@@ -2012,7 +2245,7 @@ class PrototypeAuthorityLayer:
             raise PrototypeMismatchError(
                 "INITIALIZATION",
                 f"Incomplete binding. Missing: {sorted(list(missing))}",
-                self._fingerprint
+                self.fingerprint
             )
 
     def _bind_single_function(self, descriptor: EnforcementDescriptor) -> None:
@@ -2021,7 +2254,7 @@ class PrototypeAuthorityLayer:
             raise PrototypeMismatchError(
                 descriptor.function_name,
                 "Symbol not found in library",
-                self._fingerprint
+                self.fingerprint
             )
 
         raw_func = getattr(self._library, descriptor.function_name)
@@ -2045,7 +2278,7 @@ class PrototypeAuthorityLayer:
         raise PrototypeMismatchError(
             descriptor.function_name,
             "Unsupported function binding type",
-            self._fingerprint
+            self.fingerprint
         )
 
     def _bind_ctypes(self, func, descriptor: EnforcementDescriptor) -> None:
@@ -2055,14 +2288,14 @@ class PrototypeAuthorityLayer:
             if t not in _CTYPES_TYPE_MAP:
                 raise ContractInitializationError(
                     f"Unknown type mapping: {t}",
-                    self._fingerprint
+                    self.fingerprint
                 )
             ctypes_argtypes.append(_CTYPES_TYPE_MAP[t])
 
         if descriptor.return_type not in _CTYPES_TYPE_MAP:
             raise ContractInitializationError(
                 f"Unknown return type mapping: {descriptor.return_type}",
-                self._fingerprint
+                self.fingerprint
             )
 
         func.argtypes = ctypes_argtypes
@@ -2082,7 +2315,7 @@ class PrototypeAuthorityLayer:
             raise PrototypeMismatchError(
                 descriptor.function_name,
                 "Unable to introspect cffi signature",
-                self._fingerprint
+                self.fingerprint
             )
 
         # NOTE:
@@ -2094,7 +2327,7 @@ class PrototypeAuthorityLayer:
             raise PrototypeMismatchError(
                 descriptor.function_name,
                 "cffi symbol not found",
-                self._fingerprint
+                self.fingerprint
             )
 
 
