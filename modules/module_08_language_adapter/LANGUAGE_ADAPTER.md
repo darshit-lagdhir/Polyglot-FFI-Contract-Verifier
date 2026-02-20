@@ -480,3 +480,67 @@ To aid debugging without introducing nondeterminism into logs:
 - **Diagnostic Object**: A `DeterministicDiagnostic` record is attached to exceptions in `DEBUG` mode.
 - **Stable Formatting**: This record serializes contextual information (function name, clause, observed vs expected values) using a strict, sorted format.
 - **No Randomness**: The system deliberately avoids timestamps, memory addresses (unless normalized), or unordered dictionary dumps to ensure that error logs remain bit-for-bit identical across identical runs.
+
+---
+
+## Prompt 06 Part 1 — Concurrency Model and Registry Lock Discipline
+
+As the system moves toward high-concurrency FFI environments, simple reliance on the Python Global Interpreter Lock (GIL) is insufficient for managing the shared state of the Ownership Registry. Part 1 introduces a robust, thread-safe concurrency model.
+
+### Segmented Pointer Lock Model
+To avoid the performance bottleneck of a single global lock, the adapter implements a segmented locking strategy:
+- **Global Coordination**: A lightweight global lock is used only to resolve or create per-pointer locks.
+- **Micro-Locks**: Each unique pointer address is assigned its own dedicated `threading.Lock`. This allows multiple threads to operate on different pointers simultaneously without contention.
+- **Race Protection**: All operations that mutate or query the `OwnershipRegistry` (registration, freezing, epoch incrementing) are guarded by the micro-lock corresponding to the target pointer.
+
+### Atomic State Transitions
+The system ensures that ownership state changes and epoch increments are atomic:
+- **Double-Free Detection**: Locks ensure that two threads attempting to free the same pointer will be serialized; the first will succeed, and the second will reliably trigger a `Double free detected` violation.
+- **Epoch Integrity**: The pointer reuse epoch is incremented under lock, preventing race conditions where multiple threads might receive the same epoch for different logical allocations at the same address.
+
+### Deadlock Prevention
+The implementation follows a strict "Single Lock Discipline":
+- **No Nesting**: Threads never acquire more than one pointer lock at a time.
+- **Short Critical Sections**: No I/O, native FFI calls, or complex validation logic occurs inside locked sections.
+- **FFI Boundary Guard**: Locks are strictly released before any native code invocation, ensuring that the system cannot deadlock if the native side blocks or uses threads.
+
+---
+
+## Prompt 06 Part 2 — Invocation Context and Transactional Ownership Model
+
+Nested FFI calls (where Function A calls Function B through the adapter) introduce a risk of partial state corruption if an inner call fails. Part 2 introduces isolated invocation contexts and transactional semantics.
+
+### Invocation Context Stack
+The adapter maintains a thread-local `InvocationContextStack`.
+- **Thread Isolation**: Uses `threading.local` to ensure that FFI call sequences in one thread do not interfere with those in another.
+- **Nested Visibility**: Each FFI call pushes a new `CallContext` onto the stack, creating a hierarchy that reflects the native call graph.
+- **Auto-Cleanup**: The stack is managed in a `finally` block, ensuring that contexts are popped even if an exception occurs.
+
+### Transactional Ownership Model
+Ownership transitions are no longer applied immediately. They are **staged** within the current `CallContext`.
+- **Staged Transitions**: Changes like `mark_freed` or returned pointer `register` are recorded as "staged" operations.
+- **Atomic Commit**: Staged changes are only applied to the global `OwnershipRegistry` if the native function returns and all post-call validations pass.
+- **Rollback on Failure**: If a native crash occurs or a contract violation is detected, the `CallContext` is rolled back, reverting all staged ownership changes for that specific invocation.
+
+### Epoch Update Rules
+Epoch increments are tied to the commit phase. A pointer's epoch is only incremented if the deallocation function successfully commits, preventing "epoch leakage" in failed calls.
+
+---
+
+## Prompt 06 Part 3 — Performance Fast Path and Clause Plan Precompilation
+
+FFI enforcement naturally introduces overhead. Part 3 introduces a precompiled execution model to minimize "hot path" latency for trivial function calls while maintaining strict safety for complex ones.
+
+### Fast-Path Philosophy
+The adapter identifies "trivial" functions—those with no relational rules, no buffer boundaries, and no complex ownership transitions.
+- **Bypass Mode**: For these functions, the adapter executes a "Fast Path" that skips validation branching and directly dispatches to the raw native symbol.
+- **Zero-Overhead**: Trivial calls in production mode perform with near-native speed, incurring minimal Python-side stack overhead.
+
+### Clause Plan Precompilation
+For non-trivial functions, the adapter pre-calculates an enforcement "plan" during initialization.
+- **Pre-Binding**: Method lookups (like `_validate_arguments`) and rule iterations are bound into a `PrecompiledClausePlan` object.
+- **Minimized Branching**: The proxy callable uses the plan to execute only the necessary enforcement stages, avoiding thousands of `if` checks per call.
+- **Static Analysis**: The plan is computed once per function, turning dynamic metadata lookups into static local references within the proxy closure.
+
+### Safety Guarantee
+The Fast Path is automatically disabled if the system is in `DEBUG` mode or if any enforcement clause (e.g., a relational rule or a buffer boundary) is added to the function's contract. This ensures that performance optimizations never compromise the security guarantees of the contract.

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import hashlib
 import uuid
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
@@ -625,6 +626,53 @@ def _canonical_pointer_key(pointer: int,
     return (fingerprint, pointer, epoch)
 
 
+class InvocationContextStack:
+
+    def __init__(self):
+        self._local = threading.local()
+
+    def _get_stack(self):
+        if not hasattr(self._local, "stack"):
+            self._local.stack = []
+        return self._local.stack
+
+    def push(self, context):
+        self._get_stack().append(context)
+
+    def pop(self):
+        return self._get_stack().pop()
+
+    def current(self):
+        stack = self._get_stack()
+        return stack[-1] if stack else None
+
+
+class CallContext:
+
+    def __init__(self):
+        self._staged_transitions = []
+        self._staged_epoch_increments = []
+
+    def stage_transition(self, pointer, old_state, new_state, record):
+        self._staged_transitions.append(
+            (pointer, old_state, new_state, record)
+        )
+
+    def stage_epoch_increment(self, registry, pointer, new_epoch):
+        self._staged_epoch_increments.append((registry, pointer, new_epoch))
+
+    def commit(self):
+        for pointer, old_state, new_state, record in self._staged_transitions:
+            record.state = new_state
+        for registry, pointer, new_epoch in self._staged_epoch_increments:
+            registry._epoch_counter[pointer] = new_epoch
+
+    def rollback(self):
+        for pointer, old_state, new_state, record in reversed(self._staged_transitions):
+            record.state = old_state
+        # Epoch increments are only applied on commit, so no need to rollback them.
+
+
 @dataclass
 class PointerOwnershipRecord:
     pointer: int
@@ -638,45 +686,60 @@ class PointerOwnershipRecord:
 
 class OwnershipRegistry:
 
-    def __init__(self):
+    def __init__(self, context_stack: Optional[InvocationContextStack] = None):
         self._registry = {}
         self._epoch_counter = {}
         self._wrapper_map = {}
+        self._locks = {}
+        self._global_lock = threading.Lock()
+        self._context_stack = context_stack
+
+    def _get_lock_for_pointer(self, pointer: int):
+        with self._global_lock:
+            if pointer not in self._locks:
+                self._locks[pointer] = threading.Lock()
+            return self._locks[pointer]
 
     def get_current_epoch(self, pointer: int) -> int:
-        return self._epoch_counter.get(pointer, 0)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            return self._epoch_counter.get(pointer, 0)
 
     def attach_wrapper(self,
                        pointer: int,
                        fingerprint: str,
                        wrapper: ContractPointerWrapper):
 
-        epoch = self._epoch_counter.get(pointer, 0)
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            epoch = self._epoch_counter.get(pointer, 0)
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
 
-        if key not in self._registry:
-            raise OwnershipViolationError(
-                "WRAPPER_ATTACH",
-                pointer,
-                "Attempting to attach wrapper to unregistered pointer",
-                fingerprint
-            )
+            if key not in self._registry:
+                raise OwnershipViolationError(
+                    "WRAPPER_ATTACH",
+                    pointer,
+                    "Attempting to attach wrapper to unregistered pointer",
+                    fingerprint
+                )
 
-        if key in self._wrapper_map:
-            # Alias detected
-            raise OwnershipViolationError(
-                "WRAPPER_ATTACH",
-                pointer,
-                "Alias wrapper detected for same pointer epoch",
-                fingerprint
-            )
+            if key in self._wrapper_map:
+                # Alias detected
+                raise OwnershipViolationError(
+                    "WRAPPER_ATTACH",
+                    pointer,
+                    "Alias wrapper detected for same pointer epoch",
+                    fingerprint
+                )
 
-        self._wrapper_map[key] = wrapper
+            self._wrapper_map[key] = wrapper
 
     def has_wrapper_for_current_epoch(self, pointer: int, fingerprint: str) -> bool:
-        epoch = self._epoch_counter.get(pointer, 0)
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
-        return key in self._wrapper_map
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            epoch = self._epoch_counter.get(pointer, 0)
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
+            return key in self._wrapper_map
 
     def register(self,
                  pointer: int,
@@ -684,50 +747,65 @@ class OwnershipRegistry:
                  ownership_type: str,
                  fingerprint: str):
 
-        epoch = self._epoch_counter.get(pointer, 0)
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            epoch = self._epoch_counter.get(pointer, 0)
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
 
-        if key in self._registry:
-            # Already tracked
-            raise OwnershipViolationError(
-                function_name,
-                pointer,
-                "Pointer already registered in current epoch",
-                fingerprint
+            if key in self._registry:
+                # Already tracked
+                raise OwnershipViolationError(
+                    function_name,
+                    pointer,
+                    "Pointer already registered in current epoch",
+                    fingerprint
+                )
+
+            record = PointerOwnershipRecord(
+                pointer=pointer,
+                fingerprint=fingerprint,
+                epoch=epoch,
+                origin_function=function_name,
+                state=PointerState.BORROWED_INPUT, # Temporary state until confirmed
+                ownership_type=ownership_type,
+                history=[("register", function_name)]
             )
 
-        record = PointerOwnershipRecord(
-            pointer=pointer,
-            fingerprint=fingerprint,
-            epoch=epoch,
-            origin_function=function_name,
-            state=PointerState.ACTIVE_CALLER_OWNED,
-            ownership_type=ownership_type,
-            history=[("register", function_name)]
-        )
+            context = self._context_stack.current() if self._context_stack else None
+            if context:
+                context.stage_transition(
+                    pointer,
+                    PointerState.BORROWED_INPUT,
+                    PointerState.ACTIVE_CALLER_OWNED,
+                    record
+                )
+            else:
+                record.state = PointerState.ACTIVE_CALLER_OWNED
 
-        self._registry[key] = record
+            self._registry[key] = record
 
     def register_borrowed(self,
                           pointer: int,
                           function_name: str,
                           fingerprint: str):
-        epoch = self._epoch_counter.get(pointer, 0)
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            epoch = self._epoch_counter.get(pointer, 0)
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
 
-        if key in self._registry:
-            return  # Already tracked
+            if key in self._registry:
+                return  # Already tracked
 
-        record = PointerOwnershipRecord(
-            pointer=pointer,
-            fingerprint=fingerprint,
-            epoch=epoch,
-            origin_function=function_name,
-            state=PointerState.BORROWED_INPUT,
-            ownership_type="borrowed",
-            history=[("borrow", function_name)]
-        )
-        self._registry[key] = record
+            record = PointerOwnershipRecord(
+                pointer=pointer,
+                fingerprint=fingerprint,
+                epoch=epoch,
+                origin_function=function_name,
+                state=PointerState.BORROWED_INPUT,
+                ownership_type="borrowed",
+                history=[("borrow", function_name)]
+            )
+            self._registry[key] = record
 
     def mark_freed(self,
                    pointer: int,
@@ -735,37 +813,49 @@ class OwnershipRegistry:
                    fingerprint: str,
                    epoch: Optional[int] = None):
 
-        if epoch is None:
-            epoch = self._epoch_counter.get(pointer, 0)
-        
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            if epoch is None:
+                epoch = self._epoch_counter.get(pointer, 0)
+            
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
 
-        if key not in self._registry:
-            raise OwnershipViolationError(
-                function_name,
-                pointer,
-                "Freeing untracked pointer",
-                fingerprint
-            )
+            if key not in self._registry:
+                raise OwnershipViolationError(
+                    function_name,
+                    pointer,
+                    "Freeing untracked pointer",
+                    fingerprint
+                )
 
-        record = self._registry[key]
+            record = self._registry[key]
 
-        # Step 9: Transition validation
-        self._validate_transition(record, PointerState.FREED, function_name, fingerprint)
+            if record.state == PointerState.FREED:
+                raise OwnershipViolationError(
+                    function_name,
+                    pointer,
+                    "Double free detected",
+                    fingerprint
+                )
 
-        if record.state == PointerState.FREED:
-            raise OwnershipViolationError(
-                function_name,
-                pointer,
-                "Double free detected",
-                fingerprint
-            )
+            # Step 9: Transition validation
+            self._validate_transition(record, PointerState.FREED, function_name, fingerprint)
 
-        record.state = PointerState.FREED
-        record.history.append(("freed", function_name))
+            context = self._context_stack.current() if self._context_stack else None
+            if context:
+                context.stage_transition(
+                    pointer,
+                    record.state,
+                    PointerState.FREED,
+                    record
+                )
+                context.stage_epoch_increment(self, pointer, epoch + 1)
+            else:
+                record.state = PointerState.FREED
+                # Increment epoch for potential reuse
+                self._epoch_counter[pointer] = epoch + 1
 
-        # Increment epoch for potential reuse
-        self._epoch_counter[pointer] = epoch + 1
+            record.history.append(("freed", function_name))
 
     def ensure_active(self,
                       pointer: int,
@@ -773,23 +863,25 @@ class OwnershipRegistry:
                       fingerprint: str,
                       epoch: Optional[int] = None):
 
-        if epoch is None:
-            epoch = self._epoch_counter.get(pointer, 0)
-        
-        key = _canonical_pointer_key(pointer, fingerprint, epoch)
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            if epoch is None:
+                epoch = self._epoch_counter.get(pointer, 0)
+            
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
 
-        if key not in self._registry:
-            return  # not tracked
+            if key not in self._registry:
+                return  # not tracked
 
-        record = self._registry[key]
+            record = self._registry[key]
 
-        if record.state == PointerState.FREED:
-            raise OwnershipViolationError(
-                function_name,
-                pointer,
-                "Use-after-free detected",
-                fingerprint
-            )
+            if record.state == PointerState.FREED:
+                raise OwnershipViolationError(
+                    function_name,
+                    pointer,
+                    "Use-after-free detected",
+                    fingerprint
+                )
 
     def _validate_transition(self, record, new_state,
                              function_name, fingerprint):
@@ -820,30 +912,33 @@ class StructureVerificationCache:
     def __init__(self):
         self._verified = {}
         self._layout_hash = {}
+        self._lock = threading.Lock()
 
     def mark_verified(self,
                       struct_name: str,
                       struct_cls,
                       fingerprint: str):
 
-        key = (fingerprint, struct_name)
-        self._verified[key] = struct_cls
-        self._layout_hash[key] = self._compute_hash(struct_cls)
+        with self._lock:
+            key = (fingerprint, struct_name)
+            self._verified[key] = struct_cls
+            self._layout_hash[key] = self._compute_hash(struct_cls)
 
     def is_verified(self,
                     struct_name: str,
                     struct_cls,
                     fingerprint: str) -> bool:
 
-        key = (fingerprint, struct_name)
+        with self._lock:
+            key = (fingerprint, struct_name)
 
-        if key not in self._verified:
-            return False
+            if key not in self._verified:
+                return False
 
-        current_hash = self._compute_hash(struct_cls)
-        cached_hash = self._layout_hash[key]
+            current_hash = self._compute_hash(struct_cls)
+            cached_hash = self._layout_hash[key]
 
-        return current_hash == cached_hash
+            return current_hash == cached_hash
 
     def _compute_hash(self, struct_cls):
 
@@ -1137,6 +1232,27 @@ class RuntimeEnforcementMode:
     DEBUG = "debug"
 
 
+class PrecompiledClausePlan:
+    """
+    Holds precompiled validation steps for a function.
+    Minimizes runtime branching.
+    """
+
+    def __init__(self):
+        self.fast_path = True
+        self.param_validator = None
+        self.relational_validator = None
+        self.relational_rules = ()
+        self.buffer_validator = False
+        self.buffer_rules = ()
+        self.ownership_pre = False
+        self.ownership_post = False
+        self.return_validator = False
+        self.struct_snapshot_pre = False
+        self.struct_snapshot_post = False
+        self.error_semantics = None
+
+
 class PrototypeAuthorityLayer:
 
     def __init__(self, loader: ContractRuntimeLoader, library_handle: Any, mode: str = RuntimeEnforcementMode.STRICT):
@@ -1145,7 +1261,8 @@ class PrototypeAuthorityLayer:
         self._fingerprint = loader.metadata.fingerprint
         self._state = AdapterInitializationState()
         self._proxy_registry = InvocationProxyRegistry()
-        self._ownership_registry = OwnershipRegistry()
+        self._context_stack = InvocationContextStack()
+        self._ownership_registry = OwnershipRegistry(self._context_stack)
         self._mode = mode
         self._struct_snapshot_cache = {}
         
@@ -1213,355 +1330,224 @@ class PrototypeAuthorityLayer:
         Structural proxy builder for high-speed FFI interposition.
         """
         fingerprint = self._fingerprint
+        local_descriptor = descriptor
+        local_registry = self._ownership_registry
+        local_fingerprint = fingerprint
+        local_context_stack = self._context_stack
+        local_mode = self._mode
+
+        plan = PrecompiledClausePlan()
+
+        # Build plan
+        if descriptor.arg_types:
+            plan.param_validator = lambda args: self._validate_arguments(local_descriptor, args)
+            plan.fast_path = False
+
+        if descriptor.relational_rules:
+            plan.relational_rules = tuple(descriptor.relational_rules)
+            plan.relational_validator = lambda args: self._evaluate_relational_constraints(local_descriptor, args)
+            plan.fast_path = False
+
+        if descriptor.buffer_rules:
+            plan.buffer_rules = tuple(sorted(descriptor.buffer_rules.items(), key=lambda x: x[0]))
+            plan.buffer_validator = True
+            plan.fast_path = False
+
+        if (descriptor.ownership and descriptor.ownership.get("return") == "caller_owned") or name in self._free_functions:
+             plan.ownership_pre = True
+             plan.ownership_post = True
+             plan.fast_path = False
+        
+        if any(t.endswith("_ptr") or t == "void_ptr" for t in descriptor.arg_types):
+             plan.ownership_pre = True
+             plan.fast_path = False
+
+        if descriptor.return_type != "void":
+            plan.return_validator = True
+            # For non-void return, we generally leave fast_path=False if it's not a simple int/float
+            # but for now let's be conservative. If we have return validation, it's not "minimal".
+            plan.fast_path = False
+
+        has_structs = any(t in self._metadata.structs for t in descriptor.arg_types)
+        if has_structs or descriptor.return_type in self._metadata.structs:
+             plan.struct_snapshot_pre = True
+             plan.struct_snapshot_post = True
+             plan.fast_path = False
+
+        if descriptor.error_semantics:
+             plan.error_semantics = descriptor.error_semantics
+             plan.fast_path = False
 
         def proxy_callable(*args):
-            # Debug Mode: Dynamic Structure Re-verification (Step 6)
-            if self._mode == RuntimeEnforcementMode.DEBUG and self._metadata.structs:
-                 # Re-verify structures in current namespace
-                 # Using inspect to find caller's namespace is expensive but necessary for "Dynamic" check in Debug
-                 import inspect
-                 caller_frame = inspect.currentframe().f_back
-                 namespace = caller_frame.f_globals if caller_frame else globals()
-                 self._verifier.verify(namespace)
+            # Local bind for speed
+            raw = raw_func
+            local_plan = plan
 
-            # Parameter validation stage
-            validated_args = self._validate_arguments(descriptor, args)
+            # Step 1: Fast Path Check
+            if local_plan.fast_path and local_mode != RuntimeEnforcementMode.DEBUG:
+                return raw(*args)
 
-            # Relational evaluation
-            self._evaluate_relational_constraints(
-                descriptor,
-                validated_args
-            )
+            # Step 2: Transactional Context
+            context = CallContext()
+            local_context_stack.push(context)
 
-            # Ownership: Pre-invocation Guard (Step 6, 7, 8)
-            validated_args_list = list(validated_args)
-            for i, val in enumerate(args):
-                is_wrapper = isinstance(val, ContractPointerWrapper)
-                ptr = val.address if is_wrapper else _extract_pointer_address(val)
-                effective_epoch = val._epoch if is_wrapper else None
+            try:
+                # Debug Mode: Dynamic Structure Re-verification
+                if local_mode == RuntimeEnforcementMode.DEBUG and self._metadata.structs:
+                    import inspect
+                    caller_frame = inspect.currentframe().f_back
+                    namespace = caller_frame.f_globals if caller_frame else globals()
+                    self._verifier.verify(namespace)
 
-                if ptr is not None:
-                    # Register borrowed if not already tracked
-                    if i < len(descriptor.arg_ownership) and descriptor.arg_ownership[i] == "borrowed":
-                        self._ownership_registry.register_borrowed(
-                            ptr, name, fingerprint
-                        )
+                # Parameter validation
+                if local_plan.param_validator:
+                    validated_args = local_plan.param_validator(args)
+                else:
+                    validated_args = args
 
-                    # Handle free function enforcement
-                    if i == 0 and name in self._free_functions:
-                        # Step 8: Prevent Raw Pointer Free Bypass
-                        if self._ownership_registry.has_wrapper_for_current_epoch(ptr, fingerprint) and not is_wrapper:
-                             raise OwnershipViolationError(
-                                 name,
-                                 ptr,
-                                 "Free must be invoked via wrapper",
-                                 fingerprint
-                             )
+                # Relational evaluation
+                if local_plan.relational_validator:
+                    local_plan.relational_validator(validated_args)
 
-                        # Step 6: Free via wrapper if possible
-                        if is_wrapper:
-                             val.free(name)
-                        else:
-                             self._ownership_registry.mark_freed(
-                                 ptr, name, fingerprint
-                             )
-                        continue
-                    
-                    # Step 7: Pre-invoke ownership guard
-                    self._ownership_registry.ensure_active(
-                        ptr, name, fingerprint, epoch=effective_epoch
-                    )
-                    
-                    if is_wrapper:
-                         validated_args_list[i] = int(ptr)
+                # Ownership: Pre-invocation Guard
+                validated_args_list = list(validated_args)
+                if local_plan.ownership_pre:
+                    for i, val in enumerate(args):
+                        is_wrapper = isinstance(val, ContractPointerWrapper)
+                        ptr = val.address if is_wrapper else _extract_pointer_address(val)
+                        effective_epoch = val._epoch if is_wrapper else None
 
-            # Step 6: Immutable Mutation Snapshot (Pre-call)
-            snapshots = []
-            for i, val in enumerate(args):
-                if isinstance(val, ctypes.Structure):
-                    struct_name = val.__class__.__name__
-                    if struct_name in self._metadata.structs:
-                        contract_def = self._metadata.structs[struct_name]
-                        # Reuse contract definition (Snapshot Cache Step 7)
-                        # Actually we can cache the list of immutable fields to speed up snapshot creation
-                        # But the prompt says "Cache immutable field definitions per struct_name"
-                        # For now we use the contract_def directly.
-                        snapshot = StructMutationSnapshot(
-                            val, contract_def
-                        )
-                        snapshots.append((val, snapshot, struct_name))
+                        if ptr is not None:
+                            # Register borrowed if not already tracked
+                            if i < len(local_descriptor.arg_ownership) and local_descriptor.arg_ownership[i] == "borrowed":
+                                local_registry.register_borrowed(ptr, name, local_fingerprint)
 
-            # Step 7: Buffer Boundary Defense (Pre-call)
-            buffer_snapshots = []
-            
-            # Need to iterate based on descriptor rules, but validated_args_list matches arg types
-            if descriptor.buffer_rules:
-                 for idx in sorted(descriptor.buffer_rules.keys()): # Deterministic order
-                    rule = descriptor.buffer_rules[idx]
-                    
-                    # Ensure index is valid for args
-                    if idx >= len(validated_args_list):
-                        continue
+                            # Handle free function enforcement
+                            if i == 0 and name in self._free_functions:
+                                if local_registry.has_wrapper_for_current_epoch(ptr, local_fingerprint) and not is_wrapper:
+                                     raise OwnershipViolationError(name, ptr, "Free must be invoked via wrapper", local_fingerprint)
 
-                    arg = validated_args_list[idx]
-                    # Note: arg might be a pointer integer if converted!
-                    # If converted to pointer, we might not be able to len() it easily unless we use original args
-                    # But if it's a buffer, validated_args_list usually holds the object or ctypes ptr
-                    # Check original args for buffer object if needed?
-                    # Descriptor rules apply to ABI arguments. If we passed a buffer object, 
-                    # validated_args usually contains it or a pointer.
-                    # If arg is integer (pointer), we can't snapshot it cleanly without ctypes cast.
-                    # We should look at original 'args' for the high-level object if possible,
-                    # BUT the rule relies on the index in the function signature.
-                    
-                    # For safety, we check if validated_args_list[idx] is snapshot-able.
-                    # If not, we try args[idx] if available.
-                    
-                    snapshot_target = arg
-                    if isinstance(arg, int):
-                         # Potentially a pointer address from a ContractPointerWrapper or conversion
-                         # Try original arg if available and matches index
-                         if idx < len(args):
+                                if is_wrapper:
+                                     val.free(name)
+                                else:
+                                     local_registry.mark_freed(ptr, name, local_fingerprint)
+                                continue
+                            
+                            local_registry.ensure_active(ptr, name, local_fingerprint, epoch=effective_epoch)
+                            
+                            if is_wrapper:
+                                 validated_args_list[i] = int(ptr)
+
+                # Immutable Mutation Snapshot (Pre-call)
+                snapshots = []
+                if local_plan.struct_snapshot_pre:
+                    for i, val in enumerate(args):
+                        if isinstance(val, ctypes.Structure):
+                            struct_name = val.__class__.__name__
+                            if struct_name in self._metadata.structs:
+                                snapshot = StructMutationSnapshot(val, self._metadata.structs[struct_name])
+                                snapshots.append((val, snapshot, struct_name))
+
+                # Buffer Boundary Defense (Pre-call)
+                buffer_snapshots = []
+                if local_plan.buffer_validator:
+                    for idx, rule in local_plan.buffer_rules:
+                        if idx >= len(validated_args_list): continue
+                        
+                        arg = validated_args_list[idx]
+                        snapshot_target = arg
+                        if isinstance(arg, int) and idx < len(args):
                              snapshot_target = args[idx]
 
-                    length_param_index = rule.get("length_param_index")
-                    write_allowed = rule.get("write_allowed", True)
-                    inspect_memory = rule.get("inspect_memory", False)
-                    guard_zone = rule.get("guard_zone", False)
-
-                    if length_param_index is None:
-                        raise BufferBoundaryViolationError(
-                            name,
-                            idx,
-                            "Missing length_param_index in buffer rule",
-                            fingerprint
-                        )
-
-                    # Length should be in validated_args
-                    if length_param_index >= len(validated_args_list):
-                         raise BufferBoundaryViolationError(
-                            name,
-                            idx,
-                            "Length parameter index out of bounds",
-                            fingerprint
-                        )
+                        length_param_index = rule.get("length_param_index")
+                        if length_param_index is None:
+                            raise BufferBoundaryViolationError(name, idx, "Missing length_param_index", local_fingerprint)
                         
-                    length_value = validated_args_list[length_param_index]
+                        length_value = validated_args_list[length_param_index]
+                        if not isinstance(length_value, int):
+                             raise BufferBoundaryViolationError(name, idx, "Length not integer", local_fingerprint)
 
-                    # length_value must be int
-                    if not isinstance(length_value, int):
-                         raise BufferBoundaryViolationError(
-                            name,
-                            idx,
-                            "Length parameter not integer",
-                            fingerprint
-                        )
+                        if hasattr(snapshot_target, "__len__") and len(snapshot_target) < length_value:
+                             raise BufferBoundaryViolationError(name, idx, "Declared length exceeds buffer size", local_fingerprint)
 
-                    # Relational reinforcement: Check declared length vs actual buffer size
-                    # If target has __len__
-                    if hasattr(snapshot_target, "__len__"):
-                        # ctypes arrays, bytes, bytearray, memoryview have len
-                        if len(snapshot_target) < length_value:
-                            raise BufferBoundaryViolationError(
-                                name,
-                                idx,
-                                "Declared length exceeds buffer size",
-                                fingerprint
-                            )
+                        if rule.get("inspect_memory") and not rule.get("write_allowed", True):
+                            buffer_snapshots.append((idx, BufferSnapshot(snapshot_target, length_value)))
 
-                    if inspect_memory and not write_allowed:
-                        # Only snapshot if we can read it
-                        snapshot = BufferSnapshot(snapshot_target, length_value)
-                        buffer_snapshots.append((idx, snapshot))
-
-            # Step 5: Memory Pinning Controller
-            # Ensure buffer stability and prevent premature GC
-            pin_context = PinContext()
-            try:
-                for idx, arg in enumerate(validated_args_list):
-                    # Check for buffer-like objects (arrays, bytes, memoryview)
-                    if _is_buffer_like(arg):
-                        if not _validate_contiguity(arg):
-                            raise MemoryPinningError(
-                                name,
-                                idx,
-                                "Non-contiguous buffer not allowed",
-                                fingerprint
-                            )
-                        pin_context.pin(arg)
-                    
-                    # Check for ctypes structures (pin them too)
-                    elif isinstance(arg, ctypes.Structure):
-                        pin_context.pin(arg)
-                    
-                    # Note: Pointers created via byref are typically safe if the underlying object is pinned.
-                    # If arg is byref(obj), obj must be kept alive.
-                    # However, validated_args_list might contain raw integers (pointers) or converted values.
-                    # We iterate over validated_args_list which contains what we pass to raw_func.
-                    # But if we did conversions (e.g. wrapper -> int), the original object might be in 'args'.
-                    # We should check 'args' for pinning source objects!
-                
-                # Iterate original args source objects for pinning
-                for idx, arg in enumerate(args):
-                    if _is_buffer_like(arg):
-                        if not _validate_contiguity(arg):
-                             raise MemoryPinningError(
-                                name,
-                                idx,
-                                "Non-contiguous buffer not allowed",
-                                fingerprint
-                            )
-                        pin_context.pin(arg)
-                    elif isinstance(arg, ctypes.Structure):
-                        pin_context.pin(arg)
-
-                # Step 4: Wrapped Invocation with Crash Guard
+                # Memory Pinning
+                pin_context = PinContext()
                 try:
-                    result = raw_func(*tuple(validated_args_list))
-                except Exception as e:
-                    # In DEBUG mode, we might want to attach diagnostics
-                    # But for now we raise NativeCrashError which is the requirement.
-                    # The prompt says: "If DEBUG: Attach diagnostic record and re-raise." (Step 6)
-                    # For a crash (Python exception from raw_func), there is no structured "diagnostic" 
-                    # other than the exception message itself unless we had pre-call context.
-                    # We can construct a Diagnostic for the crash.
+                    for arg in validated_args_list:
+                        if _is_buffer_like(arg) and _validate_contiguity(arg): pin_context.pin(arg)
+                        elif isinstance(arg, ctypes.Structure): pin_context.pin(arg)
                     
-                    msg = f"Native invocation raised exception: {str(e)}"
-                    if self._mode == RuntimeEnforcementMode.DEBUG:
-                        diag = DeterministicDiagnostic(
-                            name,
-                            fingerprint,
-                            "ExceptionGuard",
-                            str(e),
-                            "Successful invocation"
-                        )
-                        # We append diagnostic to message or raise a special error that contains it
-                        msg += f" {diag.serialize()}"
+                    for arg in args:
+                        if _is_buffer_like(arg) and _validate_contiguity(arg): pin_context.pin(arg)
+                        elif isinstance(arg, ctypes.Structure): pin_context.pin(arg)
 
-                    raise NativeCrashError(
-                        name,
-                        msg,
-                        fingerprint
-                    ) from e
-            
+                    # Wrapped Invocation
+                    try:
+                        result = raw(*tuple(validated_args_list))
+                    except Exception as e:
+                        msg = f"Native invocation raised exception: {str(e)}"
+                        if local_mode == RuntimeEnforcementMode.DEBUG:
+                            msg += f" {DeterministicDiagnostic(name, local_fingerprint, 'ExceptionGuard', str(e), 'Success').serialize()}"
+                        raise NativeCrashError(name, msg, local_fingerprint) from e
+                    finally:
+                        pin_context.release()
+
+                    # Post-call Verification (Buffer Boundaries)
+                    for idx, snapshot in buffer_snapshots:
+                        target = validated_args_list[idx]
+                        if isinstance(target, int) and idx < len(args): target = args[idx]
+                        snapshot.verify_unchanged(target, name, idx, local_fingerprint)
+
+                    # Post-call Verification (Struct Mutation)
+                    for val, snapshot, struct_name in snapshots:
+                        snapshot.verify(val, struct_name, local_fingerprint)
+
+                    # Return validation
+                    if local_plan.return_validator:
+                        if local_descriptor.return_type in _INT_RANGES:
+                             if not isinstance(result, int):
+                                 raise ContractViolationError(name, -1, "Return type mismatch", local_fingerprint)
+                             min_v, max_v = _INT_RANGES[local_descriptor.return_type]
+                             if not (min_v <= result <= max_v):
+                                 raise ContractViolationError(name, -1, "Integer out of range", local_fingerprint)
+                        
+                        # Error semantics enforcement
+                        if local_plan.error_semantics:
+                            if result == local_plan.error_semantics.get("error_code"):
+                                 msg = local_plan.error_semantics.get("description", "Native error")
+                                 if local_mode == RuntimeEnforcementMode.DEBUG:
+                                      msg += f" {DeterministicDiagnostic(name, local_fingerprint, 'ErrorSemantics', str(result), 'Valid').serialize()}"
+                                 raise ContractViolationError(name, -1, msg, local_fingerprint)
+
+                    # Register returned pointer
+                    final_result = result
+                    if (local_descriptor.return_type.endswith("_ptr") or local_descriptor.return_type == "void_ptr") \
+                       and local_descriptor.ownership.get("return") == "caller_owned":
+                        ptr = _extract_pointer_address(result)
+                        if ptr is not None:
+                            local_registry.register(ptr, name, "caller_owned", local_fingerprint)
+                            wrapper = ContractPointerWrapper(ptr, local_registry, local_fingerprint)
+                            local_registry.attach_wrapper(ptr, local_fingerprint, wrapper)
+                            final_result = wrapper
+
+                    # Transactional Commit
+                    context.commit()
+                    return final_result
+
+                except Exception:
+                    context.rollback()
+                    raise
+
             finally:
-                pin_context.release()
-
-            # Step 7: Buffer Boundary Defense (Post-call Verification)
-            for idx, snapshot in buffer_snapshots:
-                # We need the target object again.
-                # Snapshot holds reference? No, Snapshot stores bytes.
-                # verification needs the buffer object.
-                # We can re-resolve target.
-                target = validated_args_list[idx]
-                if isinstance(target, int) and idx < len(args):
-                    target = args[idx]
-                
-                snapshot.verify_unchanged(
-                    target,
-                    name,
-                    idx,
-                    fingerprint
-                )
-
-            # Step 6: Immutable Mutation Enforcement (Post-call)
-            for val, snapshot, struct_name in snapshots:
-                snapshot.verify(val, struct_name, fingerprint)
-
-            # Return type validation stage
-            if descriptor.return_type in _INT_RANGES:
-                if not isinstance(result, int):
-                    raise ContractViolationError(
-                        name,
-                        -1,
-                        "Return type mismatch (expected int)",
-                        fingerprint
-                    )
-
-                min_val, max_val = _INT_RANGES[descriptor.return_type]
-                if not (min_val <= result <= max_val):
-                    raise ContractViolationError(
-                        name,
-                        -1,
-                        "Return integer out of range",
-                        fingerprint
-                    )
-            elif descriptor.return_type == "void":
-                if result is not None:
-                    raise ContractViolationError(
-                        name,
-                        -1,
-                        "Expected void return (None)",
-                        fingerprint
-                    )
-            elif descriptor.return_type in ("float", "double"):
-                if not isinstance(result, (float, int)):
-                    raise ContractViolationError(
-                        name,
-                        -1,
-                        "Return type mismatch (expected float)",
-                        fingerprint
-                    )
-
-            # Step 5: Error Code Semantic Enforcement
-            if descriptor.error_semantics:
-                error_code = descriptor.error_semantics.get("error_code")
-                if error_code is not None:
-                     # Check if result matches error_code.
-                     # Result types: int, float, None, pointer(int/None).
-                     # We assume direct comparison works.
-                     if result == error_code:
-                         msg = "Native function returned error code"
-                         if self._mode == RuntimeEnforcementMode.DEBUG:
-                             diag = DeterministicDiagnostic(
-                                 name,
-                                 fingerprint,
-                                 "ErrorSemantics",
-                                 str(result),
-                                 f"!={error_code}"
-                             )
-                             msg += f" {diag.serialize()}"
-                             
-                         raise ContractViolationError(
-                             name,
-                             -1,
-                             msg,
-                             fingerprint
-                         )
-
-            # Post-call reconciliation
-            result = self._post_call_reconciliation(
-                descriptor,
-                validated_args,
-                result
-            )
-
-            # Ownership: Register and Wrap returned pointer (Step 5)
-            if (descriptor.return_type.endswith("_ptr") or descriptor.return_type == "void_ptr") \
-               and descriptor.ownership.get("return") == "caller_owned":
-                ptr = _extract_pointer_address(result)
-                if ptr is not None:
-                    self._ownership_registry.register(
-                        ptr, name, "caller_owned", fingerprint
-                    )
-                    wrapper = ContractPointerWrapper(
-                        ptr,
-                        self._ownership_registry,
-                        fingerprint
-                    )
-                    self._ownership_registry.attach_wrapper(
-                        ptr,
-                        fingerprint,
-                        wrapper
-                    )
-                    return wrapper
-
-            return result
+                local_context_stack.pop()
 
         proxy_callable.__name__ = name
-        proxy_callable.__doc__ = raw_func.__doc__
         proxy_callable._ffi_contract_fingerprint = fingerprint
         proxy_callable._ffi_descriptor = descriptor
+        proxy_callable._clause_plan = plan
 
         return proxy_callable
 
@@ -1781,7 +1767,7 @@ class PrototypeAuthorityLayer:
         # Fallback: Allow python callables for testing/mock use-cases if not strictly ctypes
         # This is useful for unit testing logic without compiling C code.
         if callable(raw_func) and not isinstance(raw_func, type):
-             self._state.bound_functions.add(descriptor.function_name)
+             self._state.mark_bound(descriptor.function_name)
              return
 
         raise PrototypeMismatchError(
