@@ -485,6 +485,65 @@ class ContractRuntimeLoader:
         )
 
 
+class RelationalExpressionCompiler:
+    """
+    Compiles relational expression trees into deterministic evaluation functions.
+    Avoids runtime parsing and eval().
+    """
+
+    def compile(self, expr):
+        if not isinstance(expr, dict):
+             # Fixed value or already compiled? Should be dict from metadata.
+             return lambda args: expr
+
+        node_type = expr["type"]
+
+        if node_type == "param":
+            index = expr["index"]
+            return lambda args: args[index]
+
+        if node_type == "const":
+            value = expr["value"]
+            return lambda args: value
+
+        if node_type == "add":
+            left = self.compile(expr["left"])
+            right = self.compile(expr["right"])
+            return lambda args: left(args) + right(args)
+
+        if node_type == "sub":
+            left = self.compile(expr["left"])
+            right = self.compile(expr["right"])
+            return lambda args: left(args) - right(args)
+
+        if node_type == "mul":
+            left = self.compile(expr["left"])
+            right = self.compile(expr["right"])
+            return lambda args: left(args) * right(args)
+
+        if node_type == "div":
+            left = self.compile(expr["left"])
+            right = self.compile(expr["right"])
+            return self._safe_div(left, right)
+
+        raise ValueError(f"Unknown expression node type: {node_type}")
+
+    def _safe_div(self, left, right):
+        def evaluator(args):
+            denominator = right(args)
+            if denominator == 0:
+                raise ContractViolationError(
+                    "relational",
+                    -1,
+                    "Division by zero in relational rule",
+                    "unknown"
+                )
+            # Use integer division for determinism
+            return left(args) // denominator
+
+        return evaluator
+
+
 def initialize_contract_loader(contract_dict: dict) -> ContractRuntimeLoader:
     """
     Initializes and validates contract metadata.
@@ -532,6 +591,18 @@ class ContractPointerWrapper:
         self._fingerprint = fingerprint
         # Link to the current epoch at time of creation
         self._epoch = registry.get_current_epoch(pointer_value)
+        self._wrapper_id = id(self)
+
+    @property
+    def wrapper_id(self):
+        return self._wrapper_id
+
+    def __del__(self):
+        # Notify registry of wrapper disposal to clean up alias tracking
+        try:
+             self._registry.detach_wrapper(self._pointer, self._fingerprint, self._wrapper_id)
+        except Exception:
+             pass
 
     @property
     def address(self) -> int:
@@ -575,6 +646,15 @@ def _extract_pointer_address(value) -> Optional[int]:
         return ctypes.cast(value, ctypes.c_void_p).value
     except Exception:
         return None
+
+
+def _normalize_pointer(ptr):
+    """
+    Standardizes pointer formatting for deterministic tracing.
+    """
+    if ptr is None:
+        return "0x0000000000000000"
+    return f"0x{ptr:016x}"
 
 
 class PointerState:
@@ -688,13 +768,22 @@ class CallContext:
             (pointer, old_state, new_state, record)
         )
 
-    def stage_epoch_increment(self, registry, pointer, new_epoch):
-        self._staged_epoch_increments.append((registry, pointer, new_epoch))
+    def stage_epoch_increment(self, registry, pointer, fingerprint, new_epoch):
+        self._staged_epoch_increments.append((registry, pointer, fingerprint, new_epoch))
 
     def commit(self):
         for pointer, old_state, new_state, record in self._staged_transitions:
             record.state = new_state
-        for registry, pointer, new_epoch in self._staged_epoch_increments:
+        for registry, pointer, fingerprint, new_epoch in self._staged_epoch_increments:
+            # Clear aliases for the OLD key (Part 2 Step 8)
+            old_epoch = registry._epoch_counter.get(pointer, 0)
+            old_key = _canonical_pointer_key(pointer, fingerprint, old_epoch)
+            with registry._get_lock_for_pointer(pointer):
+                if old_key in registry._alias_map:
+                    del registry._alias_map[old_key]
+                if old_key in registry._wrapper_map:
+                    del registry._wrapper_map[old_key]
+            
             registry._epoch_counter[pointer] = new_epoch
 
     def rollback(self):
@@ -731,6 +820,7 @@ class OwnershipRegistry:
         self._global_lock = threading.Lock()
         self._context_stack = context_stack
         self._global_access_counter = 0
+        self._alias_map = {}
 
     def _increment_access(self, record: PointerOwnershipRecord):
         self._global_access_counter += 1
@@ -774,7 +864,21 @@ class OwnershipRegistry:
                     fingerprint
                 )
 
+            if key not in self._alias_map:
+                self._alias_map[key] = set()
+            
+            self._alias_map[key].add(wrapper.wrapper_id)
             self._wrapper_map[key] = wrapper
+
+    def detach_wrapper(self, pointer, fingerprint, wrapper_id):
+        lock = self._get_lock_for_pointer(pointer)
+        with lock:
+            epoch = self._epoch_counter.get(pointer, 0)
+            key = _canonical_pointer_key(pointer, fingerprint, epoch)
+            if key in self._alias_map:
+                self._alias_map[key].discard(wrapper_id)
+                if not self._alias_map[key]:
+                    del self._alias_map[key]
 
     def has_wrapper_for_current_epoch(self, pointer: int, fingerprint: str) -> bool:
         lock = self._get_lock_for_pointer(pointer)
@@ -881,7 +985,7 @@ class OwnershipRegistry:
                 raise OwnershipViolationError(
                     function_name,
                     pointer,
-                    "Double free detected",
+                    "Double free detected across aliases",
                     fingerprint
                 )
 
@@ -896,9 +1000,14 @@ class OwnershipRegistry:
                     PointerState.FREED,
                     record
                 )
-                context.stage_epoch_increment(self, pointer, epoch + 1)
+                context.stage_epoch_increment(self, pointer, fingerprint, epoch + 1)
             else:
                 record.state = PointerState.FREED
+                # Part 2 Step 8: Clear alias map for previous key
+                if key in self._alias_map:
+                    del self._alias_map[key]
+                if key in self._wrapper_map:
+                    del self._wrapper_map[key]
                 # Increment epoch for potential reuse
                 self._epoch_counter[pointer] = epoch + 1
 
@@ -928,7 +1037,7 @@ class OwnershipRegistry:
                 raise OwnershipViolationError(
                     function_name,
                     pointer,
-                    "Use-after-free detected",
+                    "Use-after-free across alias wrappers",
                     fingerprint
                 )
 
@@ -1467,6 +1576,35 @@ class InvocationMetricsTracker:
             }
 
 
+class TraceRecorder:
+    """
+    Deterministic execution trace capture system.
+    Guarantees stable, reproducible event logs without timestamps.
+    """
+
+    def __init__(self, enabled=False):
+        self._enabled = enabled
+        self._events = []
+        self._lock = threading.Lock()
+
+    def enabled(self):
+        return self._enabled
+
+    def record(self, event: str):
+        if not self._enabled:
+            return
+        with self._lock:
+            self._events.append(event)
+
+    def snapshot(self):
+        with self._lock:
+            return tuple(self._events)
+
+    def clear(self):
+        with self._lock:
+            self._events.clear()
+
+
 class ObservabilityManager:
 
     def __init__(self, enabled=False):
@@ -1557,13 +1695,15 @@ class RuntimeConfiguration:
                   observability_enabled=False,
                   deep_inspection=False,
                   leak_detection_enabled=False,
-                  leak_retention_threshold=100000):
+                  leak_retention_threshold=100000,
+                  trace_enabled=False):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
         self.deep_inspection = deep_inspection
         self.leak_detection_enabled = leak_detection_enabled
         self.leak_retention_threshold = leak_retention_threshold
+        self.trace_enabled = trace_enabled
 
 
 class ConfigurationController:
@@ -1591,6 +1731,7 @@ class PrecompiledClausePlan:
         self.param_validator = None
         self.relational_validator = None
         self.relational_rules = ()
+        self.relational_compiled = ()
         self.buffer_validator = False
         self.buffer_rules = ()
         self.ownership_pre = False
@@ -1598,7 +1739,7 @@ class PrecompiledClausePlan:
         self.return_validator = False
         self.struct_snapshot_pre = False
         self.struct_snapshot_post = False
-        self.error_semantics = None
+        self.error_semantics = ()
 
 
 class PrototypeAuthorityLayer:
@@ -1618,7 +1759,8 @@ class PrototypeAuthorityLayer:
         "_verifier",
         "_free_functions",
         "_function_table",
-        "_function_lookup"
+        "_function_lookup",
+        "_trace"
     )
 
     def __init__(self,
@@ -1635,6 +1777,7 @@ class PrototypeAuthorityLayer:
         self._proxy_registry = InvocationProxyRegistry()
         self._context_stack = InvocationContextStack()
         self._ownership_registry = OwnershipRegistry(self._context_stack)
+        self._trace = TraceRecorder(enabled=False)
         
         # Step 3: Integrate Config Controller
         self._config_controller = ConfigurationController(
@@ -1680,7 +1823,8 @@ class PrototypeAuthorityLayer:
                                      observability_enabled=None,
                                      deep_inspection=None,
                                      leak_detection_enabled=None,
-                                     leak_retention_threshold=None):
+                                     leak_retention_threshold=None,
+                                     trace_enabled=None):
 
         current = self._config_controller.get()
 
@@ -1706,6 +1850,11 @@ class PrototypeAuthorityLayer:
                 leak_retention_threshold
                 if leak_retention_threshold is not None
                 else current.leak_retention_threshold
+            ),
+            trace_enabled=(
+                trace_enabled
+                if trace_enabled is not None
+                else current.trace_enabled
             )
         )
 
@@ -1718,7 +1867,12 @@ class PrototypeAuthorityLayer:
                 )
             self._sandbox_executor = SandboxedExecutor(self, self._library_loader)
 
+        # Step 2: Atomic Update
         self._config_controller.update(new_config)
+
+        # Part 3 Stage 2: Deterministic recorder replacement
+        if new_config.trace_enabled != self._trace.enabled():
+            self._trace = TraceRecorder(enabled=new_config.trace_enabled)
 
     def perform_registry_sweep(self):
         config = self._config_controller.get()
@@ -1733,6 +1887,36 @@ class PrototypeAuthorityLayer:
         )
 
         return result
+
+    def get_trace_snapshot(self):
+        """
+        Returns a tuple of recorded execution events.
+        """
+        return self._trace.snapshot()
+
+    def clear_trace(self):
+        """
+        Clears the current execution trace.
+        """
+        self._trace.clear()
+
+    def _compare(self, left, right, operator):
+        """
+        Deterministic comparison helper for relational invariants.
+        """
+        if operator == ">=":
+            return left >= right
+        if operator == "<=":
+            return left <= right
+        if operator == "==":
+            return left == right
+        if operator == "!=":
+            return left != right
+        if operator == ">":
+            return left > right
+        if operator == "<":
+            return left < right
+        raise ValueError(f"Invalid operator: {operator}")
 
     def verify_integrity(self):
         for name, descriptor in self._function_lookup.items():
@@ -1799,9 +1983,24 @@ class PrototypeAuthorityLayer:
             plan.param_validator = lambda args: self._validate_arguments(local_descriptor, args)
             plan.fast_path = False
 
+        # Advanced Relational Engine (Part 1 Step 2)
         if descriptor.relational_rules:
-            plan.relational_rules = tuple(descriptor.relational_rules)
-            plan.relational_validator = lambda args: self._evaluate_relational_constraints(local_descriptor, args)
+            # Part 3 Step 7: Deterministic rule ordering
+            rules = sorted(
+                descriptor.relational_rules, 
+                key=lambda r: r.get("clause_id", r.get("id", ""))
+            )
+            
+            compiler = RelationalExpressionCompiler()
+            compiled_rules = []
+            for rule in rules:
+                lhs_eval = compiler.compile(rule["lhs"])
+                rhs_eval = compiler.compile(rule["rhs"])
+                op = rule["operator"]
+                cid = rule.get("clause_id", rule.get("id", "unknown"))
+                compiled_rules.append((lhs_eval, rhs_eval, op, cid))
+                
+            plan.relational_compiled = tuple(compiled_rules)
             plan.fast_path = False
 
         if descriptor.buffer_rules:
@@ -1843,6 +2042,7 @@ class PrototypeAuthorityLayer:
             execution_mode = config.execution_mode
             observability_enabled = config.observability_enabled
             deep_inspection = config.deep_inspection
+            trace_enabled = config.trace_enabled
 
             # Local bind for speed
             raw = raw_func
@@ -1851,11 +2051,17 @@ class PrototypeAuthorityLayer:
             # Step 2: Record invocation (Prompt 7 Part 3 / Prompt 8 Part 1)
             if observability_enabled:
                 self._observability.record_invocation(local_fingerprint, name)
+            
+            if trace_enabled:
+                self._trace.record(f"CALL:{local_fingerprint}:{name}")
 
             # Step 3: Fast Path Check (Prompt 8 Part 1)
             if local_plan.fast_path and mode != RuntimeEnforcementMode.DEBUG and execution_mode != ExecutionMode.SANDBOXED:
                 try:
-                    return raw(*args)
+                    res = raw(*args)
+                    if trace_enabled:
+                         self._trace.record("RETURN")
+                    return res
                 except Exception as e:
                     if observability_enabled:
                          self._observability.record_violation(local_fingerprint, name, str(e))
@@ -1879,9 +2085,32 @@ class PrototypeAuthorityLayer:
                 else:
                     validated_args = args
 
-                # Relational evaluation
-                if local_plan.relational_validator:
-                    local_plan.relational_validator(validated_args)
+                # Advanced Relational Evaluation (Part 1 Step 3)
+                if local_plan.relational_compiled:
+                    if trace_enabled:
+                         self._trace.record("RELATIONAL_START")
+                    for lhs_eval, rhs_eval, op, cid in local_plan.relational_compiled:
+                        try:
+                            left = lhs_eval(validated_args)
+                            right = rhs_eval(validated_args)
+                            
+                            # Ensure numeric type normalization (Part 1 Step 5)
+                            if not (isinstance(left, (int, float)) and isinstance(right, (int, float))):
+                                 raise ContractViolationError(name, -1, f"Relational operand not numeric in {cid}", local_fingerprint)
+
+                            if not self._compare(left, right, op):
+                                if trace_enabled:
+                                     self._trace.record(f"RELATIONAL_FAIL:{cid}")
+                                raise ContractViolationError(
+                                    name,
+                                    -1,
+                                    f"Relational invariant failed: clause={cid}",
+                                    local_fingerprint
+                                )
+                        except (TypeError, ValueError, ZeroDivisionError) as re:
+                             if trace_enabled:
+                                  self._trace.record(f"RELATIONAL_FAIL:{cid}")
+                             raise ContractViolationError(name, -1, f"Relational evaluation failure in {cid}: {str(re)}", local_fingerprint)
 
                 # Ownership: Pre-invocation Guard
                 validated_args_list = list(validated_args)
@@ -1894,19 +2123,29 @@ class PrototypeAuthorityLayer:
                         if ptr is not None:
                             # Register borrowed if not already tracked
                             if i < len(local_descriptor.arg_ownership) and local_descriptor.arg_ownership[i] == "borrowed":
+                                if trace_enabled:
+                                     self._trace.record(f"OWNERSHIP_TRANSITION")
                                 local_registry.register_borrowed(ptr, name, local_fingerprint)
 
                             # Handle free function enforcement
                             if i == 0 and name in self._free_functions:
                                 if local_registry.has_wrapper_for_current_epoch(ptr, local_fingerprint) and not is_wrapper:
+                                     if trace_enabled:
+                                          self._trace.record("ALIAS_CONFLICT")
                                      raise OwnershipViolationError(name, ptr, "Free must be invoked via wrapper", local_fingerprint)
 
                                 if is_wrapper:
+                                     if trace_enabled:
+                                          self._trace.record("FREE")
                                      val.free(name)
                                 else:
+                                     if trace_enabled:
+                                          self._trace.record("FREE")
                                      local_registry.mark_freed(ptr, name, local_fingerprint)
                                 continue
                             
+                            if trace_enabled:
+                                 self._trace.record(f"ENSURE_ACTIVE:{_normalize_pointer(ptr)}")
                             local_registry.ensure_active(ptr, name, local_fingerprint, epoch=effective_epoch)
                             
                             if is_wrapper:
@@ -2023,6 +2262,8 @@ class PrototypeAuthorityLayer:
                        and local_descriptor.ownership.get("return") == "caller_owned":
                         ptr = _extract_pointer_address(result)
                         if ptr is not None:
+                            if trace_enabled:
+                                 self._trace.record(f"OWNERSHIP_TRANSITION")
                             local_registry.register(ptr, name, "caller_owned", local_fingerprint)
                             wrapper = ContractPointerWrapper(ptr, local_registry, local_fingerprint)
                             local_registry.attach_wrapper(ptr, local_fingerprint, wrapper)
@@ -2030,6 +2271,8 @@ class PrototypeAuthorityLayer:
 
                     # Transactional Commit
                     context.commit()
+                    if trace_enabled:
+                         self._trace.record("RETURN")
                     return final_result
 
                 except Exception as e:

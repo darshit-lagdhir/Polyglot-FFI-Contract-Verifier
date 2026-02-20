@@ -650,3 +650,72 @@ The `PrototypeAuthorityLayer` utilizes advanced Python safety features to protec
 
 ### Integrity Verification
 The system provides a `verify_integrity()` method that performs a deep scan of the adapter's internal structures to ensure that all descriptors remain frozen and that the enforcement boundary has not been compromised.
+
+---
+
+## Prompt 09 Part 1 — Advanced Relational Constraint Engine
+
+The Relational Constraint Engine has been upgraded from simple pairwise checks to a sophisticated multi-parameter expression evaluation system.
+
+### Multi-Parameter Expression Graphs
+The engine no longer relies on a static operator/value model. Instead, it supports complex expression trees (S-expressions) that can combine multiple parameters, constants, and operators.
+- **Arithmetic Nodes**: Supports `add`, `sub`, `mul`, and `div` operations.
+- **Parameter Nodes**: Allows any parameter in the FFI signature to be used as a variable in the expression.
+- **Constant Nodes**: Support for fixed numeric literals.
+
+### Pre-Compiled Evaluation Paths
+To maintain high performance, expressions are **not** parsed at runtime.
+1. **Compilation Phase**: During `_build_proxy`, the `RelationalExpressionCompiler` transforms the expression tree into a nested chain of lambda evaluators.
+2. **Execution Phase**: The proxy callable executes these pre-compiled evaluators directly, avoiding the overhead of dictionary lookups or string parsing during the "hot" invocation path.
+
+### Deterministic Precision and Safety
+The engine enforces strict rules to ensure consistent behavior across different environments:
+- **Integer Division**: All division operations (`div`) utilize integer-truncating division to ensure identical results regardless of floating-point hardware differences.
+- **Divide-by-Zero Protection**: The evaluator catches zero-denominator cases before they reach native code, raising a `ContractViolationError`.
+- **Numeric Type Normalization**: Parameters involved in relational checks are explicitly validated to be numeric (int/float), preventing type-confusion attacks in complex expressions.
+
+---
+
+## Prompt 09 Part 2 — Pointer Alias Detection and Wrapper Canonicalization
+
+The memory safety model has been hardened to detect conflicting management of the same native memory address across different Python objects.
+
+### Alias Map Discipline
+The `OwnershipRegistry` now maintains a dedicated `_alias_map` to track multiple `ContractPointerWrapper` instances that reference the same canonical pointer key `(fingerprint, address, epoch)`.
+- **Conflict Detection**: While the system permits multiple wrappers to point to the same memory (aliasing), it uses this map to detect conflicts such as "double-free across aliases."
+- **Identity Tracking**: Each `ContractPointerWrapper` is assigned a unique internal `_wrapper_id`. This identity is used to manage its lifecycle within the alias registry.
+
+### Deterministic Conflict Resolution
+The system enforces strict rules for interacting with aliased pointers:
+- **Double-Free Across Aliases**: If one wrapper frees the native resource, all other aliases are immediately invalidated. Any subsequent attempt to free the same pointer via a different wrapper is detected as a double-free violation.
+- **Use-After-Free Across Aliases**: The pre-invocation guard checks the global registry state. If the canonical identity is `FREED`, every wrapper associated with that address is blocked from further use.
+- **Free Function Hardening**: The system ensures that if a pointer is managed by a wrapper, it **must** be freed via that wrapper or a designated free-function proxy. Direct raw-pointer-address freeing is rejected to prevent bypassing the alias tracking logic.
+
+### Lifecycle Detach Logic
+When a Python wrapper is garbage-collected or explicitly disposed of, it signals the `OwnershipRegistry` to remove its identity from the `_alias_map`. This ensures that tracking overhead does not grow indefinitely and that alias conflict detection remains focused on active, live references.
+
+---
+
+## Prompt 09 Part 3 — Deterministic Reproducibility and Trace Mode
+
+To support the "Mission Critical" requirements, the adapter provides a bit-for-bit reproducible execution log through the Deterministic Trace Mode.
+
+### Stabilized Execution Trace
+When `trace_enabled` is active, the adapter captures a high-fidelity sequence of FFI events without utilizing timestamps, memory addresses, or non-deterministic identifiers.
+- **Supported Events**:
+    - `CALL`: Function entry.
+    - `RELATIONAL_START`: Start of complex invariant checking.
+    - `RELATIONAL_FAIL`: Specific clause failure.
+    - `OWNERSHIP_TRANSITION`: Staging of ownership changes.
+    - `FREE`: Explicit deallocation.
+    - `ENSURE_ACTIVE`: Liveness verification of a pointer.
+    - `RETURN`: Successful function exit.
+- **Pointer Normalization**: All memory addresses in the trace are passed through `_normalize_pointer`, which produces a fixed-width, zero-padded hexadecimal string (e.g., `0x00000000abcdef12`), ensuring stable log comparisons across different environments.
+
+### Atomic Recorder Management
+The `TraceRecorder` instance is managed atomically by the `ConfigurationController`. 
+- **Deterministic Replacement**: If tracing is toggled during runtime, the internal recorder is replaced with a fresh instance. This prevents partial traces and ensures that the system transitions between "Silent" and "Audit" modes with zero state contamination.
+- **Snapshot Support**: Users can retrieve a stable tuple of the current trace via `get_trace_snapshot()`, which can be compared against "Gold Master" logs for regression testing or security auditing.
+
+### Order Stability Guarantees
+The system guarantees that the sequence of events in the trace is determined solely by the native call graph and the contract rules, which are themselves sorted alphabetically or by `clause_id`. This makes the trace an authoritative, mathematical proof of the execution path.
