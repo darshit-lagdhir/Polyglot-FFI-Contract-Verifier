@@ -12,8 +12,9 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 9b0d219364f201b8
+# File Integrity Identifier: 2847129447c536b4
 # ==============================================================================
+
 """
 The Language Adapter transforms static contract artifacts into runtime-enforced
 FFI boundaries. It interposes between foreign language runtimes and native code,

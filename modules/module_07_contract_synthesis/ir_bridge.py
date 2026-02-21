@@ -12,28 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 125ba4791be22d19
+# File Integrity Identifier: 36891a4f2da8b720
 # ==============================================================================
-
-class IRBridgeError(Exception):
-    """Base exception for IR bridge errors."""
-    pass
-
-class TypeCompletenessError(IRBridgeError):
-    """Raised when referenced types are not defined."""
-    pass
-
-class SignatureCoherenceError(IRBridgeError):
-    """Raised when function signature is incoherent."""
-    pass
-
-class ABIMetadataError(IRBridgeError):
-    """Raised when ABI metadata is invalid."""
-    pass
-
-# ============================================================================
-# IR VALIDATION
-# ============================================================================
 
 @dataclass
 class IRValidationResult:

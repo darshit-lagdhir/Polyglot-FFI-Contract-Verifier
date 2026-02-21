@@ -12,36 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 2c2c32bd2c231e56
+# File Integrity Identifier: a63e7865e5dc9da7
 # ==============================================================================
-
-class IRSeverity(Enum):
-    """Diagnostic severity levels."""
-
-    FATAL = "fatal"
-    ERROR = "error"  # Fatal, blocks pipeline
-    WARNING = "warning"  # Non-fatal, may indicate problems
-    INFO = "info"  # Informational, no action needed
-    DEBUG = "debug"  # Debug information
-    ADVISORY = "advisory"
-
-
-class ErrorCategory(Enum):
-    """Error category classification."""
-
-    USER_ERROR = "user"
-    DATA_QUALITY = "data"
-    SYSTEM_ERROR = "system"
-    BUG = "bug"
-    VALIDATION = "validation"
-    CONVERSION = "conversion"
-    IO = "io"
-
-
-# ============================================================================
-# SOURCE LOCATION
-# ============================================================================
-
 
 @dataclass
 class SourceLocation:

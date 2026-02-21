@@ -12,20 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: dae8c10eccb4720a
+# File Integrity Identifier: 6dfe706c6e0b4184
 # ==============================================================================
-
-class ContractBridgeError(Exception):
-    """Base exception for contract bridge errors."""
-    pass
-
-class SchemaComplianceError(ContractBridgeError):
-    """Raised when clause violates Module 06 schema."""
-    pass
-
-# ============================================================================
-# SCHEMA VALIDATION
-# ============================================================================
 
 class ContractSchemaValidator:
     """

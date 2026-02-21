@@ -12,7 +12,7 @@
 <!-- Removal or alteration of this header may constitute a violation of the  -->
 <!-- repository's governing agreements. -->
 <!--  -->
-<!-- File Integrity Identifier: 65b3233139b41f99 -->
+<!-- File Integrity Identifier: 770636cbdc22959b -->
 <!-- ============================================================================== -->
 
 # Module 02: Verification Pipeline - Summary

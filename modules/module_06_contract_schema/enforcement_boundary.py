@@ -12,35 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 61e5756260553b25
+# File Integrity Identifier: 61646c64541f63af
 # ==============================================================================
-
-class EnforcementMode(Enum):
-    """Enforcement mode."""
-
-    STRICT = "strict"  # All violations are fatal
-    PRODUCTION = "production"  # Only ERROR severity enforced
-    AUDIT = "audit"  # Log violations, don't fail
-    DISABLED = "disabled"  # No enforcement
-
-
-class ViolationType(Enum):
-    """Type of constraint violation."""
-
-    NULLABILITY = "nullability"
-    SIZE = "size"
-    ALIGNMENT = "alignment"
-    LAYOUT = "layout"
-    OWNERSHIP = "ownership"
-    LIFETIME = "lifetime"
-    RELATIONAL = "relational"
-    CALLING_CONVENTION = "calling_convention"
-
-
-# ============================================================================
-# ENFORCEMENT VIOLATION
-# ============================================================================
-
 
 @dataclass
 class EnforcementViolation:

@@ -12,44 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 8ef448d7e8565f9c
+# File Integrity Identifier: 5c8cdf153e7721af
 # ==============================================================================
-
-class OutputFormatter:
-    """Formats CLI output."""
-
-    @staticmethod
-    def print_header(text: str):
-        """Print section header."""
-        print("\n" + "=" * 80)
-        print(text)
-        print("=" * 80)
-
-    @staticmethod
-    def print_success(text: str):
-        """Print success message."""
-        print(f"✓ {text}")
-
-    @staticmethod
-    def print_error(text: str):
-        """Print error message."""
-        print(f"✗ ERROR: {text}", file=sys.stderr)
-
-    @staticmethod
-    def print_warning(text: str):
-        """Print warning message."""
-        print(f"⚠ WARNING: {text}")
-
-    @staticmethod
-    def print_info(text: str):
-        """Print info message."""
-        print(f"  {text}")
-
-
-# ============================================================================
-# UTILITIES
-# ============================================================================
-
 
 def load_artifact_any(path: Path) -> IRArtifact:
     """Load artifact, handling optional compression."""
