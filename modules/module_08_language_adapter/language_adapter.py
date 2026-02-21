@@ -59,286 +59,126 @@ __version__ = '0.1.0'
 # CONTRACT RUNTIME LOADER COMPONENTS
 # ════════════════════════════════════════════════════════════════════════════
 
-class ContractInitializationError(Exception):
-    """
-    Raised when contract artifact structure is invalid
-    or incompatible with runtime expectations.
-    """
+class AdapterRuntimeError(Exception):
+    """Root base class for all language adapter runtime errors (Prompt 17 Part 1)."""
+    ERROR_CODE = "ERR_INTERNAL_UNKNOWN"
+    ERROR_CATEGORY = "Internal"
 
-    def __init__(self, message: str, fingerprint: str):
+    def __init__(self, message: str, fingerprint: str = "GLOBAL", **kwargs):
         self.message = message
         self.fingerprint = fingerprint
+        self.error_code = kwargs.get("error_code", self.ERROR_CODE)
+        self.error_category = kwargs.get("error_category", self.ERROR_CATEGORY)
+        self.function_name = kwargs.get("function_name", "unknown")
+        self.invocation_idx = kwargs.get("invocation_idx", -1)
+        self.metadata = kwargs.get("metadata", {})
         super().__init__(self._format())
 
     def _format(self) -> str:
+        # Deterministic formatting (Part 1 Step 4)
         return (
-            f"[ContractInitializationError]"
-            f"[fingerprint={self.fingerprint}] "
+            f"[{self.error_code}][{self.error_category}]"
+            f"[fingerprint={self.fingerprint}][fn={self.function_name}] "
             f"{self.message}"
         )
 
+class EnforcementError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_ENFORCEMENT_GENERIC"
+    ERROR_CATEGORY = "Enforcement"
 
-class ABICompatibilityError(Exception):
-    """
-    Raised when contract ABI does not match runtime architecture.
-    """
+class ContractInitializationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_CONTRACT_INIT"
+    ERROR_CATEGORY = "Configuration"
 
-    def __init__(self, message: str, fingerprint: str):
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
+class ABICompatibilityError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_ABI_INCOMPATIBLE"
+    ERROR_CATEGORY = "AbiConformance"
 
-    def _format(self) -> str:
-        return (
-            f"[ABICompatibilityError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"{self.message}"
-        )
+class PrototypeMismatchError(EnforcementError):
+    ERROR_CODE = "ERR_PROTOTYPE_MISMATCH"
 
+class ContractViolationError(EnforcementError):
+    ERROR_CODE = "ERR_CONTRACT_VIOLATION"
+    
+    def __init__(self, function_name: str, parameter_index: int, message: str, fingerprint: str, **kwargs):
+        kwargs["function_name"] = function_name
+        metadata = kwargs.get("metadata", {})
+        metadata["parameter_index"] = parameter_index
+        kwargs["metadata"] = metadata
+        super().__init__(message, fingerprint, **kwargs)
 
-class PrototypeMismatchError(Exception):
-    """
-    Raised when runtime binding does not match contract descriptor.
-    """
+class OwnershipViolationError(EnforcementError):
+    ERROR_CODE = "ERR_OWNERSHIP_VIOLATION"
+    
+    def __init__(self, function_name: str, pointer_value: int, message: str, fingerprint: str, **kwargs):
+        kwargs["function_name"] = function_name
+        metadata = kwargs.get("metadata", {})
+        metadata["pointer_value"] = f"0x{pointer_value:x}"
+        kwargs["metadata"] = metadata
+        super().__init__(message, fingerprint, **kwargs)
 
-    def __init__(self, function_name: str, message: str, fingerprint: str):
-        self.function_name = function_name
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
+class StructureLayoutMismatchError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_ABI_LAYOUT_MISMATCH"
+    ERROR_CATEGORY = "AbiConformance"
 
-    def _format(self) -> str:
-        return (
-            f"[PrototypeMismatchError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"{self.message}"
-        )
+class MemoryPinningError(EnforcementError):
+    ERROR_CODE = "ERR_MEMORY_PINNING"
 
+class BufferBoundaryViolationError(EnforcementError):
+    ERROR_CODE = "ERR_BUFFER_OVERFLOW"
 
-class ContractViolationError(Exception):
-    """
-    Raised when parameter validation fails before invocation.
-    """
+class NativeCrashError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_SANDBOX_CRASH"
+    ERROR_CATEGORY = "Sandbox"
 
-    def __init__(self, function_name: str, parameter_index: int,
-                 message: str, fingerprint: str):
-        self.function_name = function_name
-        self.parameter_index = parameter_index
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
+class ReloadCompatibilityError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_RELOAD_INCOMPATIBLE"
+    ERROR_CATEGORY = "Configuration"
 
-    def _format(self) -> str:
-        return (
-            f"[ContractViolationError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"ParamIndex={self.parameter_index} "
-            f"{self.message}"
-        )
-
-
-class OwnershipViolationError(Exception):
-    """
-    Raised when pointer ownership contract is violated.
-    """
-
-    def __init__(self, function_name: str,
-                 pointer_value: int,
-                 message: str,
-                 fingerprint: str):
-        self.function_name = function_name
-        self.pointer_value = pointer_value
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
-
-    def _format(self) -> str:
-        return (
-            f"[OwnershipViolationError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"Pointer=0x{self.pointer_value:x} "
-            f"{self.message}"
-        )
-
-
-class StructureLayoutMismatchError(Exception):
-    """
-    Raised when ctypes.Structure layout mismatches contract ABI.
-    """
-
-    def __init__(self, struct_name: str,
-                 message: str,
-                 fingerprint: str):
-        self.struct_name = struct_name
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
-
-    def _format(self):
-        return (
-            f"[StructureLayoutMismatchError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Struct={self.struct_name} "
-            f"{self.message}"
-        )
-
-
-class MemoryPinningError(Exception):
-    """
-    Raised when buffer cannot be safely pinned.
-    """
-
-    def __init__(self, function_name: str,
-                 parameter_index: int,
-                 message: str,
-                 fingerprint: str):
-        self.function_name = function_name
-        self.parameter_index = parameter_index
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
-
-    def _format(self):
-        return (
-            f"[MemoryPinningError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"ParamIndex={self.parameter_index} "
-            f"{self.message}"
-        )
-
-
-class BufferBoundaryViolationError(Exception):
-    """
-    Raised when buffer boundary violation is detected.
-    """
-
-    def __init__(self, function_name: str,
-                 parameter_index: int,
-                 message: str,
-                 fingerprint: str):
-        self.function_name = function_name
-        self.parameter_index = parameter_index
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
-
-        return (
-            f"[BufferBoundaryViolationError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"ParamIndex={self.parameter_index} "
-            f"{self.message}"
-        )
-
-
-class NativeCrashError(Exception):
-    """
-    Raised when native invocation causes runtime crash or severe failure.
-    """
-
-    def __init__(self,
-                 function_name: str,
-                 message: str,
-                 fingerprint: str):
-        self.function_name = function_name
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(self._format())
-
-    def _format(self):
-        return (
-            f"[NativeCrashError]"
-            f"[fingerprint={self.fingerprint}] "
-            f"Function={self.function_name} "
-            f"{self.message}"
-        )
-
-class ReloadCompatibilityError(Exception):
-    """
-    Raised when hot-reload contract is incompatible with active state.
-    """
-    def __init__(self, message: str, fingerprint: str):
-        self.message = message
-        self.fingerprint = fingerprint
-        super().__init__(f"[ReloadCompatibilityError][{fingerprint}] {message}")
-
-class ReloadInProgressError(Exception):
-    """
-    Raised when an invocation is attempted during an active reload.
-    """
-    def __init__(self, fingerprint: str):
-        self.fingerprint = fingerprint
-        super().__init__(f"[ReloadInProgressError][{fingerprint}] Hot-reload in progress.")
-
+class ReloadInProgressError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_RELOAD_IN_PROGRESS"
+    ERROR_CATEGORY = "Configuration"
 
 class SegmentationFaultError(NativeCrashError):
-    """Raised specifically for segmentation faults (SIGSEGV)."""
-    
-    def __init__(self, message: str, faulting_address: Optional[int] = None, **kwargs):
-        # Allow extra kwargs for compatibility with older code, but default to basic info
-        self.faulting_address = faulting_address
-        fingerprint = kwargs.get("fingerprint", "UNKNOWN")
-        function_name = kwargs.get("function_name", "UNKNOWN")
-        super().__init__(function_name=function_name, message=message, fingerprint=fingerprint)
-
+    ERROR_CODE = "ERR_SANDBOX_SIGSEGV"
 
 class AccessViolationError(NativeCrashError):
-    """Raised specifically for access violations."""
-    
-    def __init__(self, message: str, faulting_address: Optional[int] = None, **kwargs):
-        self.faulting_address = faulting_address
-        fingerprint = kwargs.get("fingerprint", "UNKNOWN")
-        function_name = kwargs.get("function_name", "UNKNOWN")
-        super().__init__(function_name=function_name, message=message, fingerprint=fingerprint)
+    ERROR_CODE = "ERR_SANDBOX_ACCESS_VIOLATION"
 
-class SecurityViolationError(Exception):
-    """Raised when runtime tampering or security bypass is detected."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[SecurityViolationError][{fingerprint}] {message}")
+class SecurityViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_SECURITY_TAMPER_DETECTED"
+    ERROR_CATEGORY = "Security"
 
-class DepthLimitExceededError(Exception):
-    """Raised when recursive structure or invocation depth exceeds limit."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[DepthLimitExceededError][{fingerprint}] {message}")
+class DepthLimitExceededError(EnforcementError):
+    ERROR_CODE = "ERR_DEPTH_LIMIT_EXCEEDED"
 
-class CompactionAbuseDetectedError(Exception):
-    """Raised when repeated compaction attempts suggest an attack."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[CompactionAbuseDetectedError][{fingerprint}] {message}")
+class CompactionAbuseDetectedError(SecurityViolationError):
+    ERROR_CODE = "ERR_SECURITY_COMPACTION_ABUSE"
 
-class InternalInvariantViolationError(Exception):
-    """Raised when internal subsystem consistency check fails."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[InternalInvariantViolationError][{fingerprint}] {message}")
+class InternalInvariantViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_INVARIANT_VIOLATION"
+    ERROR_CATEGORY = "Invariant"
 
 class AbiLayoutMismatchError(StructureLayoutMismatchError):
-    """Raised when literal memory layout deviates from contract ABI."""
-    def __init__(self, struct_name: str, message: str, fingerprint: str):
-        super().__init__(struct_name, message, fingerprint)
+    ERROR_CODE = "ERR_ABI_LAYOUT_MISMATCH"
 
 class AbiMutationDetectedError(SecurityViolationError):
-    """Raised when struct definition is modified after fingerprinting."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(message, fingerprint)
+    ERROR_CODE = "ERR_ABI_MUTATION"
 
-class TelemetryEmissionError(Exception):
-    """Raised when structured telemetry export fails."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[TelemetryEmissionError][{fingerprint}] {message}")
+class TelemetryEmissionError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_TELEMETRY_EMISSION"
+    ERROR_CATEGORY = "Telemetry"
 
-class PerformanceAnomalyError(Exception):
-    """Raised when deterministic performance thresholds are breached."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(f"[PerformanceAnomalyError][{fingerprint}] {message}")
+class PerformanceAnomalyError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_METRICS_ANOMALY"
+    ERROR_CATEGORY = "Metrics"
 
 class ConfigurationIntegrityViolationError(SecurityViolationError):
-    """Raised when runtime configuration tampering is detected."""
-    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
-        super().__init__(message, fingerprint)
+    ERROR_CODE = "ERR_CONFIGURATION_MUTATION"
+
+class NestedTransactionError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_NESTED_TRANSACTION_ROLLBACK"
+    ERROR_CATEGORY = "NestedTransaction"
 
 
 
@@ -1311,6 +1151,96 @@ class ConfigurationGovernanceManager:
             # This is a bit circular, but represents the logic
             pass
 
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 116: ERROR TAXONOMY AND FORENSICS
+# ════════════════════════════════════════════════════════════════════════════
+
+class ErrorTaxonomyManager:
+    """Consolidates and classifies all runtime failures (Part 1)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def classify(self, error: Exception) -> Tuple[str, str]:
+        """Maps any exception to canonical code and category (Part 1 Step 2)."""
+        if isinstance(error, AdapterRuntimeError):
+            return error.error_code, error.error_category
+        return "ERR_INTERNAL_UNKNOWN", "Internal"
+
+@dataclass
+class CrashSnapshot:
+    signature: str
+    fingerprint: str
+    function_name: str
+    invocation_idx: int
+    category: str
+    metadata: Dict[str, Any]
+
+class CrashForensicsManager:
+    """Captures deterministic post-mortem snapshots (Part 2)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._snapshots: List[CrashSnapshot] = []
+
+    def capture_snapshot(self, function_name: str, category: str, error_code: str):
+        """Generates deterministic crash forensic artifact (Part 2 Step 1)."""
+        config = self.context.config_controller.get()
+        idx = self.context.invocation_sequence_counter
+        
+        # Deterministic signature (Part 2 Step 2)
+        sig_base = f"{category}|{function_name}|{error_code}|{self.context.fingerprint}|{idx}"
+        signature = hashlib.sha256(sig_base.encode()).hexdigest()[:16]
+        
+        snapshot = CrashSnapshot(
+            signature=signature,
+            fingerprint=self.context.fingerprint,
+            function_name=function_name,
+            invocation_idx=idx,
+            category=category,
+            metadata={
+                "error_code": error_code,
+                "nested_depth": self.context.active_invocation_count
+            }
+        )
+        
+        self._snapshots.append(snapshot)
+        self.context.resource_governor.enforce_caps() # Part 3 cleanup
+        
+        # Emit telemetry (Part 2 Step 6)
+        self.context.telemetry_manager.emit("CRASH_FORENSICS_CAPTURED", vars(snapshot), "FATAL")
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 117: RESOURCE GOVERNANCE AND STABILITY
+# ════════════════════════════════════════════════════════════════════════════
+
+class ResourceGovernanceManager:
+    """Enforces strict resource retention limits for long-run stability (Part 3)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def enforce_caps(self):
+        """Trims buffers and caches to stay within deterministic envelope (Part 3)."""
+        config = self.context.config_controller.get()
+        
+        # Telemetry trimming (Part 3 Step 3)
+        tm = self.context.telemetry_manager
+        if len(tm._buffer) > config.max_telemetry_entries:
+            tm._buffer = tm._buffer[-config.max_telemetry_entries:]
+            tm.emit("TELEMETRY_BUFFER_TRIMMED", {"size": len(tm._buffer)}, "WARNING")
+            
+        # Crash snapshot trimming (Part 3 Step 5)
+        fm = self.context.crash_manager
+        if len(fm._snapshots) > config.max_crash_snapshots:
+             fm._snapshots = fm._snapshots[-config.max_crash_snapshots:]
+             tm.emit("CRASH_SNAPSHOT_TRIMMED", {"count": len(fm._snapshots)}, "WARNING")
+
+    def export_summary(self) -> Dict[str, Any]:
+        """Provides deterministic resource usage envelope (Part 3 Step 11)."""
+        return {
+            "telemetry_buffer": len(self.context.telemetry_manager._buffer),
+            "crash_snapshots": len(self.context.crash_manager._snapshots),
+            "invocation_idx": self.context.invocation_sequence_counter
+        }
+
 # ==============================================================================
 # SECTION 102: MULTI-CONTRACT CONTEXT ORCHESTRATION
 # ==============================================================================
@@ -1345,6 +1275,9 @@ class EnforcementContext:
         self.telemetry_manager = TelemetryExportManager(self)
         self.metrics_aggregator = MetricsAggregationManager(self)
         self.config_governance = ConfigurationGovernanceManager(self)
+        self.error_taxonomy = ErrorTaxonomyManager(self)
+        self.crash_manager = CrashForensicsManager(self)
+        self.resource_governor = ResourceGovernanceManager(self)
         
         self.invocation_sequence_counter = 0
         self.active_invocation_count = 0
@@ -3127,7 +3060,11 @@ class RuntimeConfiguration:
                   metrics_window_size=100,
                   anomaly_violation_rate_threshold=0.05,
                   anomaly_crash_loop_threshold=3,
-                  config_schema_version="0.1.0"):
+                  config_schema_version="0.1.0",
+                  # Prompt 17 Part 3 Extensions
+                  max_telemetry_entries=1000,
+                  max_crash_snapshots=10,
+                  max_lifecycle_entries=5000):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
@@ -3188,6 +3125,10 @@ class RuntimeConfiguration:
         self.anomaly_violation_rate_threshold = anomaly_violation_rate_threshold
         self.anomaly_crash_loop_threshold = anomaly_crash_loop_threshold
         self.config_schema_version = config_schema_version
+        # Prompt 17
+        self.max_telemetry_entries = max_telemetry_entries
+        self.max_crash_snapshots = max_crash_snapshots
+        self.max_lifecycle_entries = max_lifecycle_entries
         self._sealed = False
 
 
@@ -5339,8 +5280,26 @@ class LanguageAdapter:
             ctx.metrics_aggregator.record_event("INVOCATION_COMPLETED", {"success": result.get("success")})
             return result
         except Exception as e:
+            # Part 1: Error Classification
+            error_code, category = ctx.error_taxonomy.classify(e)
+            
+            # Part 2: Crash Forensics (if Sandbox error)
+            if category == "Sandbox" or isinstance(e, NativeCrashError):
+                ctx.crash_manager.capture_snapshot(function_name, category, error_code)
+                
             ctx.transaction_coordinator.rollback_transaction()
-            ctx.telemetry_manager.emit("INVOCATION_FAILED", {"function": function_name, "error": str(e)}, "ERROR")
+            
+            # Emit structured telemetry (Part 1 Step 6)
+            ctx.telemetry_manager.emit("INVOCATION_FAILED", {
+                "function": function_name,
+                "error_code": error_code,
+                "category": category,
+                "message": str(e)
+            }, "ERROR")
+            
+            # Record metrics (Part 1 Step 8)
+            ctx.metrics_aggregator.record_event("INVOCATION_FAILED", {"error_code": error_code})
+            
             raise
         finally:
             self._ctx_stack.pop()

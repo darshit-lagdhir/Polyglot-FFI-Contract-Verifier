@@ -1086,3 +1086,51 @@ Configuration is managed as a governed, versioned contract within the runtime.
 - **Explicit Flags**: Capabilities like SANDBOX, REPLAY, and ABI_VALIDATION are controlled by an explicit, validated feature flag engine.
 - **Conflict Detection**: The engine rejects incompatible flag combinations (e.g., sandbox enabled without security hardening) during initialization.
 - **Integrity Validation**: The system periodically verifies the configuration snapshot hash to detect unauthorized runtime overrides.
+
+---
+
+## Prompt 17 Part 1 — Formal Error Taxonomy and Deterministic Failure Semantics Model
+
+The Python adapter enforces a formalized failure semantics model to ensure cross-language alignment and deterministic replayability.
+
+### Root Error Hierarchy
+- **AdapterRuntimeError**: The root base class for all runtime failures.
+- **Taxonomy Branches**: Errors are categorized into Enforcement, AbiConformance, Security, Sandbox, Configuration, Telemetry, Invariant, Metrics, and NestedTransaction.
+- **Deterministic Metadata**: Each error includes a stable error_code, category, and sanitized lifecycle snapshots.
+
+### Failure Semantics
+- **Canonical Error Codes**: Immutable identifiers (e.g., ERR_ABI_LAYOUT_MISMATCH, ERR_SECURITY_TAMPER_DETECTED) are used for telemetry and metrics.
+- **Deterministic Formatting**: Error strings are formatted in a stable, sorted order without timestamps or memory addresses.
+- **Fail-Closed Unknown Policy**: Any unexpected internal exception is wrapped into ERR_INTERNAL_UNKNOWN and triggers a fail-closed response.
+
+---
+
+## Prompt 17 Part 2 — Crash Forensics and Deterministic Post-Mortem Snapshot Model
+
+A structured forensics framework provides reproducible insights into native crashes.
+
+### Crash Forensic Snapshots
+- **Post-Mortem Model**: Captures invocation context, lifecycle state, and sandbox worker status at the moment of failure.
+- **Deterministic Crash Signature**: A stable hash calculated from the crash category, function name, and contract fingerprint, enabling identification of recurring crash patterns.
+- **Privacy Guarantees**: Raw memory dumps and pointer addresses are strictly excluded from forensic artifacts.
+
+### Integration
+- **Telemetry Alignment**: Forensics are automatically emitted as CRASH_FORENSICS_CAPTURED events.
+- **Replay Compatibility**: The replay engine verifies crash signatures to ensure deterministic failure reproduction.
+- **Metrics Correlation**: Crash signatures are used for deterministic crash-loop detection without OS dependency.
+
+---
+
+## Prompt 17 Part 3 — Long-Run Stability and Resource Governance Model
+
+Resource governance ensures the adapter remains stable and predictable across millions of invocations.
+
+### Resource Governance
+- **Retention Policies**: Strict upper bounds are enforced on telemetry buffers, replay journals, and crash snapshot history.
+- **Deterministic Trimming**: Oldest entries are predictably dropped using a "trim" policy to maintain a constant memory envelope.
+- **Registry Compaction**: The lifecycle registry is periodically compacted to remove terminal state entries without impacting active pointers.
+
+### Stability Hardening
+- **Zombie Prevention**: Sandbox worker lifecycles are strictly supervised to prevent orphaned processes.
+- **Reload Fragmentation Control**: Hot-reloads clear internal staged state and validate descriptor integrity to prevent resource fragmentation.
+- **Memory Envelope assertion**: A deterministic resource summary can be exported to verify compliance with operational limits.
