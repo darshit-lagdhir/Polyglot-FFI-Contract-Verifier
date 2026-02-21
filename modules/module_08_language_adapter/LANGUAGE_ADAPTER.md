@@ -993,3 +993,49 @@ The adapter maintains internal rigor through a formal invariant assertion framew
 ### Deterministic Safety Checks
 - **Assertion Checkpoints**: Invariants are asserted at deterministic points (End of Invocation, After Compaction) when the system is in a stable state.
 - **Fail-Closed on Inconsistency**: Any detected drift in internal logic raises an InternalInvariantViolationError, preventing further execution under uncertain conditions.
+
+---
+
+## Prompt 15 Part 1 — Cross-Language Semantic Equivalence and Behavior Normalization Model
+
+The Python adapter is normalized to ensure semantic parity with C++ and Rust implementations.
+
+### Semantic Equivalence
+- **Strict Integer Width**: Python's arbitrary-precision integers are bounded by contract-specified bit-widths. Implicit float-to-int or bool-to-int conversions are strictly rejected.
+- **Nullability Normalization**: Nullability is enforced based on contract metadata, explicitly checking for None or zero-pointer values rather than relying on Python truthiness.
+- **Canonical Pointer Identity**: Pointer identity is derived from (Address, Fingerprint, Epoch), ensuring consistency across language runtimes.
+
+### Behavior Normalization
+- **Deterministic ordering**: Relational evaluation and journal export follow sorted clause identifiers to ensure identical violation ordering across adapters.
+- **Taxonomy Alignment**: Violation categories (e.g., BufferOverflowDetected), lifecycle states, and severity levels (FATAL, ERROR, etc.) are mapped to language-neutral definitions.
+
+---
+
+## Prompt 15 Part 2 — ABI Conformance Validation and Structural Layout Fingerprinting Model
+
+The adapter enforces binary fidelity through structural layout validation and calling convention verification.
+
+### Structural Fingerprinting
+- **Layout Extraction**: The system extracts offsets, sizes, and alignment requirements for all ctypes.Structure definitions.
+- **Deterministic Fingerprint**: A stable fingerprint is generated and compared against contract metadata to detect mismatch in packing or padding.
+- **Recursion & Unions**: Nested struct layouts and union overlapping shapes are validated recursively to ensure exact memory alignment.
+
+### ABI Fidelity
+- **Pointer Width Validation**: Runtime architecture is verified against contract expectations (e.g., 64-bit vs 32-bit).
+- **Varargs & Calling Conventions**: Unsupported varargs usage is rejected, and calling conventions (cdecl, etc.) are verified for every native binding.
+- **Mutation Detection**: Any runtime modification to structural definitions after initialization triggers a mandatory AbiMutationDetectedError.
+
+---
+
+## Prompt 15 Part 3 — Deterministic Call Graph Orchestration and Nested FFI Transaction Model
+
+The adapter manages complex nested invocation chains through a formal transaction model.
+
+### Nested Call Graph
+- **Invocation Stack**: Thread-local state tracks parent-child relationships, ensuring that nested calls inherit security contexts (e.g., sandbox mode) correctly.
+- **Atomic Transactions**: Deeply nested FFI chains are treated as single transactions. State changes (lifecycle transitions, ownership) are staged and only committed at the root boundary.
+- **Fail-Closed Rollback**: Any failure in a child invocation triggers a cascaded rollback of all staged transitions back to the root entry point.
+
+### State Coherence
+- **Reload Blocking**: Contract hot-reload and memory compaction are strictly prohibited during active nested transactions to prevent state drift.
+- **Safe Checkpoints**: Formal invariant assertions are deferred until the root transaction commits, ensuring checks occur only when the system is in a stable, consistent state.

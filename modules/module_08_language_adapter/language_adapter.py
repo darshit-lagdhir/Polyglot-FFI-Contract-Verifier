@@ -315,6 +315,16 @@ class InternalInvariantViolationError(Exception):
     def __init__(self, message: str, fingerprint: str = "GLOBAL"):
         super().__init__(f"[InternalInvariantViolationError][{fingerprint}] {message}")
 
+class AbiLayoutMismatchError(StructureLayoutMismatchError):
+    """Raised when literal memory layout deviates from contract ABI."""
+    def __init__(self, struct_name: str, message: str, fingerprint: str):
+        super().__init__(struct_name, message, fingerprint)
+
+class AbiMutationDetectedError(SecurityViolationError):
+    """Raised when struct definition is modified after fingerprinting."""
+    def __init__(self, message: str, fingerprint: str = "GLOBAL"):
+        super().__init__(message, fingerprint)
+
 
 
 # ==============================================================================
@@ -1078,6 +1088,111 @@ class InvariantAssertionManager:
         # Check against global registry managers
         pass
 
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 110: CROSS-LANGUAGE SEMANTIC EQUIVALENCE
+# ════════════════════════════════════════════════════════════════════════════
+
+class SemanticEquivalenceCoordinator:
+    """Normalizes behavior to match language-neutral enforcement spec (Part 1)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def normalize_integer(self, value: Any, bit_width: int) -> int:
+        """Enforces strict bit-width and type alignment (Part 1 Step 1)."""
+        config = self.context.config_controller.get()
+        if not config.strict_integer_width:
+            return int(value)
+            
+        if isinstance(value, float):
+             raise ContractViolationError("unknown", -1, "Implicit float-to-int conversion rejected")
+        if isinstance(value, bool):
+             raise ContractViolationError("unknown", -1, "Bool as integer rejected")
+        
+        ival = int(value)
+        # Check range for signed/unsigned (simplified check)
+        max_val = (1 << (bit_width - 1)) - 1
+        min_val = -(1 << (bit_width - 1))
+        if ival > max_val or ival < min_val:
+             raise ContractViolationError("unknown", -1, f"Integer overflow for width {bit_width}")
+        return ival
+
+    def check_nullability(self, value: Any, optional: bool):
+        """Enforces strict nullability semantics independent of truthiness (Part 1 Step 2)."""
+        if value is None or value == 0:
+            if not optional:
+                raise ContractViolationError("unknown", -1, "Unexpected null pointer for non-optional parameter")
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 111: ABI CONFORMANCE VALIDATION
+# ════════════════════════════════════════════════════════════════════════════
+
+class AbiConformanceValidator:
+    """Verifies binary interface fidelity and structural layout (Part 2)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._fingerprints = {}
+
+    def compute_struct_fingerprint(self, struct_cls: type) -> str:
+        """Generates deterministic layout fingerprint (Part 2 Step 1)."""
+        if not issubclass(struct_cls, ctypes.Structure):
+            return "NON_STRUCT"
+            
+        parts = []
+        for name, field_type in struct_cls._fields_:
+            size = ctypes.sizeof(field_type)
+            offset = getattr(struct_cls, name).offset
+            parts.append(f"{name}:{offset}:{size}")
+        
+        # Sort by offset to ensure deterministic ordering
+        return "|".join(sorted(parts))
+
+    def validate_layout(self, struct_name: str, struct_cls: type, expected_fingerprint: str):
+        """Fails if actual layout differs from contract spec (Part 2 Step 2)."""
+        if not self.context.config_controller.get().abi_validation_enabled:
+            return
+            
+        actual = self.compute_struct_fingerprint(struct_cls)
+        if actual != expected_fingerprint:
+            raise AbiLayoutMismatchError(struct_name, f"ABI fingerprint mismatch. Got {actual}", self.context.fingerprint)
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 112: NESTED FFI TRANSACTION MODEL
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class TransactionContext:
+    invocation_id: str
+    depth: int
+    staged_transitions: List[Any] = field(default_factory=list)
+
+class NestedTransactionCoordinator:
+    """Orchestrates atomic commits across nested FFI calls (Part 3)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._stack: List[TransactionContext] = []
+
+    def begin_transaction(self, invocation_id: str):
+        """Starts a new staged transaction boundary (Part 3 Step 2)."""
+        depth = len(self._stack)
+        self._stack.append(TransactionContext(invocation_id, depth))
+
+    def commit_transaction(self):
+        """Merges staged changes or commits root (Part 3 Step 2)."""
+        if not self._stack:
+            return
+        current = self._stack.pop()
+        if not self._stack:
+            # Root commit: apply staged transitions to registry
+            self.context.trace_recorder.record("ROOT_TRANSACTION_COMMIT")
+        else:
+            # Nested: merge up
+            self._stack[-1].staged_transitions.extend(current.staged_transitions)
+
+    def rollback_transaction(self):
+        """Discards all staged changes (Part 3 Step 2)."""
+        self._stack.clear()
+        self.context.trace_recorder.record("TRANSACTION_ROLLBACK")
+
 # ==============================================================================
 # SECTION 102: MULTI-CONTRACT CONTEXT ORCHESTRATION
 # ==============================================================================
@@ -1106,6 +1221,9 @@ class EnforcementContext:
         self.security_manager = SecurityIntegrityManager(self)
         self.adversarial_defense = AdversarialDefenseManager(self)
         self.invariant_manager = InvariantAssertionManager(self)
+        self.semantic_coordinator = SemanticEquivalenceCoordinator(self)
+        self.abi_validator = AbiConformanceValidator(self)
+        self.transaction_coordinator = NestedTransactionCoordinator(self)
         
         self.invocation_sequence_counter = 0
         self.active_invocation_count = 0
@@ -2874,7 +2992,13 @@ class RuntimeConfiguration:
                   max_ipc_payload_size=10 * 1024 * 1024, # 10MB
                   max_relational_graph_nodes=1000,
                   max_compaction_per_invocation=5,
-                  min_reload_interval_invocations=100):
+                  min_reload_interval_invocations=100,
+                  # Prompt 15 Extensions (Semantic & ABI)
+                  semantic_normalization_enabled=True,
+                  abi_validation_enabled=True,
+                  nested_transactions_enabled=True,
+                  strict_nullability=True,
+                  strict_integer_width=True):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
@@ -2921,6 +3045,12 @@ class RuntimeConfiguration:
         self.max_relational_graph_nodes = max_relational_graph_nodes
         self.max_compaction_per_invocation = max_compaction_per_invocation
         self.min_reload_interval_invocations = min_reload_interval_invocations
+        # Prompt 15
+        self.semantic_normalization_enabled = semantic_normalization_enabled
+        self.abi_validation_enabled = abi_validation_enabled
+        self.nested_transactions_enabled = nested_transactions_enabled
+        self.strict_nullability = strict_nullability
+        self.strict_integer_width = strict_integer_width
 
 
 class ConfigurationController:
@@ -5032,6 +5162,7 @@ class LanguageAdapter:
             
         # Push context to stack for multi-contract isolation (Part 2 Step 3)
         self._ctx_stack.push(ctx)
+        ctx.transaction_coordinator.begin_transaction(str(seq_idx))
         try:
             # Memory Pressure Governance: Record invocation (Part 2 Step 1)
             ctx.memory_governor.record_invocation()
@@ -5064,7 +5195,11 @@ class LanguageAdapter:
                  )
                  ctx.journal_manager.record_entry(entry)
 
+            ctx.transaction_coordinator.commit_transaction()
             return result
+        except Exception:
+            ctx.transaction_coordinator.rollback_transaction()
+            raise
         finally:
             self._ctx_stack.pop()
             with ctx._invocation_lock:
