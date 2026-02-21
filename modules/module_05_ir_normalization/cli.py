@@ -12,22 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: 5c8cdf153e7721af
+# File Integrity Identifier: 6e7df786d6d45788
 # ==============================================================================
-
-def load_artifact_any(path: Path) -> IRArtifact:
-    """Load artifact, handling optional compression."""
-    if path.suffix == ".gz":
-        return deserialize_compressed(path)
-    else:
-        with open(path) as f:
-            return IRArtifact.from_dict(json.load(f))
-
-
-# ============================================================================
-# NORMALIZE COMMAND
-# ============================================================================
-
 
 def normalize_command(args):
     """Execute normalize command."""

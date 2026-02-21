@@ -12,42 +12,8 @@
 # Removal or alteration of this header may constitute a violation of the
 # repository's governing agreements.
 #
-# File Integrity Identifier: a63e7865e5dc9da7
+# File Integrity Identifier: d2735745fe1da4b9
 # ==============================================================================
-
-@dataclass
-class SourceLocation:
-    """Source code location."""
-
-    file: Optional[str] = None
-    line: Optional[int] = None
-    column: Optional[int] = None
-    file_path: Optional[str] = None  # Alias for compatibility at the end
-
-    def __post_init__(self):
-        if self.file and not self.file_path:
-            self.file_path = self.file
-        elif self.file_path and not self.file:
-            self.file = self.file_path
-
-    def __str__(self):
-        if self.file:
-            loc = self.file
-            if self.line:
-                loc += f":{self.line}"
-                if self.column:
-                    loc += f":{self.column}"
-            return loc
-        return "unknown location"
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"file": self.file, "line": self.line, "column": self.column}
-
-
-# ============================================================================
-# DIAGNOSTIC MESSAGE
-# ============================================================================
-
 
 @dataclass
 class DiagnosticMessage:
