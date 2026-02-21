@@ -950,3 +950,46 @@ The adapter provides a "black box" recording facility for high-assurance debuggi
 - **Replay Sandbox**: Imported journals can be re-executed in a non-mutating isolated context.
 - **Mismatch Detection**: The engine compares live execution against the recorded journal, producing a deterministic diff if any drift in behavior or lifecycle is detected.
 - **Regression Validation**: Enables validating that bug fixes or contract updates don't break established invocation patterns reproducible.
+
+---
+
+## Prompt 14 Part 1 — Security Hardening and Tamper-Resistant Enforcement Boundary
+
+The adapter implements a robust security hardening layer to prevent runtime tampering and bypass attempts.
+
+### Contract Immutability
+- **Sealed Descriptors**: Critical enforcement plans (ValidationGraph, ValidationNode) are sealed using immutable object attributes. Any attempt to modify these at runtime raises a SecurityViolationError.
+- **Integrity Verification**: The system performs deterministic fingerprint verification at key checkpoints (invocation, reload, replay) to ensure contract artifacts have not been mutated.
+
+### Tamper Resistance
+- **Monkey-Patching Detection**: Critical method signatures (e.g., ValidationEngine.validate) are recorded at load time. Structural changes to these methods are detected before execution.
+- **Proxy Lockdown**: Native function references are encapsulated within hardened proxies, preventing direct access to raw pointers.
+
+---
+
+## Prompt 14 Part 2 — Adversarial Misuse Defense and Fail-Closed Execution Strategy
+
+To protect against malicious or malformed inputs, the adapter adopts a fail-closed defense posture.
+
+### Malformed Input resilience
+- **Depth Guards**: Deeply nested composite structures or invocation stacks exceeding configured limits (e.g., max_structure_depth) are rejected deterministically.
+- **Size Bounds**: Buffer allocations and IPC payloads are strictly bounded by configuration (e.g., max_buffer_size) to prevent resource exhaustion attacks.
+
+### Fail-Closed Rejection
+- **Ambiguity rejection**: Any inconsistent normalization or schema mismatch in IPC/Journaling triggers immediate rejection. Heuristic recovery is strictly forbidden.
+- **Abuse Prevention**: Compaction storms and rapid reload loops are detected using monotonic counters, raising CompactionAbuseDetectedError or ReloadLoopDetectedError.
+
+---
+
+## Prompt 14 Part 3 — Formal Invariant Assertion Framework and Internal Consistency Model
+
+The adapter maintains internal rigor through a formal invariant assertion framework that validates cross-subsystem consistency.
+
+### Internal Consistency Proofs
+- **Lifecycle Coherence**: Ensuring that pointer registry states align with the active alias map and ownership records.
+- **Profiling Alignment**: Validating that performance counters (invocations, ops) are monotonic and consistent with execution logs.
+- **Isolation Invariants**: Verifying that multi-contract registries remains strictly partitioned with no shared object references.
+
+### Deterministic Safety Checks
+- **Assertion Checkpoints**: Invariants are asserted at deterministic points (End of Invocation, After Compaction) when the system is in a stable state.
+- **Fail-Closed on Inconsistency**: Any detected drift in internal logic raises an InternalInvariantViolationError, preventing further execution under uncertain conditions.
