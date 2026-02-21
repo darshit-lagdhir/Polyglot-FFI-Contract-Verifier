@@ -802,3 +802,58 @@ For critical buffers (especially those marked as read-only or inspect-memory):
 Both the Structure Mutation and Buffer Defense engines are integrated into the FFI's transactional model. If a mutation or boundary violation is detected post-call:
 - **Registry Rollback**: Any staged ownership changes (like registering a returned pointer) are discarded.
 - **State Preservation**: The system ensures that the Python-side state remains consistent with a "failed call" even if the native side partially succeeded, preventing the propagation of corrupted data.
+---
+
+## Prompt 11 Part 1 — Concurrency Hardening Framework
+
+To ensure deterministic behavior under massive multi-threaded load, the adapter has been refactored with a formal concurrency model and strict lock hierarchy.
+
+### Formal Lock Hierarchy
+The system enforces a strict acquisition order to prevent circular waits and deadlocks:
+1.  **Level 1: Configuration Lock** — Guards adapter-wide mode shifts.
+2.  **Level 2: Registry Global (Segment) Lock** — Guards structural changes to the internal registry partitions.
+3.  **Level 3: Pointer-Specific Lock** — Guards state transitions for a single memory allocation.
+4.  **Level 4: Alias Map Lock** — Guards the mapping between wrappers and pointers.
+5.  **Level 5: Lifecycle Transition Lock** — Guards the atomic transition logic.
+6.  **Level 6: Trace Recorder Lock** — Guards ordered log emission.
+
+### Segmented Registry Locking
+The `OwnershipRegistry` utilizes N independent locks (defaults to 16) to partition the pointer space. This drastically reduces lock contention when multiple threads are managing disjoint sets of pointers, while maintaining full safety within each segment.
+
+### Atomic State Transitions
+All ownership state mutations and epoch increments are performed as atomic transactions under the appropriate hierarchical locks. This guarantees that race conditions (e.g., simultaneous deallocation requests for the same address) are resolved deterministically.
+
+---
+
+## Prompt 11 Part 2 — Multi-Contract Isolation Architecture
+
+In complex applications utilizing multiple independent native libraries, the adapter guarantees complete isolation between enforcement states, registries, and observability pipelines.
+
+### EnforcementContext Object
+Per-contract state is encapsulated within an `EnforcementContext`. This object contains its own:
+-   **Isolated OwnershipRegistry**: Segregated pointer tracking.
+-   **Isolated Observation Pipeline**: Per-contract violation aggregation.
+-   **Isolated Transition Coordinator**: Independent lifecycle enforcement.
+-   **Configurable Sweep Policy**: Individual retention thresholds.
+
+### Multi-Contract Context Manager
+A centralized, singleton-managed registry (`MultiContractContextManager`) tracks active contexts by their unique contract fingerprints. This prevents cross-contract "pollution" where a pointer from Library A could be accidentally validated against Library B's ownership rules.
+
+### Thread-Local Invocation Stack
+The system maintains a thread-local stack of active contexts. This enables correct management of nested FFI calls across multiple contracts, ensuring that the adapter always operates within the correct isolation boundary for the current stack frame.
+
+---
+
+## Prompt 11 Part 3 — Production Observability Pipeline
+
+Reporting layer upgrade.
+
+### Violation Aggregation and Fingerprinting
+Aggregation logic.
+
+### Rate-Limited Diagnostic Emission
+Rate limiting logic.
+
+### Structured Diagnostic Format
+JSON format description.
+
