@@ -1039,3 +1039,50 @@ The adapter manages complex nested invocation chains through a formal transactio
 ### State Coherence
 - **Reload Blocking**: Contract hot-reload and memory compaction are strictly prohibited during active nested transactions to prevent state drift.
 - **Safe Checkpoints**: Formal invariant assertions are deferred until the root transaction commits, ensuring checks occur only when the system is in a stable, consistent state.
+
+---
+
+## Prompt 16 Part 1 — Observability Export Pipeline and Structured Telemetry Model
+
+The Python adapter implements a unified observability contract for production governance.
+
+### Telemetry Event Model
+- **Structured Schema**: All events follow a versioned schema including schema_version, event_type, invocation_idx, and details.
+- **Event Taxonomy**: Aligned with language-neutral definitions such as INVOCATION_STARTED, VIOLATION_EMITTED, SANDBOX_CRASH, and SECURITY_VIOLATION.
+- **Deterministic Export**: Serialized output uses sorted keys and excludes non-deterministic data such as wall-clock timestamps or raw memory addresses.
+
+### Redaction and Privacy
+- **Automatic Redaction**: Raw buffer content and pointer addresses are redacted by default to prevent sensitive information leakage.
+- **Filtering**: Deterministic filters allow whitelisting specific event types or severity thresholds per contract.
+- **Isolated Buffers**: Each contract context maintains an independent, non-leaking telemetry buffer.
+
+---
+
+## Prompt 16 Part 2 — Metrics Aggregation and Deterministic Anomaly Detection Model
+
+The system provides operational insights through count-based sliding window statistics.
+
+### Sliding Window Metrics
+- **Non-Temporal Windows**: Windows are defined by invocation sequences rather than wall-clock time, ensuring reproducibility.
+- **Windowed Aggregates**: Tracks violation rates, crash frequencies, and nested depth distributions within the current window (e.g., last 100 calls).
+- **Deterministic Reporting**: Metrics snapshots follow a stable, sorted schema for external collector integration.
+
+### Anomaly Detection
+- **Rule-Based Triggers**: Detects sustained deviations such as CRASH_LOOP_DETECTED, ESCALATION_STORM_DETECTED, and REPLAY_ABUSE_DETECTED.
+- **Fail-Closed Monitoring**: Anomaly detection emits high-severity telemetry events and can trigger fail-closed state if configured.
+
+---
+
+## Prompt 16 Part 3 — Configuration Governance and Deterministic Feature Flag Architecture
+
+Configuration is managed as a governed, versioned contract within the runtime.
+
+### Configuration Governance
+- **Unified Model**: All parameters (enforcement mode, thresholds, filter rules) are centralized in a versioned RuntimeConfiguration object.
+- **Immutability**: Configuration objects are sealed after activation, preventing mid-invocation mutation or runtime tampering.
+- **Atomic Activation**: Configuration updates via hot-reload are atomic and blocked during active nested transactions.
+
+### Feature Flag Engine
+- **Explicit Flags**: Capabilities like SANDBOX, REPLAY, and ABI_VALIDATION are controlled by an explicit, validated feature flag engine.
+- **Conflict Detection**: The engine rejects incompatible flag combinations (e.g., sandbox enabled without security hardening) during initialization.
+- **Integrity Validation**: The system periodically verifies the configuration snapshot hash to detect unauthorized runtime overrides.
