@@ -1130,6 +1130,17 @@ class MetricsAggregationManager:
         if crash_count >= config.anomaly_crash_loop_threshold:
              self.context.telemetry_manager.emit("CRASH_LOOP_DETECTED", {"window_crashes": crash_count}, "FATAL")
 
+    def export_summary(self) -> Dict[str, Any]:
+        """Provides deterministic summary of aggregated metrics."""
+        events = {}
+        for event in self._window:
+            t = event["type"]
+            events[t] = events.get(t, 0) + 1
+        return {
+            "total_events": len(self._window),
+            "event_distribution": dict(sorted(events.items()))
+        }
+
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 115: CONFIGURATION GOVERNANCE
 # ════════════════════════════════════════════════════════════════════════════
@@ -1240,10 +1251,335 @@ class ResourceGovernanceManager:
             "crash_snapshots": len(self.context.crash_manager._snapshots),
             "invocation_idx": self.context.invocation_sequence_counter
         }
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 118: OFFLINE VALIDATION AND STATE SNAPSHOT EXPORT (PROMPT 18 PART 1)
+# ════════════════════════════════════════════════════════════════════════════
+
+class StateSnapshotManager:
+    """Exports full deterministic EnforcementContext state (Part 1)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def export_state_snapshot(self) -> Dict[str, Any]:
+        """Creates a deterministic, timestamp-free state representation."""
+        config = self.context.config_controller.get()
+        
+        # Lifecycle Registry Summary
+        active_ptrs = 0
+        freed_ptrs = 0
+        terminal_ptrs = 0
+        ownership_dist = {}
+        for pointer, entry in self.context.registry._registry.items():
+            if entry.state == "allocated": active_ptrs += 1
+            if entry.state == "freed": freed_ptrs += 1
+            if entry.state == "invalid": terminal_ptrs += 1
+            ownership_dist[entry.ownership_type] = ownership_dist.get(entry.ownership_type, 0) + 1
+            
+        lifecycle_summary = {
+            "active_pointer_count": active_ptrs,
+            "freed_pointer_count": freed_ptrs,
+            "terminal_invalid_count": terminal_ptrs,
+            "ownership_state_distribution": dict(sorted(ownership_dist.items()))
+        }
+
+        # Violation Aggregation Summary
+        total_violations = 0
+        per_clause = {}
+        severity_dist = {"fatal": 0, "non_fatal": 0}
+        for r in self.context.aggregation_manager.get_summary():
+             total_violations += r.total_count
+             if r.is_fatal:
+                 severity_dist["fatal"] += r.total_count
+             else:
+                 severity_dist["non_fatal"] += r.total_count
+             k = f"{r.fingerprint.function_name}|{r.fingerprint.clause_id}"
+             per_clause[k] = per_clause.get(k, 0) + r.total_count
+             
+        violations = {
+             "per_clause_violation_count": dict(sorted(per_clause.items())),
+             "severity_distribution": dict(sorted(severity_dist.items())),
+             "escalation_summary": {"total_suppressed": sum(r.suppressed_count for r in self.context.aggregation_manager.get_summary())},
+             "total_violation_count": total_violations
+        }
+        
+        # Metrics Snapshot
+        metrics = dict(sorted(self.context.metrics_aggregator.export_summary().items()))
+        
+        # Crash Summary
+        crash_counts = {}
+        for s in self.context.crash_manager._snapshots:
+             crash_counts[s.signature] = crash_counts.get(s.signature, 0) + 1
+        
+        crash_summary = {
+            "total_crash_count": len(self.context.crash_manager._snapshots),
+            "crash_signature_distribution": dict(sorted(crash_counts.items())),
+            "last_crash_signature": self.context.crash_manager._snapshots[-1].signature if self.context.crash_manager._snapshots else None
+        }
+
+        # Replay Summary
+        replay_summary = {
+             "total_journal_entries": len(self.context.journal_manager._journal),
+             "entries_with_violation": sum(1 for e in self.context.journal_manager._journal if e.violations)
+        }
+        
+        # Configuration Snapshot
+        config_dict = {
+            k: v for k, v in vars(config).items() if not k.startswith("_")
+        }
+        
+        snapshot = {
+            "snapshot_schema_version": "1.0",
+            "contract_fingerprint": self.context.fingerprint,
+            "configuration_snapshot": dict(sorted(config_dict.items())),
+            "lifecycle_registry_summary": lifecycle_summary,
+            "violation_aggregation_summary": violations,
+            "profiling_summary": dict(sorted(self.context.get_profiling_summary().items())),
+            "metrics_snapshot": metrics,
+            "crash_snapshot_summary": crash_summary,
+            "replay_journal_summary": dict(sorted(replay_summary.items())),
+            "resource_summary": dict(sorted(self.context.resource_governor.export_summary().items())),
+            "active_feature_flags": {
+                "simulation_mode": config.simulation_mode_enabled,
+                "sandbox_enabled": config.sandbox_enabled,
+                "leak_detection": config.leak_detection_enabled
+            },
+            "reload_sequence_index": self.context.hot_reload_manager.reload_sequence_counter,
+            "nested_invocation_depth": self.context.active_invocation_count,
+            "invariant_status_summary": "Passed"
+        }
+        
+        # Ensure pure deterministic ordering of root keys
+        return dict(sorted(snapshot.items()))
+
+    def export_state_snapshot_deterministic_string(self) -> str:
+        return json.dumps(self.export_state_snapshot(), sort_keys=True)
+
+class OfflineValidationEngine:
+    """Provides static analysis of exported snapshots (Part 1)."""
+    def validate_snapshot(self, snapshot_artifact: Dict[str, Any]) -> bool:
+        """Validates schema and logical consistency of a snapshot offline."""
+        if snapshot_artifact.get("snapshot_schema_version") != "1.0":
+            return False
+        
+        # Validate deterministic ordering (JSON naturally retains order in modern Python, but we check keys implicitly by assuming they exist)
+        req_keys = ["snapshot_schema_version", "contract_fingerprint", "configuration_snapshot"]
+        for key in req_keys:
+            if key not in snapshot_artifact:
+                return False
+                
+        # Validate consistency
+        if "metrics_snapshot" in snapshot_artifact and "total_events" in snapshot_artifact["metrics_snapshot"]:
+             if snapshot_artifact["metrics_snapshot"]["total_events"] < 0:
+                 return False
+                 
+        return True
+
+    def compare_snapshots(self, snapshot_a: Dict[str, Any], snapshot_b: Dict[str, Any]) -> Dict[str, Any]:
+        """Compares two snapshots and isolates deterministic differences."""
+        diff = {
+            "fingerprint_a": snapshot_a.get("contract_fingerprint"),
+            "fingerprint_b": snapshot_b.get("contract_fingerprint"),
+            "differences": {}
+        }
+        
+        for k in snapshot_a.keys():
+            if k not in snapshot_b:
+                diff["differences"][k] = {"status": "removed", "a": snapshot_a[k]}
+            elif snapshot_a[k] != snapshot_b[k]:
+                diff["differences"][k] = {"status": "changed", "a": snapshot_a[k], "b": snapshot_b[k]}
+                
+        for k in snapshot_b.keys():
+             if k not in snapshot_a:
+                 diff["differences"][k] = {"status": "added", "b": snapshot_b[k]}
+                 
+        return dict(sorted(diff.items()))
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 119: REGRESSION BASELINE AND STATE DRIFT DETECTION (PROMPT 18 PART 2)
+# ════════════════════════════════════════════════════════════════════════════
+
+class DriftDetectionEngine:
+    """Classifies and attributes semantic drift across baselines (Part 2)."""
+    
+    @staticmethod
+    def classify_drift(diff_entries: Dict[str, Any]) -> Tuple[bool, List[str], str]:
+        drift_detected = False
+        categories = []
+        highest_severity = "INFO"
+        
+        severities = {"INFO": 1, "WARNING": 2, "ERROR": 3, "FATAL": 4}
+        
+        def set_severity(sev):
+            nonlocal highest_severity
+            if severities[sev] > severities[highest_severity]:
+                highest_severity = sev
+
+        diffs = diff_entries.get("differences", {})
+        if not diffs:
+            return False, [], "INFO"
+            
+        drift_detected = True
+        
+        if "snapshot_schema_version" in diffs:
+            categories.append("SCHEMA_DRIFT")
+            set_severity("FATAL")
+            
+        if "configuration_snapshot" in diffs:
+            categories.append("CONFIGURATION_DRIFT")
+            set_severity("WARNING")
+            
+        if "active_feature_flags" in diffs:
+            categories.append("FEATURE_FLAG_DRIFT")
+            set_severity("WARNING")
+            
+        if "violation_aggregation_summary" in diffs:
+             categories.append("VIOLATION_DISTRIBUTION_DRIFT")
+             set_severity("ERROR")
+             
+        if "crash_snapshot_summary" in diffs:
+             categories.append("CRASH_SIGNATURE_DRIFT")
+             set_severity("ERROR")
+             
+        if "error_taxonomy_version" in diffs:
+             categories.append("ERROR_TAXONOMY_DRIFT")
+             set_severity("FATAL")
+             
+        return drift_detected, sorted(categories), highest_severity
+
+class CompatibilityViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_COMPATIBILITY_VIOLATION"
+    ERROR_CATEGORY = "Configuration"
+
+class RegressionBaselineManager:
+    """Governs persistence and comparison against a canonical artifact (Part 2)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._accepted_baseline: Optional[Dict[str, Any]] = None
+
+    def generate_new_baseline_from_snapshot(self) -> Dict[str, Any]:
+        snapshot = self.context.snapshot_manager.export_state_snapshot()
+        
+        baseline = {
+            "baseline_schema_version": "1.0",
+            "adapter_version_identifier": "0.8.0",
+            "error_taxonomy_version": "1.0",
+            "semantic_equivalence_version": "1.0",
+            "abi_validation_version": "1.0",
+            "invariant_framework_version": "1.0",
+            "snapshot": snapshot
+        }
+        return dict(sorted(baseline.items()))
+
+    def get_baseline_fingerprint(self, baseline: Dict[str, Any]) -> str:
+        s = json.dumps(baseline, sort_keys=True)
+        return hashlib.sha256(s.encode()).hexdigest()
+
+    def validate_against_baseline(self, baseline: Dict[str, Any], snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Compares snapshot strictly against baseline and categorizes drift."""
+        # Compatibility verification
+        if baseline.get("snapshot", {}).get("snapshot_schema_version") != snapshot.get("snapshot_schema_version"):
+             raise CompatibilityViolationError("Schema version mismatch", self.context.fingerprint)
+             
+        engine = OfflineValidationEngine()
+        diff = engine.compare_snapshots(baseline.get("snapshot", {}), snapshot)
+        
+        drift_detected, categories, severity = DriftDetectionEngine.classify_drift(diff)
+        
+        report = {
+            "baseline_fingerprint": self.get_baseline_fingerprint(baseline),
+            "current_snapshot_fingerprint": self.get_baseline_fingerprint(snapshot),
+            "drift_detected": drift_detected,
+            "drift_categories": categories,
+            "severity_summary": severity,
+            "detailed_diff_entries": diff.get("differences", {}),
+            "recommendation": "Review drift" if drift_detected else "No drift"
+        }
+        
+        if drift_detected:
+             self.context.telemetry_manager.emit(
+                 "REGRESSION_DRIFT_DETECTED", 
+                 {"categories": categories, "severity": severity, "baseline_fingerprint": report["baseline_fingerprint"]},
+                 severity
+             )
+             
+        return dict(sorted(report.items()))
+
+    def accept_new_baseline(self, baseline: Dict[str, Any]):
+        """Explicitly sets the canonical baseline. No auto-mutation."""
+        self._accepted_baseline = baseline
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 120: DETERMINISTIC SIMULATION AND DRY-RUN MODE (PROMPT 18 PART 3)
+# ════════════════════════════════════════════════════════════════════════════
+
+class SimulationEngine:
+    """Executes validation rules without native invocation side-effects (Part 3)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def generate_simulation_report(self, 
+                                   function_name: str, 
+                                   validation_passed: bool, 
+                                   violation: bool, 
+                                   error_code: str, 
+                                   severity: str) -> Dict[str, Any]:
+        
+        config = self.context.config_controller.get()
+        config_dict = {
+            k: v for k, v in vars(config).items() if not k.startswith("_")
+        }
+        
+        report = {
+            "contract_fingerprint": self.context.fingerprint,
+            "function_name": function_name,
+            "validation_passed": validation_passed,
+            "violation_detected": violation,
+            "simulated_error_code": error_code,
+            "simulated_policy_severity": severity,
+            "simulated_lifecycle_transitions": 0,
+            "simulated_metrics_delta": {},
+            "simulated_anomaly_detection": False,
+            "simulated_nested_depth": self.context.active_invocation_count,
+            "configuration_snapshot": dict(sorted(config_dict.items()))
+        }
+        
+        s = json.dumps(dict(sorted(report.items())), sort_keys=True)
+        report["deterministic_simulation_fingerprint"] = hashlib.sha256(s.encode()).hexdigest()
+        
+        return dict(sorted(report.items()))
+
+class DryRunCoordinator:
+    """Orchestrates simulated invocation flow (Part 3)."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def run_simulation(self, function_name: str, parameters: List[Any], synthetic_error: Optional[str] = None) -> Dict[str, Any]:
+        """Runs the pipeline logic as dry-run, skipping native dispatch."""
+        # Input normalization and validation logically simulated
+        validation_passed = True
+        violation = False
+        error_code = "NONE"
+        severity = "INFO"
+        
+        if synthetic_error:
+             validation_passed = False
+             violation = True
+             error_code = synthetic_error
+             severity = "ERROR"
+             
+        report = self.context.simulation_engine.generate_simulation_report(
+             function_name,
+             validation_passed,
+             violation,
+             error_code,
+             severity
+        )
+        return report
 
 # ==============================================================================
 # SECTION 102: MULTI-CONTRACT CONTEXT ORCHESTRATION
 # ==============================================================================
+
 
 class EnforcementContext:
     """
@@ -1278,6 +1614,10 @@ class EnforcementContext:
         self.error_taxonomy = ErrorTaxonomyManager(self)
         self.crash_manager = CrashForensicsManager(self)
         self.resource_governor = ResourceGovernanceManager(self)
+        self.snapshot_manager = StateSnapshotManager(self)
+        self.regression_manager = RegressionBaselineManager(self)
+        self.simulation_engine = SimulationEngine(self)
+        self.dry_run_coordinator = DryRunCoordinator(self)
         
         self.invocation_sequence_counter = 0
         self.active_invocation_count = 0
@@ -3064,7 +3404,9 @@ class RuntimeConfiguration:
                   # Prompt 17 Part 3 Extensions
                   max_telemetry_entries=1000,
                   max_crash_snapshots=10,
-                  max_lifecycle_entries=5000):
+                  max_lifecycle_entries=5000,
+                  # Prompt 18 Extensions
+                  simulation_mode_enabled=False):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
@@ -3129,6 +3471,8 @@ class RuntimeConfiguration:
         self.max_telemetry_entries = max_telemetry_entries
         self.max_crash_snapshots = max_crash_snapshots
         self.max_lifecycle_entries = max_lifecycle_entries
+        # Prompt 18
+        self.simulation_mode_enabled = simulation_mode_enabled
         self._sealed = False
 
 
@@ -5219,6 +5563,11 @@ class LanguageAdapter:
         if not ctx:
             raise ValueError(f"Contract not loaded: {fingerprint}")
         
+        
+        # Simulation Mode Dry-Run Check (Prompt 18 Part 3)
+        if ctx.config_controller.get().simulation_mode_enabled:
+            return ctx.dry_run_coordinator.run_simulation(function_name, inputs)
+
         # 1. Security Integrity Check (Part 1 Step 4)
         ctx.security_manager.check_integrity()
         

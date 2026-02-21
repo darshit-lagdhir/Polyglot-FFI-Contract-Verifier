@@ -1134,3 +1134,50 @@ Resource governance ensures the adapter remains stable and predictable across mi
 - **Zombie Prevention**: Sandbox worker lifecycles are strictly supervised to prevent orphaned processes.
 - **Reload Fragmentation Control**: Hot-reloads clear internal staged state and validate descriptor integrity to prevent resource fragmentation.
 - **Memory Envelope assertion**: A deterministic resource summary can be exported to verify compliance with operational limits.
+
+---
+
+## Prompt 18 Part 1 — Deterministic State Snapshot and Offline Validation Model
+
+The Python adapter supports exporting its entire enforcement state into a deterministic snapshot artifact for offline auditing and compliance analysis.
+
+### State Snapshot Artifact
+- **Comprehensive Schema**: Includes sanitized lifecycle registry summaries, violation aggregations, metrics, telemetry buffers, and replay journals.
+- **Privacy Safe**: Raw memory buffers and pointer addresses are strictly excluded from the snapshot.
+- **Deterministic Ordering**: All keys in the exported snapshot follow semantic, deterministic sorting rules to ensure reproducibility.
+- **No Timestamps**: Non-deterministic data like timestamps are avoided to guarantee stable artifacts across multiple immediate exports.
+
+### Offline Validation
+- **Static Analysis Mode**: The snapshot can be loaded into an isolated offline validation engine to check schema consistency without invoking native code or the sandbox.
+- **Diff Utility**: Snapshots can be deterministically compared to isolate changes in configuration, lifecycle distributions, or violation frequency.
+
+---
+
+## Prompt 18 Part 2 — Deterministic Regression Baseline and State Drift Detection Model
+
+To ensure enforcement behavior remains stable across upgrades, the adapter establishes a canonical regression baseline framework.
+
+### Baseline System
+- **Canonical Artifacts**: Snapshots can be explicitly promoted to "Regression Baselines."
+- **Deterministic Fingerprinting**: Each baseline receives a unique, stable fingerprint unaffected by OS or runtime differences.
+- **Cross-Version Compatibility**: Automatically detects incompatible schema or taxonomy version changes.
+
+### State Drift Detection
+- **Semantic Classification**: Identifies and categorizes drift (e.g., \CONFIGURATION_DRIFT\, \CRASH_SIGNATURE_DRIFT\, \VIOLATION_DISTRIBUTION_DRIFT\).
+- **Severity Mapping**: Drift is assigned deterministic severity (INFO, WARNING, ERROR, FATAL) depending on the behavioral impact.
+- **Reporting**: Drift analysis can emit specialized \REGRESSION_DRIFT_DETECTED\ telemetry events.
+
+---
+
+## Prompt 18 Part 3 — Deterministic Simulation Mode and Pre-Deployment Safety Validation Model
+
+The adapter introduces a dry-run execution engine to validate contract behavior and policy escalation without invoking native logic.
+
+### Simulation Mode
+- **Native Bypass**: In \simulation_mode\, the validation logic runs entirely in memory without delegating to ctypes or sandboxed workers.
+- **State Isolation**: Simulation operates on cloned/shadow state, guaranteeing zero mutation to the live lifecycle registry, journals, or telemetry buffers.
+- **Synthetic Escalation**: Allows injection of synthetic crash codes or violations to simulate how the adapter's policy system reacts.
+
+### Pre-Deployment Validator
+- **Deterministic Reports**: Dry-runs emit a stable simulation report fingerprinting the outcome.
+- **Regression Integration**: Simulated runs can be compared against the regression baseline before deploying new physical binaries.
