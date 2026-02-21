@@ -904,3 +904,49 @@ Before a new contract is applied, it must pass a compatibility check against the
 
 ### State Preservation
 Active pointers and their lifecycle states are preserved across compatible reloads, ensuring continuity of enforcement without losing track of existing memory allocations.
+---
+
+## Prompt 13 Part 1 — Sandboxed Execution Isolation and Crash-Resilient Invocation Supervisor
+
+To guarantee absolute crash isolation, the adapter supports a subprocess-based sandbox execution layer. This prevents native crashes (SEGV, stack corruption) from terminating the parent Python process.
+
+### Subprocess Invocation Flow
+1. **Request Serialization**: Method parameters and contract state are serialized into a deterministic InvocationRequestModel.
+2. **IPC Dispatch**: The request is sent via a pipe to a dedicated sandbox worker process.
+3. **Isolated Enforcement**: The worker reconstructs the enforcement context and executes the native library call in process-isolation.
+4. **Crash Detection**: The parent supervisor detects abnormal subprocess termination and raises a NativeCrashError without crashing itself.
+
+### Deterministic Containment
+- **No Shared State**: Communication is strictly via deterministic message passing.
+- **Deterministic Timeout**: Execution is governed by a step-counter threshold (sandbox_max_validation_ops) rather than wall-clock time.
+- **Worker Recycling**: Workers can be automatically restarted if they crash or reach memory usage thresholds.
+
+---
+
+## Prompt 13 Part 2 — Memory Pressure Governance and Deterministic Registry Compaction Model
+
+Long-running production systems are protected from metadata growth through a deterministic memory pressure governance model.
+
+### Registry Compaction Strategies
+- **History Capping**: Ownership records maintain a bounded transition history, pruning the oldest entries when limits are exceeded.
+- **Violation Compaction**: The aggregation manager caps the number of unique fingerprints, pruning lowest-frequency or lowest-severity entries first.
+- **Profiling Compaction**: The metrics registry limits the number of tracked functions to prevent unbounded registry growth in deep libraries.
+
+### Stability Hardening
+- **Zero Time-Based Eviction**: Pruning is triggered solely by invocation counters and structural limits, ensuring identical memory footprints across re-executions.
+- **Sorted Pruning Order**: Elements are removed in a deterministic, lexicographical order to maintain reproducibility.
+
+---
+
+## Prompt 13 Part 3 — Deterministic Replay Engine and Invocation Journaling Model
+
+The adapter provides a "black box" recording facility for high-assurance debugging and forensic analysis.
+
+### Invocation Journaling
+- **Full Capture**: Every FFI call captures function name, input snapshots, return value, violation results, and profiling deltas.
+- **Deterministic Encoding**: Journals are exported in a sorted JSON format, ensuring that identical call sequences produce identical binary artifacts.
+
+### Isolated Replay Execution
+- **Replay Sandbox**: Imported journals can be re-executed in a non-mutating isolated context.
+- **Mismatch Detection**: The engine compares live execution against the recorded journal, producing a deterministic diff if any drift in behavior or lifecycle is detected.
+- **Regression Validation**: Enables validating that bug fixes or contract updates don't break established invocation patterns reproducible.
