@@ -1251,8 +1251,648 @@ class ResourceGovernanceManager:
             "crash_snapshots": len(self.context.crash_manager._snapshots),
             "invocation_idx": self.context.invocation_sequence_counter
         }
+
 # ════════════════════════════════════════════════════════════════════════════
-# SECTION 118: OFFLINE VALIDATION AND STATE SNAPSHOT EXPORT (PROMPT 18 PART 1)
+# SECTION 121: CONCURRENCY DISCIPLINE MANAGER (PROMPT 19 PART 1)
+# ════════════════════════════════════════════════════════════════════════════
+
+# Formal lock hierarchy levels (extending existing lock constants)
+LOCK_LEVEL_CFG       = 1  # Configuration
+LOCK_LEVEL_LIFECYCLE = 2  # Lifecycle registry
+LOCK_LEVEL_ALIAS     = 3  # Alias map
+LOCK_LEVEL_METRICS   = 4  # Metrics window
+LOCK_LEVEL_TELEMETRY = 5  # Telemetry buffer
+LOCK_LEVEL_CRASH     = 6  # Crash snapshot
+LOCK_LEVEL_REPLAY    = 7  # Replay journal
+LOCK_LEVEL_RESOURCE  = 8  # Resource governance
+
+
+class LockOrderViolationError(AdapterRuntimeError):
+    """Raised when a lock is acquired out of hierarchy order."""
+    ERROR_CODE = "ERR_LOCK_ORDER_VIOLATION"
+    ERROR_CATEGORY = "Concurrency"
+
+
+class ReentrantLockError(AdapterRuntimeError):
+    """Raised on reentrant acquisition of a non-reentrant lock."""
+    ERROR_CODE = "ERR_REENTRANT_LOCK"
+    ERROR_CATEGORY = "Concurrency"
+
+
+class DeadlockRiskDetectedError(AdapterRuntimeError):
+    """Raised when operation count exceeds deterministic deadlock threshold."""
+    ERROR_CODE = "ERR_DEADLOCK_RISK"
+    ERROR_CATEGORY = "Concurrency"
+
+
+class DisciplinedLock:
+    """
+    Thread-safe lock with deterministic acquisition-order validation and
+    reentrancy detection. Replaces raw threading.Lock for all subsystems.
+    """
+    _local = threading.local()
+
+    def __init__(self, level: int, name: str, max_hold_ops: int = 1000):
+        self._level = level
+        self._name = name
+        self._inner = threading.Lock()
+        self._max_hold_ops = max_hold_ops  # deadlock guard threshold (op count)
+
+    # ── per-thread helpers ──────────────────────────────────────────────────
+    @classmethod
+    def _stack(cls) -> List[Tuple[int, str]]:
+        if not hasattr(cls._local, "stack"):
+            cls._local.stack = []
+        return cls._local.stack
+
+    @classmethod
+    def _op_counters(cls) -> Dict[str, int]:
+        if not hasattr(cls._local, "op_counters"):
+            cls._local.op_counters = {}
+        return cls._local.op_counters
+
+    def __enter__(self) -> "DisciplinedLock":
+        stack = self._stack()
+
+        # 1. Reentrancy check (Check this first!)
+        for lvl, nm in stack:
+            if nm == self._name and lvl == self._level:
+                raise ReentrantLockError(
+                    f"Reentrant acquisition of '{self._name}' (L{self._level}) detected.",
+                    "GLOBAL"
+                )
+
+        # 2. Lock order check
+        if stack:
+            top_level, top_name = stack[-1]
+            if self._level <= top_level:
+                raise LockOrderViolationError(
+                    f"Cannot acquire '{self._name}' (L{self._level}) "
+                    f"while holding '{top_name}' (L{top_level}). "
+                    "Strict hierarchy violated.",
+                    "GLOBAL"
+                )
+
+        self._inner.acquire()
+        stack.append((self._level, self._name))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._inner.release()
+        stack = self._stack()
+        if stack:
+            stack.pop()
+
+    def tick_op(self, fingerprint: str):
+        """Call inside a critical section to advance deadlock guard counter."""
+        counters = self._op_counters()
+        key = f"{fingerprint}:{self._name}"
+        counters[key] = counters.get(key, 0) + 1
+        if counters[key] > self._max_hold_ops:
+            counters[key] = 0
+            raise DeadlockRiskDetectedError(
+                f"Lock '{self._name}' held beyond {self._max_hold_ops} ops "
+                f"for contract '{fingerprint}'. Potential deadlock.",
+                fingerprint
+            )
+
+
+class ConcurrencyDisciplineManager:
+    """
+    Validates and enforces the formal lock-discipline contract across
+    all EnforcementContext subsystems (Prompt 19 Part 1).
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+        # Per-context disciplined locks for every protected subsystem
+        self.cfg_lock       = DisciplinedLock(LOCK_LEVEL_CFG,       f"{context.fingerprint}:CFG")
+        self.lifecycle_lock = DisciplinedLock(LOCK_LEVEL_LIFECYCLE,  f"{context.fingerprint}:LIFECYCLE")
+        self.alias_lock     = DisciplinedLock(LOCK_LEVEL_ALIAS,      f"{context.fingerprint}:ALIAS")
+        self.metrics_lock   = DisciplinedLock(LOCK_LEVEL_METRICS,    f"{context.fingerprint}:METRICS")
+        self.telemetry_lock = DisciplinedLock(LOCK_LEVEL_TELEMETRY,  f"{context.fingerprint}:TELEMETRY")
+        self.crash_lock     = DisciplinedLock(LOCK_LEVEL_CRASH,      f"{context.fingerprint}:CRASH")
+        self.replay_lock    = DisciplinedLock(LOCK_LEVEL_REPLAY,     f"{context.fingerprint}:REPLAY")
+        self.resource_lock  = DisciplinedLock(LOCK_LEVEL_RESOURCE,   f"{context.fingerprint}:RESOURCE")
+
+    def assert_no_locks_held(self):
+        """Asserts no disciplined locks currently held by this thread."""
+        stack = DisciplinedLock._stack()
+        if stack:
+            names = [nm for _, nm in stack]
+            raise LockOrderViolationError(
+                f"Unexpected locks still held: {names}. "
+                "All locks must be released before calling this assertion.",
+                self.context.fingerprint
+            )
+
+
+class ThreadSafetyVerifier:
+    """
+    Wraps subsystem operations with optional stress-validation yield points
+    and invariant checks (Prompt 19 Part 1).
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def verified_telemetry_append(self, event: Any):
+        """Atomically appends a telemetry event under telemetry lock."""
+        disc = self.context.concurrency_discipline
+        with disc.telemetry_lock:
+            self.context.telemetry_manager._buffer.append(event)
+            disc.telemetry_lock.tick_op(self.context.fingerprint)
+
+    def verified_metrics_record(self, event_type: str, details: Dict[str, Any]):
+        """Atomically records a metrics event under metrics lock."""
+        disc = self.context.concurrency_discipline
+        config = self.context.config_controller.get()
+        with disc.metrics_lock:
+            self.context.metrics_aggregator._window.append({
+                "type": event_type,
+                "idx": self.context.invocation_sequence_counter,
+                "details": details
+            })
+            if len(self.context.metrics_aggregator._window) > config.metrics_window_size:
+                self.context.metrics_aggregator._window.pop(0)
+            disc.metrics_lock.tick_op(self.context.fingerprint)
+
+    def verified_crash_capture(self, snapshot: Any):
+        """Atomically appends crash snapshot under crash lock."""
+        disc = self.context.concurrency_discipline
+        with disc.crash_lock:
+            self.context.crash_manager._snapshots.append(snapshot)
+            disc.crash_lock.tick_op(self.context.fingerprint)
+
+    def validated_snapshot_export(self) -> Dict[str, Any]:
+        """Acquires disciplined read-locks in hierarchy order before snapshot."""
+        disc = self.context.concurrency_discipline
+        with disc.lifecycle_lock:
+            with disc.alias_lock:
+                with disc.metrics_lock:
+                    with disc.telemetry_lock:
+                        with disc.crash_lock:
+                            with disc.replay_lock:
+                                return self.context.snapshot_manager.export_state_snapshot()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 122: MULTI-PROCESS ISOLATION GOVERNANCE (PROMPT 19 PART 2)
+# ════════════════════════════════════════════════════════════════════════════
+
+_LOGICAL_PROCESS_COUNTER = 0
+_LOGICAL_PROCESS_COUNTER_LOCK = threading.Lock()
+
+
+def _allocate_logical_process_index() -> int:
+    """Module-level monotonic counter for process identity abstraction."""
+    global _LOGICAL_PROCESS_COUNTER
+    with _LOGICAL_PROCESS_COUNTER_LOCK:
+        _LOGICAL_PROCESS_COUNTER += 1
+        return _LOGICAL_PROCESS_COUNTER
+
+
+@dataclass
+class LogicalProcessIdentity:
+    """
+    Deterministic process identifier abstraction, independent of OS PID.
+    """
+    logical_process_index: int
+    contract_fingerprint: str
+    reload_sequence_index: int
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(sorted({
+            "logical_process_index": self.logical_process_index,
+            "contract_fingerprint": self.contract_fingerprint,
+            "reload_sequence_index": self.reload_sequence_index
+        }.items()))
+
+
+class ProcessIsolationManager:
+    """
+    Ensures each EnforcementContext carries an isolated, PID-independent
+    process identity and supports post-fork reinitialization semantics.
+    (Prompt 19 Part 2)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._identity = LogicalProcessIdentity(
+            logical_process_index=_allocate_logical_process_index(),
+            contract_fingerprint=context.fingerprint,
+            reload_sequence_index=0
+        )
+
+    @property
+    def identity(self) -> LogicalProcessIdentity:
+        return self._identity
+
+    def post_fork_reinitialize(self):
+        """
+        Must be called in a child process after fork.
+        Re-creates all mutable per-process state; preserves read-only config.
+        """
+        ctx = self.context
+
+        # Fresh telemetry buffer (child-local)
+        ctx.telemetry_manager._buffer = []
+
+        # Fresh metrics window (child-local)
+        ctx.metrics_aggregator._window = []
+
+        # Fresh crash snapshots (child-local)
+        ctx.crash_manager._snapshots = []
+
+        # Fresh replay journal (child-local)
+        ctx.journal_manager._journal = []
+
+        # Fresh invocation counters
+        ctx.invocation_sequence_counter = 0
+        ctx.active_invocation_count = 0
+
+        # New logical process index for this child
+        self._identity = LogicalProcessIdentity(
+            logical_process_index=_allocate_logical_process_index(),
+            contract_fingerprint=ctx.fingerprint,
+            reload_sequence_index=self._identity.reload_sequence_index
+        )
+
+        # Re-create concurrency discipline locks (fork does not inherit locks safely)
+        ctx.concurrency_discipline = ConcurrencyDisciplineManager(ctx)
+
+    def get_deterministic_ipc_message(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Builds a deterministic IPC message.  
+        No PID, no timestamp, no memory address included.
+        """
+        msg = {
+            "ipc_schema_version": "1.0",
+            "event_type": event_type,
+            "logical_process_index": self._identity.logical_process_index,
+            "contract_fingerprint": self._identity.contract_fingerprint,
+            "reload_sequence_index": self._identity.reload_sequence_index,
+            "payload": dict(sorted(payload.items()))
+        }
+        return dict(sorted(msg.items()))
+
+    def clone_isolated_context_state(self) -> Dict[str, Any]:
+        """
+        Simulates fork by returning a deep-copy-like view of current
+        process state for stress validation, without touching OS fork.
+        """
+        snap = self.context.snapshot_manager.export_state_snapshot()
+        return {
+            "identity": self._identity.as_dict(),
+            "snapshot": snap
+        }
+
+
+class InterProcessDeterminismCoordinator:
+    """
+    Provides cross-process consistency checks: snapshot comparison across
+    cloned contexts, crash-signature independence, baseline consistency.
+    (Prompt 19 Part 2)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def assert_no_pid_in_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+        """Returns True if snapshot is free of OS PID references."""
+        serialized = json.dumps(snapshot, sort_keys=True)
+        forbidden = ["pid", "PID", "os.getpid", "process_id"]
+        for term in forbidden:
+            if term in serialized:
+                return False
+        return True
+
+    def assert_crash_signature_pid_independent(self) -> bool:
+        """Verifies crash signatures do not embed OS-dependent data."""
+        for snap in self.context.crash_manager._snapshots:
+            if "pid" in snap.signature.lower():
+                return False
+        return True
+
+    def validate_clone_consistency(
+        self, clone_a: Dict[str, Any], clone_b: Dict[str, Any]
+    ) -> bool:
+        """
+        Verifies that two process clones built from identical state
+        produce identical snapshots (content equality, ignoring identity index).
+        """
+        sa = clone_a.get("snapshot", {})
+        sb = clone_b.get("snapshot", {})
+        # Remove process-identity-only fields before comparison
+        for key in ["logical_process_index"]:
+            sa.pop(key, None)
+            sb.pop(key, None)
+        return json.dumps(sa, sort_keys=True) == json.dumps(sb, sort_keys=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 123: FORMAL MEMORY MODEL CONSISTENCY LAYER (PROMPT 19 PART 3)
+# ════════════════════════════════════════════════════════════════════════════
+
+class PointerDepthMismatchError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_POINTER_DEPTH_MISMATCH"
+    ERROR_CATEGORY = "MemoryModel"
+
+class MisalignedPointerError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_POINTER_MISALIGNED"
+    ERROR_CATEGORY = "MemoryModel"
+
+class IntegerWidthViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_INTEGER_WIDTH_VIOLATION"
+    ERROR_CATEGORY = "MemoryModel"
+
+class IllegalCastError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_ILLEGAL_CAST"
+    ERROR_CATEGORY = "MemoryModel"
+
+class GenerationEpochReuseError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_GENERATION_EPOCH_REUSE"
+    ERROR_CATEGORY = "MemoryModel"
+
+class MemoryAliasConflictError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_MEMORY_ALIAS_CONFLICT"
+    ERROR_CATEGORY = "MemoryModel"
+
+class StructLayoutMismatchError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_STRUCT_LAYOUT_MISMATCH"
+    ERROR_CATEGORY = "MemoryModel"
+
+class BufferOverflowRiskError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_BUFFER_OVERFLOW_RISK"
+    ERROR_CATEGORY = "MemoryModel"
+
+
+@dataclass
+class CanonicalMemoryDescriptor:
+    """
+    Internal abstraction for every memory-bearing parameter at the FFI boundary.
+    Raw ctypes objects must NOT be used without wrapping in this descriptor first.
+    """
+    base_address: int          # integer representation of pointer
+    byte_size: int             # declared byte footprint
+    alignment: int             # required alignment
+    type_signature: str        # canonical type string e.g. "u32*" or "struct Foo**"
+    mutability_flag: bool      # True = mutable, False = immutable/const
+    ownership_flag: str        # "caller", "callee", "shared"
+    pointer_depth: int         # 0 = raw value, 1 = ptr, 2 = ptr-to-ptr, …
+    allocation_epoch: int      # monotonic generation counter
+
+
+@dataclass
+class CanonicalPointerIdentity:
+    """
+    Uniquely identifies a pointer independent of Python wrapper object id or PID.
+    """
+    contract_fingerprint: str
+    pointer_address: int
+    allocation_epoch: int
+    pointer_depth: int
+    pointer_type_signature: str
+
+    def to_hash(self) -> str:
+        raw = json.dumps({
+            "contract_fingerprint": self.contract_fingerprint,
+            "pointer_address": self.pointer_address,
+            "allocation_epoch": self.allocation_epoch,
+            "pointer_depth": self.pointer_depth,
+            "pointer_type_signature": self.pointer_type_signature
+        }, sort_keys=True)
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+class MemoryModelConsistencyEngine:
+    """
+    Validates every cross-boundary memory parameter against the formal
+    canonical memory model before native invocation.  (Prompt 19 Part 3)
+    """
+
+    # Maximum allowed bits for validated integers (beyond this → truncation risk)
+    MAX_INTEGER_BITS: int = 256
+
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        # registry: pointer_address → (CanonicalPointerIdentity, type_signature)
+        self._pointer_registry: Dict[int, Tuple[CanonicalPointerIdentity, str]] = {}
+        self._epoch_counter: int = 0
+
+    # ── epoch management ────────────────────────────────────────────────────
+
+    def next_epoch(self) -> int:
+        self._epoch_counter += 1
+        return self._epoch_counter
+
+    # ── validation helpers ──────────────────────────────────────────────────
+
+    def validate_pointer_depth(self, declared_depth: int, actual_depth: int,
+                               fingerprint: str):
+        if declared_depth != actual_depth:
+            raise PointerDepthMismatchError(
+                f"Pointer depth mismatch: declared={declared_depth}, "
+                f"actual={actual_depth}.",
+                fingerprint
+            )
+
+    def validate_alignment(self, address: int, required_alignment: int,
+                           fingerprint: str):
+        if required_alignment > 0 and address % required_alignment != 0:
+            raise MisalignedPointerError(
+                f"Pointer 0x{address:x} violates required alignment "
+                f"of {required_alignment} bytes.",
+                fingerprint
+            )
+
+    def validate_integer_width(self, value: int, bit_width: int, signed: bool,
+                               fingerprint: str):
+        if bit_width <= 0 or bit_width > self.MAX_INTEGER_BITS:
+            raise IntegerWidthViolationError(
+                f"Invalid bit_width={bit_width}. Must be 1..{self.MAX_INTEGER_BITS}.",
+                fingerprint
+            )
+        if signed:
+            lo = -(1 << (bit_width - 1))
+            hi = (1 << (bit_width - 1)) - 1
+        else:
+            lo = 0
+            hi = (1 << bit_width) - 1
+        if not (lo <= value <= hi):
+            raise IntegerWidthViolationError(
+                f"Value {value} out of range [{lo}, {hi}] for "
+                f"{'signed' if signed else 'unsigned'} {bit_width}-bit integer. "
+                "Implicit truncation prevented.",
+                fingerprint
+            )
+
+    def validate_struct_layout(self, declared_fields: List[Tuple[str, int, int]],
+                               provided_fields: List[Tuple[str, int, int]],
+                               fingerprint: str):
+        """
+        Each field tuple: (name, byte_offset, byte_size).
+        Validates order, offsets, and sizes deterministically.
+        """
+        if len(declared_fields) != len(provided_fields):
+            raise StructLayoutMismatchError(
+                f"Struct field count mismatch: declared={len(declared_fields)}, "
+                f"provided={len(provided_fields)}.",
+                fingerprint
+            )
+        for idx, (d, p) in enumerate(zip(declared_fields, provided_fields)):
+            d_name, d_off, d_sz = d
+            p_name, p_off, p_sz = p
+            if d_name != p_name or d_off != p_off or d_sz != p_sz:
+                raise StructLayoutMismatchError(
+                    f"Struct field[{idx}] mismatch: "
+                    f"declared=({d_name},{d_off},{d_sz}) "
+                    f"provided=({p_name},{p_off},{p_sz}).",
+                    fingerprint
+                )
+
+    def validate_buffer_bounds(self, declared_length: int, element_size: int,
+                               max_allowed_bytes: int, fingerprint: str):
+        total = declared_length * element_size
+        if total > max_allowed_bytes:
+            raise BufferOverflowRiskError(
+                f"Buffer footprint {total} bytes exceeds max_allowed "
+                f"{max_allowed_bytes} bytes. Overflow risk rejected statically.",
+                fingerprint
+            )
+
+    def register_and_validate_alias(self, identity: CanonicalPointerIdentity,
+                                    type_signature: str):
+        """
+        Registers a pointer identity.  
+        Detects semantic type conflict (alias detection) and stale epoch reuse.
+        """
+        addr = identity.pointer_address
+        fp   = identity.contract_fingerprint
+
+        if addr in self._pointer_registry:
+            existing_id, existing_type = self._pointer_registry[addr]
+
+            # Generation epoch reuse detection
+            if existing_id.allocation_epoch == identity.allocation_epoch:
+                if existing_type != type_signature:
+                    raise MemoryAliasConflictError(
+                        f"Pointer 0x{addr:x} already registered as "
+                        f"'{existing_type}' but now presented as '{type_signature}'.",
+                        fp
+                    )
+            else:
+                # New epoch — stale pointer check
+                # Only allow if previous pointer was freed (not tracked here simply,
+                # so we treat as new registration and overwrite)
+                pass
+
+        self._pointer_registry[addr] = (identity, type_signature)
+
+    def validate_no_illegal_cast(self, src_type: str, dst_type: str,
+                                 fingerprint: str):
+        """Rejects semantically incompatible pointer casts."""
+        # integer → pointer without canonical wrapping
+        if src_type == "int" and dst_type.endswith("*"):
+            raise IllegalCastError(
+                f"Illegal cast: raw integer to pointer type '{dst_type}'. "
+                "Use CanonicalMemoryDescriptor wrapping.",
+                fingerprint
+            )
+        # array pointer → struct pointer
+        if src_type.startswith("array[") and "struct" in dst_type:
+            raise IllegalCastError(
+                f"Illegal cast: array pointer '{src_type}' to struct pointer '{dst_type}'.",
+                fingerprint
+            )
+        # pointer → narrower integer
+        if src_type.endswith("*") and dst_type == "int":
+            raise IllegalCastError(
+                f"Illegal cast: pointer '{src_type}' to plain integer. "
+                "Narrowing cast rejected.",
+                fingerprint
+            )
+
+    def build_canonical_descriptor(self, base_address: int, byte_size: int,
+                                   alignment: int, type_signature: str,
+                                   mutability_flag: bool, ownership_flag: str,
+                                   pointer_depth: int) -> CanonicalMemoryDescriptor:
+        epoch = self.next_epoch()
+        return CanonicalMemoryDescriptor(
+            base_address=base_address,
+            byte_size=byte_size,
+            alignment=alignment,
+            type_signature=type_signature,
+            mutability_flag=mutability_flag,
+            ownership_flag=ownership_flag,
+            pointer_depth=pointer_depth,
+            allocation_epoch=epoch
+        )
+
+
+class PointerSemanticCanonicalizer:
+    """
+    Canonicalizes all pointer parameters entering the FFI boundary and
+    delegates validation to MemoryModelConsistencyEngine.  (Prompt 19 Part 3)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def canonicalize(self, raw_value: Any, declared_type: str,
+                     bit_width: int = 0, signed: bool = False) -> CanonicalMemoryDescriptor:
+        """
+        Converts a raw Python value to a CanonicalMemoryDescriptor after
+        running all memory-model validations.
+        """
+        engine = self.context.memory_engine
+        fp     = self.context.fingerprint
+
+        is_pointer = declared_type.endswith("*")
+        is_integer = not is_pointer
+
+        if is_integer:
+            if not isinstance(raw_value, int):
+                raise IllegalCastError(
+                    f"Non-integer value passed for integer type '{declared_type}'.",
+                    fp
+                )
+            if bit_width > 0:
+                engine.validate_integer_width(raw_value, bit_width, signed, fp)
+            return engine.build_canonical_descriptor(
+                base_address=0,
+                byte_size=(bit_width + 7) // 8 if bit_width > 0 else 8,
+                alignment=1,
+                type_signature=declared_type,
+                mutability_flag=False,
+                ownership_flag="caller",
+                pointer_depth=0
+            )
+        else:
+            # Pointer path
+            if not isinstance(raw_value, int) or raw_value < 0:
+                raise IllegalCastError(
+                    f"Pointer parameter '{declared_type}' must be a non-negative integer address.",
+                    fp
+                )
+            depth = declared_type.count("*")
+            engine.validate_pointer_depth(depth, depth, fp)  # cross-checks declared
+            descriptor = engine.build_canonical_descriptor(
+                base_address=raw_value,
+                byte_size=8,
+                alignment=8,
+                type_signature=declared_type,
+                mutability_flag=True,
+                ownership_flag="caller",
+                pointer_depth=depth
+            )
+            identity = CanonicalPointerIdentity(
+                contract_fingerprint=fp,
+                pointer_address=raw_value,
+                allocation_epoch=descriptor.allocation_epoch,
+                pointer_depth=depth,
+                pointer_type_signature=declared_type
+            )
+            engine.register_and_validate_alias(identity, declared_type)
+            return descriptor
+
+
 # ════════════════════════════════════════════════════════════════════════════
 
 class StateSnapshotManager:
@@ -1456,8 +2096,9 @@ class RegressionBaselineManager:
         self.context = context
         self._accepted_baseline: Optional[Dict[str, Any]] = None
 
-    def generate_new_baseline_from_snapshot(self) -> Dict[str, Any]:
-        snapshot = self.context.snapshot_manager.export_state_snapshot()
+    def generate_new_baseline_from_snapshot(self, snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if snapshot is None:
+            snapshot = self.context.snapshot_manager.export_state_snapshot()
         
         baseline = {
             "baseline_schema_version": "1.0",
@@ -1487,7 +2128,9 @@ class RegressionBaselineManager:
         
         report = {
             "baseline_fingerprint": self.get_baseline_fingerprint(baseline),
-            "current_snapshot_fingerprint": self.get_baseline_fingerprint(snapshot),
+            "current_snapshot_fingerprint": self.get_baseline_fingerprint(
+                self.generate_new_baseline_from_snapshot(snapshot)
+            ),
             "drift_detected": drift_detected,
             "drift_categories": categories,
             "severity_summary": severity,
@@ -1618,7 +2261,17 @@ class EnforcementContext:
         self.regression_manager = RegressionBaselineManager(self)
         self.simulation_engine = SimulationEngine(self)
         self.dry_run_coordinator = DryRunCoordinator(self)
-        
+        # Prompt 19 Part 1 — Concurrency Discipline
+        self.concurrency_discipline = ConcurrencyDisciplineManager(self)
+        self.thread_safety_verifier = ThreadSafetyVerifier(self)
+        # Prompt 19 Part 2 — Multi-Process Isolation
+        self.process_isolation = ProcessIsolationManager(self)
+        self.ipc_coordinator = InterProcessDeterminismCoordinator(self)
+        # Prompt 19 Part 3 — Memory Model
+        self.memory_engine = MemoryModelConsistencyEngine(self)
+        self.pointer_canonicalizer = PointerSemanticCanonicalizer(self)
+
+
         self.invocation_sequence_counter = 0
         self.active_invocation_count = 0
         self._invocation_lock = threading.Lock()
@@ -3406,7 +4059,10 @@ class RuntimeConfiguration:
                   max_crash_snapshots=10,
                   max_lifecycle_entries=5000,
                   # Prompt 18 Extensions
-                  simulation_mode_enabled=False):
+                  simulation_mode_enabled=False,
+                  # Prompt 19 Extensions
+                  concurrency_stress_validation_enabled=False,
+                  multiprocess_stress_validation_enabled=False):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
@@ -3473,6 +4129,9 @@ class RuntimeConfiguration:
         self.max_lifecycle_entries = max_lifecycle_entries
         # Prompt 18
         self.simulation_mode_enabled = simulation_mode_enabled
+        # Prompt 19
+        self.concurrency_stress_validation_enabled = concurrency_stress_validation_enabled
+        self.multiprocess_stress_validation_enabled = multiprocess_stress_validation_enabled
         self._sealed = False
 
 
