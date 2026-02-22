@@ -1282,3 +1282,27 @@ Contracts have a formal termination protocol to ensure clean resource release an
 - **Graceful Finalization**: Ensures in-flight invocations complete before flushing registries and invalidating artifacts.
 - **Hard Reset Guarantee**: Provides a mechanism for full state wiping and re-initialization of the enforcement context.
 - **Deterministic Termination Report**: A final, fingerprint-stabilized audit report capturing the terminal state of the contract boundary.
+## Prompt 22 Part 1 — Formal Trust Boundary and Supply-Chain Verification Model
+The adapter enforces a strictly governed trust boundary between the enforcement engine and external artifacts.
+- **Trust Boundary Definition**: All inputs (contracts, baselines, configurations, journals) are treated as untrusted until verified.
+- **Artifact Fingerprint Model**: Deterministic computation of SHA256 fingerprints for all artifact types (contracts, snapshots, etc.).
+- **Integrity Verification Workflow**: Fail-closed validation of fingerprints upon artifact load.
+- **Configuration Seal Model**: Cryptographic sealing of approved configurations to prevent runtime injection attacks.
+- **Cross-Environment Mismatch Detection**: Identifies environmental drift through fingerprint comparison.
+- **Deterministic Integrity Report**: Summary of verification status across the entire artifact supply chain.
+
+## Prompt 22 Part 2 — Formal Audit Trail Consolidation and Deterministic Evidence Export
+Every enforcement decision and lifecycle event is captured in a high-integrity, tamper-evident audit trail.
+- **Audit Entry Schema**: Standardized log entries containing fingerprints, event types, policy stages, and severity levels.
+- **Hash-Chain Integrity**: Audit entries are cryptographically chained (previous_chain_fingerprint) to ensure immutability.
+- **Tamper Detection**: Verification of the hash chain on export to detect any trace manipulation.
+- **Deterministic Evidence Export**: Structured, timestamp-free export of the audit trail for compliance and forensic use.
+- **Cross-Subsystem Consolidation**: Centralized logging for violations, crashes, version transitions, and integrity events.
+
+## Prompt 22 Part 3 — Formal Governance Model and Deterministic Authorization Layer
+Runtime role segmentation ensures that sensitive enforcement actions are governed by formal authorization rules.
+- **Canonical Runtime Roles**: Strict roles including ROLE_OBSERVER, ROLE_OPERATOR, ROLE_ENGINEER, ROLE_SECURITY, ROLE_AUDITOR, ROLE_ADMIN, and ROLE_SYSTEM.
+- **Deterministic Permission Mapping**: Role-based access control for actions like baseline regeneration, breaking overrides, and simulation enablement.
+- **Sensitive Action Protection**: Permission checks enforced at the authorization layer before execution.
+- **Authorization Audit Integration**: Every authorization decision is captured in the immutable audit trail.
+- **Fail-Closed Authorization Model**: Default 'deny' posture if roles or permissions are ambiguous.

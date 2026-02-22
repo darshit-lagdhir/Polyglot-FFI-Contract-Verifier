@@ -3,6 +3,7 @@
 # Copyright (c) 2025 Darshit Lagdhir and Team LOGLORE. All Rights Reserved.
 # ==============================================================================
 import unittest
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     EnforcementContext, ContractMetadata, RuntimeConfiguration, InvocationJournalEntry
 )

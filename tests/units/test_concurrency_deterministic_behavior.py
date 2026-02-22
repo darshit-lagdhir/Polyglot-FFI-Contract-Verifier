@@ -3,6 +3,7 @@ Test: Deterministic Concurrency Behavior (Prompt 19 Part 1)
 """
 import pytest
 import threading
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     EnforcementContext, ContractMetadata, DeadlockRiskDetectedError
 )

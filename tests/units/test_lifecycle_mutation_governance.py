@@ -25,6 +25,7 @@ import os
 # Set PYTHONPATH
 sys.path.append(os.getcwd())
 
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     LifecycleState,
     LifecycleReason,

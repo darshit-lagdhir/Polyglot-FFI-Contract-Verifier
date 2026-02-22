@@ -102,6 +102,18 @@ class ContractTerminationError(AdapterRuntimeError):
     ERROR_CODE = "ERR_CONTRACT_TERMINATED"
     ERROR_CATEGORY = "Lifecycle"
 
+class ArtifactIntegrityError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_ARTIFACT_INTEGRITY_FAILURE"
+    ERROR_CATEGORY = "Security"
+
+class AuditIntegrityViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_AUDIT_INTEGRITY_VIOLATION"
+    ERROR_CATEGORY = "Security"
+
+class AuthorizationViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_AUTHORIZATION_FAILURE"
+    ERROR_CATEGORY = "Governance"
+
 class ABICompatibilityError(AdapterRuntimeError):
     ERROR_CODE = "ERR_ABI_INCOMPATIBLE"
     ERROR_CATEGORY = "AbiConformance"
@@ -128,6 +140,37 @@ class OwnershipViolationError(EnforcementError):
         metadata["pointer_value"] = f"0x{pointer_value:x}"
         kwargs["metadata"] = metadata
         super().__init__(message, fingerprint, **kwargs)
+
+class DeprecationPhase(Enum):
+    """Deterministic deprecation phases (Prompt 21 Part 2)."""
+    ANNOUNCED = "ANNOUNCED"
+    WARNING = "WARNING"
+    ENFORCED = "ENFORCED"
+    SUNSET = "SUNSET"
+
+class RuntimeRole(Enum):
+    """Canonical runtime roles for governance (Prompt 22 Part 3)."""
+    ROLE_OBSERVER = "ROLE_OBSERVER"
+    ROLE_OPERATOR = "ROLE_OPERATOR"
+    ROLE_ENGINEER = "ROLE_ENGINEER"
+    ROLE_SECURITY = "ROLE_SECURITY"
+    ROLE_AUDITOR = "ROLE_AUDITOR"
+    ROLE_ADMIN = "ROLE_ADMIN"
+    ROLE_SYSTEM = "ROLE_SYSTEM"
+
+class Permission(Enum):
+    """Governance permission categories."""
+    OVERRIDE_BREAKING_CHANGE = "OVERRIDE_BREAKING_CHANGE"
+    ENABLE_SIMULATION = "ENABLE_SIMULATION"
+    REGENERATE_BASELINE = "REGENERATE_BASELINE"
+    RESET_CONTRACT = "RESET_CONTRACT"
+    DISABLE_INTEGRITY_VERIFICATION = "DISABLE_INTEGRITY_VERIFICATION"
+    EXPORT_AUDIT = "EXPORT_AUDIT"
+    ACCEPT_DEPRECATION_OVERRIDE = "ACCEPT_DEPRECATION_OVERRIDE"
+    FORCE_TERMINATION = "FORCE_TERMINATION"
+    CONFIGURATION_UPDATE = "CONFIGURATION_UPDATE"
+    ENABLE_DEBUG_MODE = "ENABLE_DEBUG_MODE"
+    ENABLE_PERFORMANCE_OVERRIDE = "ENABLE_PERFORMANCE_OVERRIDE"
 
 class StructureLayoutMismatchError(AdapterRuntimeError):
     ERROR_CODE = "ERR_ABI_LAYOUT_MISMATCH"
@@ -2496,6 +2539,220 @@ class HardResetCoordinator:
         self.context.termination_manager._state = ContractLifecycleState.RESET_COMPLETE
         self.context.termination_manager._state = ContractLifecycleState.ACTIVE
 
+# ==============================================================================
+# SECTION 107: FORMAL TRUST BOUNDARY AND ARTIFACT INTEGRITY (Prompt 22 Part 1)
+# ==============================================================================
+
+class ArtifactIntegrityVerifier:
+    """Verifies deterministic fingerprints of external artifacts."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def compute_fingerprint(self, data: Any) -> str:
+        """Computes stable SHA256 of canonicalized artifact data."""
+        from dataclasses import is_dataclass, asdict
+        if is_dataclass(data):
+            serialized = json.dumps(asdict(data), sort_keys=True)
+        elif isinstance(data, dict):
+            # Canonical serialization: sorted keys
+            serialized = json.dumps(data, sort_keys=True)
+        elif isinstance(data, str):
+            serialized = data
+        else:
+            serialized = str(data)
+        
+        return hashlib.sha256(serialized.encode()).hexdigest()[:32]
+
+    def verify_artifact(self, artifact_type: str, data: Any, expected_fp: Optional[str] = None) -> Dict[str, Any]:
+        """Validates artifact integrity and returns report."""
+        actual_fp = self.compute_fingerprint(data)
+        status = "VERIFIED"
+        
+        if expected_fp and actual_fp != expected_fp:
+            status = "FAILED"
+            self.context.telemetry_manager.emit("ARTIFACT_INTEGRITY_FAILURE", {
+                "type": artifact_type,
+                "expected": expected_fp,
+                "actual": actual_fp
+            }, "FATAL")
+            raise ArtifactIntegrityError(f"Integrity check failed for {artifact_type}. Expected {expected_fp}, got {actual_fp}", self.context.fingerprint)
+
+        report = {
+            "artifact_type": artifact_type,
+            "expected_fingerprint": expected_fp,
+            "actual_fingerprint": actual_fp,
+            "contract_fingerprint": self.context.fingerprint,
+            "validation_status": status,
+            "deterministic_integrity_fingerprint": hashlib.sha256(f"{artifact_type}|{actual_fp}".encode()).hexdigest()[:16]
+        }
+        return report
+
+class TrustBoundaryManager:
+    """Orchestrates artifact integrity across the trust boundary."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self.verifier = ArtifactIntegrityVerifier(context)
+        self._sealed_config_fp: Optional[str] = None
+
+    def seal_configuration(self, config_data: Dict[str, Any]):
+        """Creates an integrity seal for the active configuration."""
+        self._sealed_config_fp = self.verifier.compute_fingerprint(config_data)
+
+    def validate_config_seal(self, current_config_data: Dict[str, Any]):
+        """Ensures active configuration has not been tampered with."""
+        if self._sealed_config_fp is None:
+            return
+        current_fp = self.verifier.compute_fingerprint(current_config_data)
+        if current_fp != self._sealed_config_fp:
+            raise ArtifactIntegrityError("Configuration seal violation detected.", self.context.fingerprint)
+
+# ==============================================================================
+# SECTION 108: FORMAL AUDIT TRAIL AND EVIDENCE EXPORT (Prompt 22 Part 2)
+# ==============================================================================
+
+@dataclass(frozen=True)
+class AuditEntry:
+    """Canonical structure for high-integrity audit entries."""
+    sequence_index: int
+    event_type: str
+    contract_fingerprint: str
+    policy_stage: str
+    severity: str
+    associated_fingerprint: str
+    entry_fingerprint: str
+    previous_chain_fingerprint: str
+    primary_error_code: Optional[str] = None
+    suppressed_error_codes: List[str] = field(default_factory=list)
+    nested_depth: int = 0
+
+class AuditTrailManager:
+    """Maintains an immutable hash-chain of all enforcement events."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._chain: List[AuditEntry] = []
+        self._last_chain_fp: str = "0" * 32
+
+    def commit_entry(self, event_type: str, policy_stage: str, severity: str, 
+                     associated_fp: str = "ZERO", error_code: Optional[str] = None,
+                     suppressed: Optional[List[str]] = None):
+        """Appends a new deterministic entry to the audit chain."""
+        seq = len(self._chain)
+        suppressed = suppressed or []
+        
+        # Compute Entry Fingerprint
+        raw = f"{seq}|{event_type}|{self.context.fingerprint}|{policy_stage}|{severity}|{associated_fp}|{error_code}|{self._last_chain_fp}"
+        entry_fp = hashlib.sha256(raw.encode()).hexdigest()[:32]
+        
+        entry = AuditEntry(
+            sequence_index=seq,
+            event_type=event_type,
+            contract_fingerprint=self.context.fingerprint,
+            policy_stage=policy_stage,
+            severity=severity,
+            associated_fingerprint=associated_fp,
+            entry_fingerprint=entry_fp,
+            previous_chain_fingerprint=self._last_chain_fp,
+            primary_error_code=error_code,
+            suppressed_error_codes=suppressed,
+            nested_depth=self.context.active_invocation_count
+        )
+        
+        self._chain.append(entry)
+        self._last_chain_fp = entry_fp
+
+    def get_chain_fingerprint(self) -> str:
+        return self._last_chain_fp
+
+    def export_evidence(self) -> List[Dict[str, Any]]:
+        """Provides deterministic evidence log for compliance."""
+        # Simple tamper check before export
+        self._validate_chain_integrity()
+        return [asdict(e) for e in self._chain]
+
+    def _validate_chain_integrity(self):
+        current_prev = "0" * 32
+        for i, entry in enumerate(self._chain):
+            # Re-verify Entry Fingerprint
+            raw = f"{entry.sequence_index}|{entry.event_type}|{self.context.fingerprint}|{entry.policy_stage}|{entry.severity}|{entry.associated_fingerprint}|{entry.primary_error_code}|{entry.previous_chain_fingerprint}"
+            recomputed = hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+            if entry.entry_fingerprint != recomputed or entry.sequence_index != i or entry.previous_chain_fingerprint != current_prev:
+                raise AuditIntegrityViolationError("Audit chain corruption detected.", self.context.fingerprint)
+            current_prev = entry.entry_fingerprint
+
+class DeterministicEvidenceExporter:
+    """Orchestrates structured evidence export for external auditors."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def generate_compliance_bundle(self) -> Dict[str, Any]:
+        return {
+            "schema_version": "1.0",
+            "contract_fingerprint": self.context.fingerprint,
+            "audit_trail": self.context.audit_manager.export_evidence(),
+            "chain_fingerprint": self.context.audit_manager.get_chain_fingerprint(),
+            "total_entries": len(self.context.audit_manager._chain)
+        }
+
+# ==============================================================================
+# SECTION 109: FORMAL GOVERNANCE AND AUTHORIZATION (Prompt 22 Part 3)
+# ==============================================================================
+
+class GovernancePolicyModel:
+    """Defines deterministic role-to-permission mappings."""
+    def __init__(self):
+        self._role_map = {
+            RuntimeRole.ROLE_OBSERVER: {Permission.EXPORT_AUDIT},
+            RuntimeRole.ROLE_OPERATOR: {
+                Permission.EXPORT_AUDIT, 
+                Permission.ENABLE_SIMULATION
+            },
+            RuntimeRole.ROLE_ENGINEER: {
+                Permission.EXPORT_AUDIT,
+                Permission.ENABLE_SIMULATION,
+                Permission.CONFIGURATION_UPDATE,
+                Permission.ACCEPT_DEPRECATION_OVERRIDE
+            },
+            RuntimeRole.ROLE_SECURITY: {
+                Permission.EXPORT_AUDIT,
+                Permission.DISABLE_INTEGRITY_VERIFICATION,
+                Permission.ENABLE_PERFORMANCE_OVERRIDE
+            },
+            RuntimeRole.ROLE_AUDITOR: {Permission.EXPORT_AUDIT},
+            RuntimeRole.ROLE_ADMIN: set(Permission),
+            RuntimeRole.ROLE_SYSTEM: set(Permission)
+        }
+
+    def has_permission(self, role: RuntimeRole, permission: Permission) -> bool:
+        return permission in self._role_map.get(role, set())
+
+class RuntimeAuthorizationManager:
+    """Enforces deterministic role-based authorization."""
+    def __init__(self, context: 'EnforcementContext', role: RuntimeRole = RuntimeRole.ROLE_OBSERVER):
+        self.context = context
+        self.role = role
+        self.model = GovernancePolicyModel()
+
+    def check_permission(self, permission: Permission):
+        """Validates that current role possesses the required permission."""
+        is_allowed = self.model.has_permission(self.role, permission)
+        
+        # Log decision in Audit Trail
+        auth_fp = hashlib.sha256(f"{self.role.value}|{permission.value}|{is_allowed}".encode()).hexdigest()[:16]
+        self.context.audit_manager.commit_entry(
+            event_type="AUTHORIZATION_CHECK",
+            policy_stage="AUTH_LAYER",
+            severity="INFO" if is_allowed else "SECURITY_ALERT",
+            associated_fp=auth_fp,
+            error_code=None if is_allowed else "ERR_AUTHORIZATION_FAILURE"
+        )
+
+        if not is_allowed:
+            raise AuthorizationViolationError(
+                f"Role {self.role.value} is not authorized for {permission.value}",
+                self.context.fingerprint
+            )
+
 # ════════════════════════════════════════════════════════════════════════════
 
 
@@ -2593,7 +2850,9 @@ class StateSnapshotManager:
             "last_performance_snapshot": asdict(getattr(self.context, "performance_snapshot")) if hasattr(self.context, "performance_snapshot") else None,
             "invariant_status_summary": "Passed",
             "deprecation_audit": self.context.deprecation_manager.generate_audit_report(),
-            "lifecycle_state": self.context.termination_manager._state.value
+            "lifecycle_state": self.context.termination_manager._state.value,
+            "audit_chain_fingerprint": self.context.audit_manager.get_chain_fingerprint(),
+            "total_audit_entries": len(self.context.audit_manager._chain)
         }
         
         # Ensure pure deterministic ordering of root keys
@@ -2836,9 +3095,22 @@ class EnforcementContext:
     """
     Encapsulates all enforcement state for a specific contract fingerprint.
     """
-    def __init__(self, fingerprint: str, metadata: ContractMetadata):
+    def __init__(self, fingerprint: str, metadata: ContractMetadata, role: RuntimeRole = RuntimeRole.ROLE_OBSERVER):
         self.fingerprint = fingerprint
         self.metadata = metadata
+        
+        # Core state counters and locks (Moved up Prompt 22 fix)
+        self.invocation_sequence_counter = 0
+        self.active_invocation_count = 0
+        self._invocation_lock = threading.Lock()
+        
+        # Segment locks for registry
+        self.num_segments = 16
+        self.segment_locks = [
+            HierarchicalLock(LOCK_LEVEL_REGISTRY_GLOBAL, f"SegmentLock_{i}")
+            for i in range(self.num_segments)
+        ]
+
         self.registry = OwnershipRegistry(self)
         self.lifecycle_model = LifecycleStateModel()
         self.transition_coordinator = TransitionCoordinator(self.registry)
@@ -2898,7 +3170,26 @@ class EnforcementContext:
         self.termination_manager = ContractTerminationManager(self)
         self.hard_reset_coordinator = HardResetCoordinator(self)
 
-        # 1. ABI Compatibility Check (Prompt 20 Part 1 Step 3)
+        # Prompt 22 Part 1 — Trust Boundary
+        self.trust_boundary = TrustBoundaryManager(self)
+        # Prompt 22 Part 2 — Audit Trail
+        self.audit_manager = AuditTrailManager(self)
+        self.evidence_exporter = DeterministicEvidenceExporter(self)
+        # Prompt 22 Part 3 — Authorization
+        self.authorization_manager = RuntimeAuthorizationManager(self, role)
+
+        # 1. Audit Initialize
+        self.audit_manager.commit_entry("LIFECYCLE_INITIALIZED", "BOOT", "INFO", associated_fp=self.fingerprint)
+
+        # 2. Contract Integrity Check (Prompt 22 Part 1)
+        self.trust_boundary.verifier.verify_artifact("CONTRACT_METADATA", self.metadata, self.fingerprint)
+        
+        # 3. Configuration Seal (Prompt 22 Part 1)
+        config_obj = self.config_controller.get()
+        config_dict = {k: v for k, v in vars(config_obj).items() if not k.startswith("_")}
+        self.trust_boundary.seal_configuration(config_dict)
+
+        # 4. ABI Compatibility Check (Prompt 20 Part 1 Step 3)
         abi_report = self.abi_engine.validate_compatibility()
         if not abi_report.compatibility_result:
             raise ABICompatibilityError(
@@ -2907,16 +3198,8 @@ class EnforcementContext:
             )
 
 
-        self.invocation_sequence_counter = 0
-        self.active_invocation_count = 0
-        self._invocation_lock = threading.Lock()
-        
-        # Segment locks for registry (Part 1 Step 2)
-        self.num_segments = 16
-        self.segment_locks = [
-            HierarchicalLock(LOCK_LEVEL_REGISTRY_GLOBAL, f"SegmentLock_{i}")
-            for i in range(self.num_segments)
-        ]
+        # Phase 4 initialization complete.
+
 
     def get_segment_lock(self, pointer: int) -> HierarchicalLock:
         return self.segment_locks[hash(pointer) % self.num_segments]
@@ -2967,11 +3250,11 @@ class MultiContractContextManager:
                 cls._instance = cls()
             return cls._instance
 
-    def register_context(self, fingerprint: str, metadata: ContractMetadata) -> EnforcementContext:
+    def register_context(self, fingerprint: str, metadata: ContractMetadata, role: RuntimeRole = RuntimeRole.ROLE_OBSERVER) -> EnforcementContext:
         with self._context_lock:
             if fingerprint in self._contexts:
                 return self._contexts[fingerprint]
-            ctx = EnforcementContext(fingerprint, metadata)
+            ctx = EnforcementContext(fingerprint, metadata, role=role)
             self._contexts[fingerprint] = ctx
             return ctx
 
@@ -5736,12 +6019,7 @@ class ContractLifecycleState(Enum):
     HARD_RESET_PENDING = "HARD_RESET_PENDING"
     RESET_COMPLETE = "RESET_COMPLETE"
 
-class DeprecationPhase(Enum):
-    """Deterministic deprecation phases (Prompt 21 Part 2)."""
-    ANNOUNCED = "ANNOUNCED"
-    WARNING = "WARNING"
-    ENFORCED = "ENFORCED"
-    SUNSET = "SUNSET"
+# Enums moved to section above (Prompt 22 fix)
 
 class OwnershipKind(Enum):
     """
@@ -6888,8 +7166,11 @@ class LanguageAdapter:
         contract = self.projector.load_contract(contract_path)
         metadata = self.projector._extract_metadata(contract)
         
+        # Resolve role (Prompt 22 Part 3)
+        role = self._resolve_runtime_role(metadata)
+
         # Register per-contract context
-        self.active_context = self._manager.register_context(metadata.fingerprint, metadata)
+        self.active_context = self._manager.register_context(metadata.fingerprint, metadata, role=role)
         
         # Project validation graphs
         for func_name in metadata.descriptors.keys():
@@ -6923,6 +7204,7 @@ class LanguageAdapter:
         
         # Simulation Mode Dry-Run Check (Prompt 18 Part 3)
         if ctx.config_controller.get().simulation_mode_enabled:
+            ctx.authorization_manager.check_permission(Permission.ENABLE_SIMULATION)
             return ctx.dry_run_coordinator.run_simulation(function_name, inputs)
 
         # 1. Security Integrity Check (Part 1 Step 4)
@@ -7051,6 +7333,14 @@ class LanguageAdapter:
             'loaded_functions': len(self.validation_graphs),
             'ownership': self.ownership_registry.get_statistics()
         }
+
+    def _resolve_runtime_role(self, metadata: ContractMetadata) -> RuntimeRole:
+        """Deterministically resolves role from contract metadata or environment."""
+        role_str = metadata.custom_metadata.get("governance_role", "ROLE_OBSERVER")
+        try:
+            return RuntimeRole(role_str)
+        except ValueError:
+            return RuntimeRole.ROLE_OBSERVER
         
 # ════════════════════════════════════════════════════════════════════════════
 # SECTION 13: PHASE RESULT
@@ -7221,6 +7511,19 @@ class InvocationOrchestrator:
         captured_exceptions = []
 
         try:
+            # PHASE: INTEGRITY CHECK (Prompt 22 Part 1)
+            config_obj = context.config_controller.get()
+            config_dict = {k: v for k, v in vars(config_obj).items() if not k.startswith("_")}
+            context.trust_boundary.validate_config_seal(config_dict)
+
+            # PHASE: AUDIT TRAIL START (Prompt 22 Part 2)
+            context.audit_manager.commit_entry(
+                event_type="INVOCATION_STARTED",
+                policy_stage="ENTRY",
+                severity="INFO",
+                associated_fp=hashlib.sha256(function_name.encode()).hexdigest()[:16]
+            )
+
             # PHASE: LIFECYCLE CHECK (Prompt 21 Part 3)
             if not context.termination_manager.is_active():
                 raise ContractTerminationError("Contract is terminated or terminating.", context.fingerprint)
@@ -7306,12 +7609,31 @@ class InvocationOrchestrator:
             context.performance_snapshot = context.performance_validator.generate_performance_snapshot(function_name, seq_idx)
             
             context.finalize()
+            
+            # PHASE: AUDIT TRAIL COMPLETE (Prompt 22 Part 2)
+            context.audit_manager.commit_entry(
+                event_type="INVOCATION_COMPLETED",
+                policy_stage="EXIT",
+                severity="INFO",
+                associated_fp="SUCCESS"
+            )
+
             return self._assemble_success_result(context, native_result)
 
         except Exception as e:
             if e not in captured_exceptions:
                 captured_exceptions.append(e)
             primary = context.priority_resolver.resolve_violation(captured_exceptions)
+            
+            # PHASE: AUDIT TRAIL ERROR (Prompt 22 Part 2)
+            context.audit_manager.commit_entry(
+                event_type="INVOCATION_FAILED",
+                policy_stage="EXIT",
+                severity="ERROR",
+                associated_fp=getattr(primary, "ERROR_CODE", "UNKNOWN"),
+                error_code=getattr(primary, "ERROR_CODE", None)
+            )
+
             raise primary
         finally:
             context.active_invocation_count -= 1

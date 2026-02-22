@@ -16,6 +16,7 @@
 # ==============================================================================
 
 import unittest
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     ClauseSeverity, ClausePolicyRule, EnforcementContext, ContractMetadata, ValidationEngine, ValidationGraph, ValidationNode
 )

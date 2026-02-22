@@ -2,6 +2,7 @@
 Test: Multi-Process Crash Signature Independence (Prompt 19 Part 2)
 """
 import pytest
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     EnforcementContext, ContractMetadata, CrashSnapshot
 )

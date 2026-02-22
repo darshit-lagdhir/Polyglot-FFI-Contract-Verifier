@@ -17,6 +17,7 @@
 
 import unittest
 from unittest.mock import MagicMock
+from dataclasses import asdict
 from modules.module_08_language_adapter.language_adapter import (
     EnforcementContext, ContractMetadata, HotReloadManager
 )
