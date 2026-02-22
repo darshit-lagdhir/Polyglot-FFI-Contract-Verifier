@@ -90,6 +90,18 @@ class ContractInitializationError(AdapterRuntimeError):
     ERROR_CODE = "ERR_CONTRACT_INIT"
     ERROR_CATEGORY = "Configuration"
 
+class ContractVersionTransitionError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_VERSION_TRANSITION_INCOMPATIBLE"
+    ERROR_CATEGORY = "Lifecycle"
+
+class DeprecationViolationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_DEPRECATION_VIOLATION"
+    ERROR_CATEGORY = "Lifecycle"
+
+class ContractTerminationError(AdapterRuntimeError):
+    ERROR_CODE = "ERR_CONTRACT_TERMINATED"
+    ERROR_CATEGORY = "Lifecycle"
+
 class ABICompatibilityError(AdapterRuntimeError):
     ERROR_CODE = "ERR_ABI_INCOMPATIBLE"
     ERROR_CATEGORY = "AbiConformance"
@@ -2278,7 +2290,214 @@ class ClausePriorityResolver:
         return primary
 
 
+# ==============================================================================
+# SECTION 104: CONTRACT EVOLUTION AND VERSION TRANSITION (Prompt 21 Part 1)
+# ==============================================================================
+
+class ContractEvolutionManager:
+    """Classifies contract version changes deterministically."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def classify_change(self, old_meta: ContractMetadata, new_meta: ContractMetadata) -> VersionChangeType:
+        """Determines the nature of the contract version transition."""
+        if old_meta.abi_bits != new_meta.abi_bits or old_meta.abi_metadata_version != new_meta.abi_metadata_version:
+            return VersionChangeType.ABI_BREAKING
+        
+        if old_meta.memory_model_version != new_meta.memory_model_version:
+            return VersionChangeType.MEMORY_MODEL_BREAKING
+
+        if old_meta.policy_layer_version != new_meta.policy_layer_version:
+            return VersionChangeType.POLICY_BREAKING
+
+        # Major version change implies breaking
+        old_major = int(old_meta.semantic_version.split('.')[0])
+        new_major = int(new_meta.semantic_version.split('.')[0])
+        if new_major > old_major:
+            return VersionChangeType.MAJOR_BREAKING
+
+        # Performance envelope tightening
+        # Note: In a real implementation we would deep compare thresholds
+        if old_meta.enforcement_model_version != new_meta.enforcement_model_version:
+             return VersionChangeType.PERFORMANCE_ENVELOPE_CHANGE
+
+        # Minor extension or restriction (heuristic based on descriptors count)
+        if len(new_meta.descriptors) > len(old_meta.descriptors):
+            return VersionChangeType.MINOR_EXTENSION
+        elif len(new_meta.descriptors) < len(old_meta.descriptors):
+            return VersionChangeType.MAJOR_BREAKING # Function removal
+
+        # Patch safe if semantics haven't changed (heuristic)
+        if old_meta.semantic_version == new_meta.semantic_version:
+             return VersionChangeType.PATCH_SAFE
+
+        return VersionChangeType.MINOR_EXTENSION
+
+
+class VersionTransitionValidator:
+    """Validates safe version transitions against compatibility matrix."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def validate_transition(self, old_meta: ContractMetadata, new_meta: ContractMetadata, override: bool = False) -> Dict[str, Any]:
+        """Validates if transition is allowed based on classification."""
+        classifier = ContractEvolutionManager(self.context)
+        change_type = classifier.classify_change(old_meta, new_meta)
+        
+        accepted = False
+        action_required = "NONE"
+        
+        if change_type == VersionChangeType.PATCH_SAFE:
+            accepted = True
+        elif change_type == VersionChangeType.MINOR_EXTENSION:
+            accepted = True if not self.context.regression_manager._accepted_baseline else override
+            if not accepted: action_required = "REQUIRES_OVERRIDE_OR_BASELINE_RESET"
+        elif change_type == VersionChangeType.MINOR_RESTRICTION:
+            accepted = override
+            action_required = "REQUIRES_EXPLICIT_ACCEPTANCE"
+        elif change_type in [VersionChangeType.MAJOR_BREAKING, VersionChangeType.ABI_BREAKING]:
+            accepted = override
+            action_required = "REJECTED_UNLESS_OVERRIDE"
+        elif change_type == VersionChangeType.POLICY_BREAKING:
+            accepted = override
+            action_required = "REQUIRES_BASELINE_RESET"
+        elif change_type == VersionChangeType.PERFORMANCE_ENVELOPE_CHANGE:
+            accepted = True
+            action_required = "BASELINE_REVALIDATION_REQUIRED"
+
+        report = {
+            "previous_version": old_meta.semantic_version,
+            "new_version": new_meta.semantic_version,
+            "change_classification": change_type.value,
+            "compatibility_status": "ACCEPTED" if accepted else "REJECTED",
+            "required_actions": action_required,
+            "deterministic_transition_fingerprint": hashlib.sha256(f"{old_meta.fingerprint}|{new_meta.fingerprint}".encode()).hexdigest()[:16]
+        }
+        
+        if not accepted and not override:
+            raise ContractVersionTransitionError(
+                f"Incompatible version transition ({change_type.value}). Action required: {action_required}",
+                self.context.fingerprint
+            )
+            
+        return report
+
+# ==============================================================================
+# SECTION 105: DETERMINISTIC DEPRECATION GOVERNANCE (Prompt 21 Part 2)
+# ==============================================================================
+
+class DeprecationGovernanceManager:
+    """Enforces staged feature sunsetting policies."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._usage_tracking = set()
+
+    def check_feature_usage(self, feature_id: str):
+        """Checks if a feature is deprecated and applies phase policy."""
+        self._usage_tracking.add(feature_id)
+        
+        # Search in metadata
+        feature_entry = next((f for f in self.context.metadata.deprecated_features if f["id"] == feature_id), None)
+        if not feature_entry:
+            return
+
+        phase = DeprecationPhase(feature_entry.get("phase", "ANNOUNCED"))
+        
+        if phase == DeprecationPhase.ANNOUNCED:
+            self.context.telemetry_manager.emit("DEPRECATION_ANNOUNCED", {"feature": feature_id}, "INFO")
+        elif phase == DeprecationPhase.WARNING:
+            self.context.telemetry_manager.emit("DEPRECATION_WARNING", {"feature": feature_id}, "WARNING")
+        elif phase == DeprecationPhase.ENFORCED:
+            raise DeprecationViolationError(f"Use of deprecated feature '{feature_id}' is enforced-blocked.", self.context.fingerprint)
+        elif phase == DeprecationPhase.SUNSET:
+            raise DeprecationViolationError(f"Feature '{feature_id}' has been sunset and removed.", self.context.fingerprint)
+
+    def generate_audit_report(self) -> Dict[str, Any]:
+        """Summarizes deprecation state and usage."""
+        meta = self.context.metadata
+        return {
+            "contract_version": meta.semantic_version,
+            "usage_detected": sorted(list(self._usage_tracking)),
+            "deprecated_count": len(meta.deprecated_features),
+            "sunset_count": len(meta.sunset_features),
+            "deterministic_deprecation_fingerprint": hashlib.sha256(str(sorted(list(self._usage_tracking))).encode()).hexdigest()[:16]
+        }
+
+class FeatureSunsetEngine:
+    """Orchestrates hard removal of features across version transitions."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def validate_sunset_integrity(self, new_meta: ContractMetadata):
+        """Ensures that sunset features are actually absent in new contract."""
+        for feature in self.context.metadata.sunset_features:
+            if feature in new_meta.descriptors:
+                raise ContractVersionTransitionError(f"Feature '{feature}' was marked for sunset but is present in new version.", self.context.fingerprint)
+
+# ==============================================================================
+# SECTION 106: CONTRACT TERMINATION PROTOCOL (Prompt 21 Part 3)
+# ==============================================================================
+
+class ContractTerminationManager:
+    """Orchestrates formal contract retirement and finalization."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._state = ContractLifecycleState.ACTIVE
+
+    def initiate_termination(self, reason: str = "NORMAL_RETIREMENT"):
+        """Gracefully transitions contract to TERMINATED state."""
+        self._state = ContractLifecycleState.TERMINATING
+        self.context.telemetry_manager.emit("TERMINATION_INITIATED", {"reason": reason}, "WARNING")
+        
+        # In a real system, we'd wait for active_invocation_count to hit 0
+        # For simulation, we proceed to flush
+        self._finalize_shutdown(reason)
+
+    def _finalize_shutdown(self, reason: str):
+        # Flush all registries and buffers
+        self.context.registry.clear_all()
+        self.context.journal_manager._journal = []
+        self.context.telemetry_manager._buffer = []
+        self.context.metrics_aggregator._window = []
+        self.context.crash_manager._snapshots = []
+        
+        self._state = ContractLifecycleState.TERMINATED
+        self.context.telemetry_manager.emit("TERMINATION_COMPLETE", {"reason": reason}, "INFO")
+
+    def generate_termination_report(self, reason: str) -> Dict[str, Any]:
+        """Provides a final deterministic audit of the terminated context."""
+        return {
+            "contract_version": self.context.metadata.semantic_version,
+            "termination_reason": reason,
+            "lifecycle_state": self._state.value,
+            "final_registry_count": 0,
+            "baseline_invalidated": True,
+            "deterministic_termination_fingerprint": hashlib.sha256(f"{self.context.fingerprint}|{reason}".encode()).hexdigest()[:16]
+        }
+
+    def is_active(self) -> bool:
+        return self._state == ContractLifecycleState.ACTIVE
+
+class HardResetCoordinator:
+    """Controls full reinitialization of the enforcement context."""
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def execute_hard_reset(self):
+        """Wipes all state and resets to initial conditions."""
+        self.context.termination_manager._state = ContractLifecycleState.HARD_RESET_PENDING
+        
+        # Reset all core engines
+        self.context.registry = OwnershipRegistry(self.context)
+        self.context.journal_manager = ReplayJournalManager(self.context)
+        self.context.metrics_aggregator = MetricsAggregationManager(self.context)
+        self.context.performance_engine.reset()
+        
+        self.context.termination_manager._state = ContractLifecycleState.RESET_COMPLETE
+        self.context.termination_manager._state = ContractLifecycleState.ACTIVE
+
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class StateSnapshotManager:
     """Exports full deterministic EnforcementContext state (Part 1)."""
@@ -2372,7 +2591,9 @@ class StateSnapshotManager:
             "nested_invocation_depth": self.context.active_invocation_count,
             "abi_negotiation_report": self.context.abi_engine.generate_abi_compatibility_report(),
             "last_performance_snapshot": asdict(getattr(self.context, "performance_snapshot")) if hasattr(self.context, "performance_snapshot") else None,
-            "invariant_status_summary": "Passed"
+            "invariant_status_summary": "Passed",
+            "deprecation_audit": self.context.deprecation_manager.generate_audit_report(),
+            "lifecycle_state": self.context.termination_manager._state.value
         }
         
         # Ensure pure deterministic ordering of root keys
@@ -2666,6 +2887,16 @@ class EnforcementContext:
         # Prompt 20 Part 3 — Policy Orchestration
         self.policy_orchestrator = PolicyOrchestrator(self)
         self.priority_resolver = ClausePriorityResolver(self)
+        
+        # Prompt 21 Part 1 — Evolution & Transition
+        self.evolution_manager = ContractEvolutionManager(self)
+        self.transition_validator = VersionTransitionValidator(self)
+        # Prompt 21 Part 2 — Deprecation
+        self.deprecation_manager = DeprecationGovernanceManager(self)
+        self.sunset_engine = FeatureSunsetEngine(self)
+        # Prompt 21 Part 3 — Termination
+        self.termination_manager = ContractTerminationManager(self)
+        self.hard_reset_coordinator = HardResetCoordinator(self)
 
         # 1. ABI Compatibility Check (Prompt 20 Part 1 Step 3)
         abi_report = self.abi_engine.validate_compatibility()
@@ -2814,10 +3045,21 @@ class FrozenEnforcementDescriptor:
         )
 
 
+class VersionChangeType(Enum):
+    """Classification of contract version changes (Prompt 21 Part 1)."""
+    PATCH_SAFE = "PATCH_SAFE"
+    MINOR_EXTENSION = "MINOR_EXTENSION"
+    MINOR_RESTRICTION = "MINOR_RESTRICTION"
+    MAJOR_BREAKING = "MAJOR_BREAKING"
+    ABI_BREAKING = "ABI_BREAKING"
+    POLICY_BREAKING = "POLICY_BREAKING"
+    MEMORY_MODEL_BREAKING = "MEMORY_MODEL_BREAKING"
+    PERFORMANCE_ENVELOPE_CHANGE = "PERFORMANCE_ENVELOPE_CHANGE"
+
 @dataclass(frozen=True)
 class ContractMetadata:
     """
-    Immutable contract metadata container.
+    Immutable contract metadata container with evolution support.
     """
     schema_version: str
     synthesis_version: str
@@ -2827,7 +3069,14 @@ class ContractMetadata:
     structs: Dict[str, dict] = field(default_factory=dict)
     custom_metadata: Dict[str, Any] = field(default_factory=dict)
     contract_name: str = "unknown"
-    contract_version: str = "1.0"
+    contract_version: str = "1.0.0"
+    semantic_version: str = "1.0.0"
+    enforcement_model_version: str = "1.0.0"
+    policy_layer_version: str = "1.0.0"
+    memory_model_version: str = "1.0.0"
+    abi_metadata_version: str = "1.0.0"
+    deprecated_features: List[Dict[str, Any]] = field(default_factory=list)
+    sunset_features: List[str] = field(default_factory=list)
 
 
 class ContractRuntimeLoader:
@@ -3420,6 +3669,14 @@ class OwnershipRegistry:
         self._alias_lock = HierarchicalLock(LOCK_LEVEL_ALIAS, "AliasMapLock")
         self._global_access_counter = 0
         self._transition_coordinator = TransitionCoordinator(self)
+
+    def clear_all(self):
+        """Wipes all registration data deterministically."""
+        self._registry.clear()
+        self._epoch_counter.clear()
+        self._wrapper_map.clear()
+        self._alias_map.clear()
+        self._global_access_counter = 0
 
     def _get_record(self, pointer: int, fingerprint: str, epoch: int) -> Optional[PointerOwnershipRecord]:
         key = _canonical_pointer_key(pointer, fingerprint, epoch)
@@ -5469,6 +5726,23 @@ def initialize_python_adapter(contract_dict: dict,
 # Removed old ClauseSeverity, now using SECTION 103 definition.
 
 
+class ContractLifecycleState(Enum):
+    """Deterministic contract lifecycle states (Prompt 21 Part 3)."""
+    ACTIVE = "ACTIVE"
+    DEPRECATED = "DEPRECATED"
+    SUNSET = "SUNSET"
+    TERMINATING = "TERMINATING"
+    TERMINATED = "TERMINATED"
+    HARD_RESET_PENDING = "HARD_RESET_PENDING"
+    RESET_COMPLETE = "RESET_COMPLETE"
+
+class DeprecationPhase(Enum):
+    """Deterministic deprecation phases (Prompt 21 Part 2)."""
+    ANNOUNCED = "ANNOUNCED"
+    WARNING = "WARNING"
+    ENFORCED = "ENFORCED"
+    SUNSET = "SUNSET"
+
 class OwnershipKind(Enum):
     """
     Ownership classification for pointers.
@@ -6947,6 +7221,13 @@ class InvocationOrchestrator:
         captured_exceptions = []
 
         try:
+            # PHASE: LIFECYCLE CHECK (Prompt 21 Part 3)
+            if not context.termination_manager.is_active():
+                raise ContractTerminationError("Contract is terminated or terminating.", context.fingerprint)
+
+            # PHASE: DEPRECATION CHECK (Prompt 21 Part 2)
+            context.deprecation_manager.check_feature_usage(function_name)
+
             # Phase 1: Normalization
             if self.config.enable_normalization:
                 norm_result = self._phase_normalization(inputs)

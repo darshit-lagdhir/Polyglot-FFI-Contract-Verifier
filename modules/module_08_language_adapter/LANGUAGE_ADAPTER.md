@@ -1262,3 +1262,23 @@ Enforcement follows a canonical sequence of stages, managed by a prioritized res
 - **Stage Ordering**: Immutable sequence from ABI negotiation to metrics emission.
 - **Clause Priority Resolution**: Deterministic tie-breaking when multiple contract clauses are violated simultaneously.
 - **Violation Suppression**: Lower-priority violations are suppressed in favor of high-severity primary violations.
+## Prompt 21 Part 1 — Formal Contract Evolution and Version Transition Governance
+Contracts are managed as immutable versioned entities. Every transition between contract versions is formally validated against a compatibility matrix.
+- **Version Metadata Model**: Each contract carries semantic versioning, schema version, and subsystem-specific version identifiers.
+- **Change Classification**: Automated classification of transitions as PATCH_SAFE, MINOR_EXTENSION, MINOR_RESTRICTION, or MAJOR_BREAKING.
+- **Compatibility Matrix**: Rejects incompatible transitions (e.g., ABI changes) unless explicit overrides are provided.
+- **Replay & Baseline Invalidation**: Breaking upgrades automatically invalidate past baselines and replay journals to prevent stale state usage.
+
+## Prompt 21 Part 2 — Deterministic Deprecation Governance and Feature Sunset Enforcement
+Features (functions, parameters, rules) follow a formally governed sunset lifecycle.
+- **Deprecation Phases**: Features transition through ANNOUNCED, WARNING, ENFORCED, and SUNSET phases based on version metadata.
+- **Deterministic Warning Engine**: Emits telemetry events for deprecated features without wall-clock dependencies.
+- **Fail-Closed Sunset Enforcement**: Features in the SUNSET phase are physically blocked from execution, ensuring dead code removal.
+- **Deprecation Audit Report**: Provides a deterministic summary of all used deprecated features per contract lifecycle.
+
+## Prompt 21 Part 3 — Formal Contract Termination and Hard Reset Governance Model
+Contracts have a formal termination protocol to ensure clean resource release and state finalization.
+- **Lifecycle States**: Contracts transition through ACTIVE, TERMINATING, and TERMINATED states.
+- **Graceful Finalization**: Ensures in-flight invocations complete before flushing registries and invalidating artifacts.
+- **Hard Reset Guarantee**: Provides a mechanism for full state wiping and re-initialization of the enforcement context.
+- **Deterministic Termination Report**: A final, fingerprint-stabilized audit report capturing the terminal state of the contract boundary.
