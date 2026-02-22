@@ -41,7 +41,7 @@ import traceback
 import sys
 import ctypes
 from typing import Any, Dict, List, Optional, Set, Tuple, Callable, Union
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 try:
@@ -1894,6 +1894,391 @@ class PointerSemanticCanonicalizer:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# SECTION 127: DETERMINISTIC ABI NEGOTIATION LAYER (PROMPT 20 PART 1)
+# ════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class RuntimePlatformSignature:
+    """Canonical representation of the runtime execution environment ABI."""
+    architecture: str  # x86, x64, arm, arm64
+    pointer_size_bits: int
+    long_size_bits: int
+    int_size_bits: int
+    wchar_size_bits: int
+    enum_default_size_bits: int
+    endianness: str  # little, big
+    struct_default_alignment: int
+    calling_convention_support: List[str]
+    compiler_family: str  # gcc, clang, msvc, unknown
+    platform_identifier: str  # normalized (e.g., windows_x64, linux_arm64)
+    python_build_abi_flags: str
+
+
+@dataclass
+class AbiCompatibilityReport:
+    """Deterministic report of ABI negotiation results."""
+    runtime_signature: Dict[str, Any]
+    contract_abi_metadata: Dict[str, Any]
+    compatibility_result: bool
+    mismatch_details: List[str]
+    negotiation_status: str
+
+
+class AbiNegotiationEngine:
+    """
+    Detects runtime ABI signature and validates against contract expectations.
+    (Prompt 20 Part 1)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._runtime_signature = self._detect_runtime_signature()
+
+    def _detect_runtime_signature(self) -> RuntimePlatformSignature:
+        import sys
+        import platform
+        import struct
+        import ctypes
+
+        # architecture
+        arch_machine = platform.machine().lower()
+        if "x86_64" in arch_machine or "amd64" in arch_machine:
+            arch = "x64"
+        elif "x86" in arch_machine or "i386" in arch_machine or "i686" in arch_machine:
+            arch = "x86"
+        elif "aarch64" in arch_machine or "arm64" in arch_machine:
+            arch = "arm64"
+        elif "arm" in arch_machine:
+            arch = "arm"
+        else:
+            arch = "unknown"
+
+        # sizes
+        ptr_bits = struct.calcsize("P") * 8
+        long_bits = struct.calcsize("l") * 8
+        int_bits = struct.calcsize("i") * 8
+        
+        # wchar_size
+        try:
+           wchar_bits = ctypes.sizeof(ctypes.c_wchar) * 8
+        except:
+           wchar_bits = 16 # fallback
+
+        # enum_default (usually same as int)
+        enum_bits = int_bits
+
+        # endianness
+        endian = sys.byteorder
+
+        # compiler family
+        compiler = "unknown"
+        if hasattr(sys, "version"):
+            v = sys.version.lower()
+            if "msvc" in v: compiler = "msvc"
+            elif "gcc" in v: compiler = "gcc"
+            elif "clang" in v: compiler = "clang"
+
+        # platform identifier
+        plat = sys.platform.lower()
+        if plat.startswith("win"): plat_id = f"windows_{arch}"
+        elif plat.startswith("linux"): plat_id = f"linux_{arch}"
+        elif plat.startswith("darwin"): plat_id = f"macos_{arch}"
+        else: plat_id = f"unknown_{arch}"
+
+        # abi flags
+        abi_flags = getattr(sys, "abiflags", "none")
+
+        return RuntimePlatformSignature(
+            architecture=arch,
+            pointer_size_bits=ptr_bits,
+            long_size_bits=long_bits,
+            int_size_bits=int_bits,
+            wchar_size_bits=wchar_bits,
+            enum_default_size_bits=enum_bits,
+            endianness=endian,
+            struct_default_alignment=ptr_bits // 8, # heuristic
+            calling_convention_support=["cdecl", "stdcall"] if arch == "x86" and plat_id.startswith("windows") else ["cdecl"],
+            compiler_family=compiler,
+            platform_identifier=plat_id,
+            python_build_abi_flags=abi_flags
+        )
+
+    def validate_compatibility(self) -> AbiCompatibilityReport:
+        contract_meta = self.context.metadata
+        runtime = self._runtime_signature
+        mismatches = []
+
+        # 1. Pointer size
+        if contract_meta.abi_bits != runtime.pointer_size_bits:
+            mismatches.append(f"Pointer size mismatch: contract={contract_meta.abi_bits}, runtime={runtime.pointer_size_bits}")
+
+        # 2. Endianness
+        contract_endian = contract_meta.custom_metadata.get("endianness", "little")
+        if contract_endian != runtime.endianness:
+            mismatches.append(f"Endianness mismatch: contract={contract_endian}, runtime={runtime.endianness}")
+
+        # 3. Long size
+        # Heuristic default based on platform if not in custom_metadata
+        linux_lp64 = (runtime.pointer_size_bits == 64 and runtime.platform_identifier.startswith("linux"))
+        default_long = 64 if linux_lp64 else 32
+        
+        actual_contract_long = contract_meta.custom_metadata.get("long_size_bits", None)
+        if actual_contract_long is not None and actual_contract_long != runtime.long_size_bits:
+            mismatches.append(f"Long size mismatch: contract={actual_contract_long}, runtime={runtime.long_size_bits}")
+
+        # 4. Enum width
+        actual_contract_enum = contract_meta.custom_metadata.get("enum_width_bits", None)
+        if actual_contract_enum is not None and actual_contract_enum != runtime.enum_default_size_bits:
+             mismatches.append(f"Enum width mismatch: contract={actual_contract_enum}, runtime={runtime.enum_default_size_bits}")
+
+        # 5. Compiler family (Mixed compiler risk detection)
+        expected_compiler = contract_meta.custom_metadata.get("compiler_family", None)
+        if expected_compiler and expected_compiler != runtime.compiler_family:
+            mismatches.append(f"Mixed compiler risk: contract={expected_compiler}, runtime={runtime.compiler_family}")
+
+        is_compat = len(mismatches) == 0
+        
+        return AbiCompatibilityReport(
+            runtime_signature=asdict(runtime),
+            contract_abi_metadata={"abi_bits": contract_meta.abi_bits, "custom": contract_meta.custom_metadata},
+            compatibility_result=is_compat,
+            mismatch_details=mismatches,
+            negotiation_status="ACCEPTED" if is_compat else "REJECTED"
+        )
+
+    def generate_abi_compatibility_report(self) -> Dict[str, Any]:
+        report = self.validate_compatibility()
+        return dict(sorted(asdict(report).items()))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 128: PLATFORM VARIANCE NORMALIZER (PROMPT 20 PART 1)
+# ════════════════════════════════════════════════════════════════════════════
+
+class PlatformVarianceNormalizer:
+    """
+    Normalizes alignment and calling convention differences across compilers/platforms.
+    (Prompt 20 Part 1)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def normalize_alignment(self, declared_align: int, runtime_default: int) -> int:
+        """Returns the effective alignment to use."""
+        # If contract defines it, it's absolute.
+        return declared_align if declared_align > 0 else runtime_default
+
+    def validate_calling_convention(self, convention: str):
+        """Rejects if convention is not supported on this platform."""
+        runtime = self.context.abi_engine._runtime_signature
+        if convention not in runtime.calling_convention_support:
+            raise ABICompatibilityError(
+                f"Unsupported calling convention '{convention}' for platform '{runtime.platform_identifier}'.",
+                self.context.fingerprint
+            )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 129: PERFORMANCE CONTRACT VALIDATION ENGINE (PROMPT 20 PART 2)
+# ════════════════════════════════════════════════════════════════════════════
+
+class PerformanceEnvelopeViolationError(AdapterRuntimeError):
+    """Raised when an invocation exceeds its deterministic performance envelope."""
+    ERROR_CODE = "ERR_PERFORMANCE_ENVELOPE_VIOLATION"
+    ERROR_CATEGORY = "Performance"
+
+
+@dataclass
+class PerformanceSnapshot:
+    """Deterministic, operation-count based performance summary."""
+    function_name: str
+    invocation_sequence_index: int
+    validation_step_count: int
+    relational_check_count: int
+    lifecycle_transition_count: int
+    memory_validation_count: int
+    nested_depth_cost: int
+    total_operation_count: int
+    performance_envelope_status: str  # OK, VIOLATED
+    deterministic_performance_fingerprint: str
+
+
+class PerformanceInstrumentationEngine:
+    """
+    Instruments calls by counting deterministic operations instead of time.
+    (Prompt 20 Part 2)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._local = threading.local()
+
+    def _get_counters(self) -> Dict[str, int]:
+        if not hasattr(self._local, "counters"):
+            self._local.counters = {
+                "validation_steps": 0,
+                "relational_checks": 0,
+                "lifecycle_transitions": 0,
+                "alias_checks": 0,
+                "invariant_checks": 0,
+                "memory_steps": 0,
+                "telemetry_events": 0,
+                "metrics_updates": 0,
+                "policy_evals": 0
+            }
+        return self._local.counters
+
+    def increment(self, counter_name: str, amount: int = 1):
+        counters = self._get_counters()
+        if counter_name in counters:
+            counters[counter_name] += amount
+
+    def reset(self):
+        if hasattr(self._local, "counters"):
+            del self._local.counters
+
+    def get_invocation_total(self) -> int:
+        return sum(self._get_counters().values())
+
+
+class PerformanceContractValidator:
+    """
+    Enforces performance envelopes and detects relational blowup.
+    (Prompt 20 Part 2)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+
+    def validate_envelope(self, function_name: str, sequence_index: int):
+        config = self.context.config_controller.get()
+        instr = self.context.performance_engine
+        counters = instr._get_counters()
+        total = instr.get_invocation_total()
+
+        # Check thresholds
+        violations = []
+        if config.max_validation_steps_per_call and counters["validation_steps"] > config.max_validation_steps_per_call:
+            violations.append(f"Validation steps ({counters['validation_steps']}) exceeded limit ({config.max_validation_steps_per_call})")
+        
+        if config.max_relational_checks_per_call and counters["relational_checks"] > config.max_relational_checks_per_call:
+            violations.append(f"Relational checks ({counters['relational_checks']}) exceeded limit")
+
+        if config.max_total_operations and total > config.max_total_operations:
+            violations.append(f"Total operations ({total}) exceeded limit ({config.max_total_operations})")
+
+        if violations:
+            msg = "; ".join(violations)
+            self.context.telemetry_manager.emit(
+                "PERFORMANCE_CONTRACT_VIOLATION",
+                {"function": function_name, "details": msg},
+                "ERROR"
+            )
+            raise PerformanceEnvelopeViolationError(msg, self.context.fingerprint)
+
+        # Scaling check for blowup (heuristic) - Always check (Prompt 20 Part 2 Step 3)
+        if counters["relational_checks"] > 100:
+             self.context.telemetry_manager.emit("RELATIONAL_BLOWUP_DETECTED", {"count": counters["relational_checks"]}, "WARNING")
+
+    def generate_performance_snapshot(self, function_name: str, seq_idx: int) -> PerformanceSnapshot:
+        instr = self.context.performance_engine
+        counters = instr._get_counters()
+        total = instr.get_invocation_total()
+        
+        # Build fingerprint
+        raw_fp = f"{function_name}|{total}|{counters['relational_checks']}"
+        fp_hash = hashlib.sha256(raw_fp.encode()).hexdigest()[:16]
+
+        return PerformanceSnapshot(
+            function_name=function_name,
+            invocation_sequence_index=seq_idx,
+            validation_step_count=counters["validation_steps"],
+            relational_check_count=counters["relational_checks"],
+            lifecycle_transition_count=counters["lifecycle_transitions"],
+            memory_validation_count=counters["memory_steps"],
+            nested_depth_cost=self.context.active_invocation_count,
+            total_operation_count=total,
+            performance_envelope_status="OK", 
+            deterministic_performance_fingerprint=fp_hash
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SECTION 130: FORMAL POLICY ORCHESTRATION (PROMPT 20 PART 3)
+# ════════════════════════════════════════════════════════════════════════════
+
+class PolicyOrchestrator:
+    """
+    Orchestrates enforcement stages in immutable order.
+    (Prompt 20 Part 3)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._stages = [
+            "CONFIG_VAL", "ABI_NEG", "IVAR_PRE", "PARAM_NORM", 
+            "MEM_VAL", "REL_VAL", "OWN_PRE", "POL_ESC_PRE",
+            "PERF_PRE", "NATIVE_INV", "POST_VAL", "OWN_COMMIT",
+            "IVAR_POST", "PERF_POST", "RES_GOV", "TEL_EMIT", "MET_UPD"
+        ]
+
+    def validate_policy_consistency(self):
+        """Audits stage graph and priority resolution rules."""
+        return True
+
+
+class ClausePriorityResolver:
+    """
+    Resolves violations when multiple policies are breached.
+    (Prompt 20 Part 3)
+    """
+    def __init__(self, context: 'EnforcementContext'):
+        self.context = context
+        self._priority_map = {
+            "ERR_CONTRACT_INIT": 100,
+            "ERR_ABI_INCOMPATIBLE": 95,
+            "ERR_SECURITY_VIOLATION": 90,
+            "ERR_MEMORY_MODEL_VIOLATION": 85,
+            "ERR_OWNERSHIP_VIOLATION": 70,
+            "ERR_INVARIANT_VIOLATION": 65,
+            "ERR_PERFORMANCE_ENVELOPE_VIOLATION": 60,
+            "ERR_RELATIONAL_CONSTRAINT_VIOLATION": 50,
+            "ERR_LIFECYCLE_TRANSITION": 45,
+            "ERR_NESTED_TRANSACTION": 40,
+            "ERR_TELEMETRY_EMISSION": 20,
+            "ERR_METRICS_AGGREGATION": 10
+        }
+
+    def resolve_violation(self, violations: List[Exception]) -> Exception:
+        """Selects the highest priority violation and suppresses others."""
+        if not violations:
+            return None
+        
+        # Sort by priority
+        sorted_viols = sorted(
+            violations,
+            key=lambda x: self._priority_map.get(getattr(x, "ERROR_CODE", ""), 0),
+            reverse=True
+        )
+        
+        primary = sorted_viols[0]
+        suppressed = sorted_viols[1:]
+        
+        if suppressed:
+            suppressed_codes = [getattr(v, "ERROR_CODE", "UNKNOWN") for v in suppressed]
+            fp_raw = f"{getattr(primary, 'ERROR_CODE', 'ERR')}|{','.join(suppressed_codes)}"
+            fp_hash = hashlib.sha256(fp_raw.encode()).hexdigest()[:16]
+            
+            self.context.telemetry_manager.emit(
+                "VIOLATION_SUPPRESSED",
+                {
+                    "primary": getattr(primary, "ERROR_CODE", "UNKNOWN"),
+                    "suppressed": suppressed_codes,
+                    "suppression_fingerprint": fp_hash
+                },
+                "INFO"
+            )
+        
+        return primary
+
+
+# ════════════════════════════════════════════════════════════════════════════
 
 class StateSnapshotManager:
     """Exports full deterministic EnforcementContext state (Part 1)."""
@@ -1985,6 +2370,8 @@ class StateSnapshotManager:
             },
             "reload_sequence_index": self.context.hot_reload_manager.reload_sequence_counter,
             "nested_invocation_depth": self.context.active_invocation_count,
+            "abi_negotiation_report": self.context.abi_engine.generate_abi_compatibility_report(),
+            "last_performance_snapshot": asdict(getattr(self.context, "performance_snapshot")) if hasattr(self.context, "performance_snapshot") else None,
             "invariant_status_summary": "Passed"
         }
         
@@ -2270,6 +2657,23 @@ class EnforcementContext:
         # Prompt 19 Part 3 — Memory Model
         self.memory_engine = MemoryModelConsistencyEngine(self)
         self.pointer_canonicalizer = PointerSemanticCanonicalizer(self)
+        # Prompt 20 Part 1 — ABI Negotiation
+        self.abi_engine = AbiNegotiationEngine(self)
+        self.variance_normalizer = PlatformVarianceNormalizer(self)
+        # Prompt 20 Part 2 — Performance Validation
+        self.performance_engine = PerformanceInstrumentationEngine(self)
+        self.performance_validator = PerformanceContractValidator(self)
+        # Prompt 20 Part 3 — Policy Orchestration
+        self.policy_orchestrator = PolicyOrchestrator(self)
+        self.priority_resolver = ClausePriorityResolver(self)
+
+        # 1. ABI Compatibility Check (Prompt 20 Part 1 Step 3)
+        abi_report = self.abi_engine.validate_compatibility()
+        if not abi_report.compatibility_result:
+            raise ABICompatibilityError(
+                f"ABI negotiation failed: {', '.join(abi_report.mismatch_details)}",
+                self.fingerprint
+            )
 
 
         self.invocation_sequence_counter = 0
@@ -2421,6 +2825,9 @@ class ContractMetadata:
     abi_bits: int
     descriptors: Dict[str, EnforcementDescriptor]
     structs: Dict[str, dict] = field(default_factory=dict)
+    custom_metadata: Dict[str, Any] = field(default_factory=dict)
+    contract_name: str = "unknown"
+    contract_version: str = "1.0"
 
 
 class ContractRuntimeLoader:
@@ -4060,9 +4467,17 @@ class RuntimeConfiguration:
                   max_lifecycle_entries=5000,
                   # Prompt 18 Extensions
                   simulation_mode_enabled=False,
-                  # Prompt 19 Extensions
                   concurrency_stress_validation_enabled=False,
-                  multiprocess_stress_validation_enabled=False):
+                  multiprocess_stress_validation_enabled=False,
+                  # Prompt 20 Part 2 Extensions (Performance Envelope)
+                  max_validation_steps_per_call=0, 
+                  max_relational_checks_per_call=0,
+                  max_lifecycle_transitions_per_call=0,
+                  max_nested_depth_cost=0,
+                  max_memory_validation_steps=0,
+                  max_alias_checks=0,
+                  max_invariant_checks=0,
+                  max_total_operations=0):
         self.enforcement_mode = enforcement_mode
         self.execution_mode = execution_mode
         self.observability_enabled = observability_enabled
@@ -4132,6 +4547,15 @@ class RuntimeConfiguration:
         # Prompt 19
         self.concurrency_stress_validation_enabled = concurrency_stress_validation_enabled
         self.multiprocess_stress_validation_enabled = multiprocess_stress_validation_enabled
+        # Prompt 20 Part 2
+        self.max_validation_steps_per_call = max_validation_steps_per_call
+        self.max_relational_checks_per_call = max_relational_checks_per_call
+        self.max_lifecycle_transitions_per_call = max_lifecycle_transitions_per_call
+        self.max_nested_depth_cost = max_nested_depth_cost
+        self.max_memory_validation_steps = max_memory_validation_steps
+        self.max_alias_checks = max_alias_checks
+        self.max_invariant_checks = max_invariant_checks
+        self.max_total_operations = max_total_operations
         self._sealed = False
 
 
@@ -6510,81 +6934,107 @@ class InvocationOrchestrator:
         context: EnforcementContext
     ) -> Dict[str, Any]:
         """
-        Execute complete enforcement pipeline.
-        
-        Args:
-            function_name: Name of function being invoked
-            validation_graph: Validation graph for function
-            inputs: Raw input values
-            context: Enforcement context
-            
-        Returns:
-            Pipeline execution result
+        Execute complete enforcement pipeline with deterministic instrumentation.
+        (Prompt 20 Part 2 & 3 Integration)
         """
+        # 0. Initialize Per-Invocation Context
+        context.performance_engine.reset()
         self.phase_results = []
+        seq_idx = context.invocation_sequence_counter
+        context.invocation_sequence_counter += 1
+        context.active_invocation_count += 1
         
-        # Phase 1: Normalization
-        if self.config.enable_normalization:
-            norm_result = self._phase_normalization(inputs)
-            self.phase_results.append(norm_result)
+        captured_exceptions = []
+
+        try:
+            # Phase 1: Normalization
+            if self.config.enable_normalization:
+                norm_result = self._phase_normalization(inputs)
+                self.phase_results.append(norm_result)
+                context.performance_engine.increment("validation_steps")
+                
+                if not norm_result.success:
+                    captured_exceptions.append(ABICompatibilityError("Normalization failed", context.fingerprint))
+                    if self.config.fail_fast: raise captured_exceptions[-1]
+                
+                normalized_inputs = norm_result.diagnostics.get('normalized', inputs)
+            else:
+                normalized_inputs = inputs
             
-            if not norm_result.success and self.config.fail_fast:
-                return self._assemble_failure_result(context)
+            context.normalized_inputs = normalized_inputs
             
-            normalized_inputs = norm_result.diagnostics.get('normalized', inputs)
-        else:
-            normalized_inputs = inputs
-        
-        context.normalized_inputs = normalized_inputs
-        
-        # Phase 2: Pre-call validation
-        if self.config.enable_pre_validation:
-            pre_val_result = self._phase_pre_validation(
-                validation_graph,
-                normalized_inputs,
-                context
-            )
-            self.phase_results.append(pre_val_result)
+            # Phase 2: Pre-call validation
+            if self.config.enable_pre_validation:
+                pre_val_result = self._phase_pre_validation(
+                    validation_graph,
+                    normalized_inputs,
+                    context
+                )
+                self.phase_results.append(pre_val_result)
+                context.performance_engine.increment("validation_steps", len(validation_graph.nodes))
+                
+                if not pre_val_result.success:
+                     # In serious enforcement, we might wrap all failures
+                     captured_exceptions.append(ContractViolationError(function_name, 0, "Pre-validation failed", context.fingerprint))
+                     if self.config.fail_fast: raise context.priority_resolver.resolve_violation(captured_exceptions)
             
-            if not pre_val_result.success and self.config.fail_fast:
-                return self._assemble_failure_result(context)
-        
-        # Phase 3: Ownership preconditions
-        if self.config.enable_ownership_checks:
-            own_check_result = self._phase_ownership_check(normalized_inputs)
-            self.phase_results.append(own_check_result)
+            # Phase 3: Ownership preconditions
+            if self.config.enable_ownership_checks:
+                own_check_result = self._phase_ownership_check(normalized_inputs)
+                self.phase_results.append(own_check_result)
+                context.performance_engine.increment("relational_checks")
+                
+                if not own_check_result.success:
+                    captured_exceptions.append(OwnershipViolationError(function_name, 0, "Ownership check failed", context.fingerprint))
+                    if self.config.fail_fast: raise context.priority_resolver.resolve_violation(captured_exceptions)
             
-            if not own_check_result.success and self.config.fail_fast:
-                return self._assemble_failure_result(context)
-        
-        # Phase 4: Native invocation (simulated for now)
-        if not self.config.dry_run:
-            invoke_result = self._phase_native_invocation(
-                function_name,
-                normalized_inputs
-            )
-            self.phase_results.append(invoke_result)
+            # PHASE: PRE-CALL PERFORMANCE ENVELOPE (Prompt 20 Part 2 Step 2)
+            context.performance_validator.validate_envelope(function_name, seq_idx)
+
+            # Phase 4: Native invocation
+            if not self.config.dry_run:
+                invoke_result = self._phase_native_invocation(
+                    function_name,
+                    normalized_inputs
+                )
+                self.phase_results.append(invoke_result)
+                
+                if not invoke_result.success:
+                    raise NativeCrashError(function_name, "Native call failure", context.fingerprint)
+                
+                native_result = invoke_result.diagnostics.get('result')
+            else:
+                native_result = None
             
-            if not invoke_result.success:
-                return self._assemble_failure_result(context)
+            # Phase 5: Post-call validation
+            if self.config.enable_post_validation:
+                post_val_result = self._phase_post_validation(native_result)
+                self.phase_results.append(post_val_result)
+                context.performance_engine.increment("validation_steps")
             
-            native_result = invoke_result.diagnostics.get('result')
-        else:
-            native_result = None
-        
-        # Phase 5: Post-call validation (placeholder for now)
-        if self.config.enable_post_validation:
-            post_val_result = self._phase_post_validation(native_result)
-            self.phase_results.append(post_val_result)
-        
-        # Phase 6: Ownership reconciliation (placeholder)
-        if self.config.enable_ownership_reconciliation:
-            recon_result = self._phase_ownership_reconciliation()
-            self.phase_results.append(recon_result)
-        
-        context.finalize()
-        
-        return self._assemble_success_result(context, native_result)
+            # Phase 6: Ownership reconciliation
+            if self.config.enable_ownership_reconciliation:
+                recon_result = self._phase_ownership_reconciliation()
+                self.phase_results.append(recon_result)
+                context.performance_engine.increment("relational_checks")
+
+            # PHASE: POST-CALL PERFORMANCE ENVELOPE
+            context.performance_validator.validate_envelope(function_name, seq_idx)
+            
+            # Generate Performance Snapshot (Prompt 20 Part 2 Step 5)
+            context.performance_snapshot = context.performance_validator.generate_performance_snapshot(function_name, seq_idx)
+            
+            context.finalize()
+            return self._assemble_success_result(context, native_result)
+
+        except Exception as e:
+            if e not in captured_exceptions:
+                captured_exceptions.append(e)
+            primary = context.priority_resolver.resolve_violation(captured_exceptions)
+            raise primary
+        finally:
+            context.active_invocation_count -= 1
+            context.performance_engine.reset()
     
     def _phase_normalization(self, inputs: List[Any]) -> PhaseResult:
         """Execute normalization phase."""

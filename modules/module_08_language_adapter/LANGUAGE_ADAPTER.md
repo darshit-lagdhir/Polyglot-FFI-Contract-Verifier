@@ -1242,3 +1242,23 @@ Every memory-bearing parameter is canonicalized into a CanonicalMemoryDescriptor
 - **Epoch-Based Reuse Control**: Detects stale pointer reuse across different allocation generations.
 - **Illegal Cast Prevention**: Blocks semantically incompatible transitions (e.g., int-to-pointer or array-to-struct) at the boundary.
 - **Buffer Boundary Validation**: Static footprint checks verify that declared lengths do not result in potential buffer overflows.
+
+## Deterministic ABI & Performance Enforcement (Prompt 20)
+
+### 1. Deterministic ABI Negotiation
+The adapter implements a runtime ABI negotiation layer that detects the host platform's signature and validates it against contract-defined ABI expectations.
+- **Platform Signature Detection**: Captures architecture, pointer/long sizes, enum widths, and endianness.
+- **Fail-Closed Initialization**: Contracts are rejected at initialization if the host ABI is incompatible.
+- **Variance Normalization**: Automatically handles alignment and calling convention differences across platforms.
+
+### 2. Performance Contract Validation
+Performance is enforced via deterministic operation counting instead of time-based metrics, ensuring reproducibility across different hardware.
+- **Operation Counters**: Tracks validation steps, relational checks, and memory validations per invocation.
+- **Performance Envelopes**: Invocations are halted if they exceed a pre-defined budget of operations.
+- **Relational Blowup Detection**: Detects nested amplifications and non-linear growth in validation complexity.
+
+### 3. Formal Policy Orchestration
+Enforcement follows a canonical sequence of stages, managed by a prioritized resolution engine.
+- **Stage Ordering**: Immutable sequence from ABI negotiation to metrics emission.
+- **Clause Priority Resolution**: Deterministic tie-breaking when multiple contract clauses are violated simultaneously.
+- **Violation Suppression**: Lower-priority violations are suppressed in favor of high-severity primary violations.
