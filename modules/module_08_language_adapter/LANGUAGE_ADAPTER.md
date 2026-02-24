@@ -51,11 +51,11 @@ The adapter architecture consists of seven distinct layers:
 
 | Feature | Status |
 | :--- | :--- |
-| Core Data Structures | âœ… Complete |
-| Contract Projection | âœ… Complete |
-| Ownership Tracking | âœ… Complete |
-| Validation Engine | â�³ Pending |
-| Python Specialization | â�³ Pending |
+| Core Data Structures | Ã¢Å“â€¦ Complete |
+| Contract Projection | Ã¢Å“â€¦ Complete |
+| Ownership Tracking | Ã¢Å“â€¦ Complete |
+| Validation Engine | Ã¢ï¿½Â³ Pending |
+| Python Specialization | Ã¢ï¿½Â³ Pending |
 
 ## Test Coverage
 - **Unit Tests**: 120 passing
@@ -81,7 +81,7 @@ ctx = adapter.create_enforcement_context('my_native_func')
 
 ---
 
-## Part 1 â€” Contract Runtime Loader
+## Part 1 Ã¢â‚¬â€� Contract Runtime Loader
 
 The Contract Runtime Loader serves as the foundational authority layer of the runtime adapter. It is responsible for ingesting, validating, and transforming static contract artifacts into immutable runtime metadata structures.
 
@@ -120,7 +120,7 @@ The Contract Runtime Loader serves as the foundational authority layer of the ru
 
 ---
 
-## Part 2 â€” Prototype Authority Layer
+## Part 2 Ã¢â‚¬â€� Prototype Authority Layer
 
 The Prototype Authority Layer (PAL) acts as the ABI enforcer, overriding developer-defined FFI bindings with authoritative metadata from the contract.
 
@@ -158,7 +158,7 @@ While `cffi` handles its own ABI enforcement through C-style declarations, PAL v
 
 ---
 
-## Part 3 â€” Deterministic Initialization Orchestration
+## Part 3 Ã¢â‚¬â€� Deterministic Initialization Orchestration
 
 The final phase of the adapter bootstrapping ensures that initialization is a transactional, all-or-nothing process with strict integrity verification.
 
@@ -191,7 +191,7 @@ By isolating the initialization state and enforcing strict post-binding verifica
 
 ---
 
-## Prompt 02 Part 1 â€” Invocation Proxy Generator
+## Prompt 02 Part 1 Ã¢â‚¬â€� Invocation Proxy Generator
 
 The Invocation Proxy Generator establishes a deterministic enforcement boundary between the Python runtime and native code. By interposing a controlled callable wrapper for every bound function, the system ensures that every cross-language invocation can be validated, audited, and isolated.
 
@@ -223,7 +223,7 @@ The system operates on the principle that no raw library attribute can be truste
 
 ---
 
-## Prompt 02 Part 2 â€” Validation Execution Core (Parameter-Level)
+## Prompt 02 Part 2 Ã¢â‚¬â€� Validation Execution Core (Parameter-Level)
 
 The Validation Execution Core transforms the passive proxy wrapper into an active enforcement boundary. In this stage, every parameter and return value is explicitly validated against the contract descriptor before and after the native FFI boundary is crossed.
 
@@ -257,7 +257,7 @@ When a violation occurs, the system raises a `ContractViolationError` containing
 
 ---
 
-## Prompt 02 Part 3 â€” Relational Constraint Evaluator
+## Prompt 02 Part 3 Ã¢â‚¬â€� Relational Constraint Evaluator
 
 While parameter-level validation ensures that individual values are safe, FFI correctness often depends on the relationship between multiple parameters. The Relational Constraint Evaluator enforces cross-parameter invariants.
 
@@ -288,7 +288,7 @@ This phase introduces a structural hook for post-call reconciliation. While curr
 
 ---
 
-## Prompt 03 Part 1 â€” Ownership Registry Engine
+## Prompt 03 Part 1 Ã¢â‚¬â€� Ownership Registry Engine
 
 Memory management is the most critical failure point in FFI systems. The Ownership Registry Engine provides foundational tracking of native pointer lifecycles to prevent catastrophic memory errors.
 
@@ -313,7 +313,7 @@ Ownership violations follow a strict, reproducible reporting format including th
 
 ---
 
-## Prompt 03 Part 2 â€” Ownership State Machine and Epoch Model
+## Prompt 03 Part 2 Ã¢â‚¬â€� Ownership State Machine and Epoch Model
 
 To handle real-world native memory behavior, the Ownership Registry has been upgraded to a formal State Machine utilizing a Pointer Epoch Model to address address-reuse collisions.
 
@@ -341,7 +341,7 @@ Each `PointerOwnershipRecord` maintains a chronological history of all transitio
 
 ---
 
-## Prompt 03 Part 3 â€” Pointer Wrapper and Alias Enforcement
+## Prompt 03 Part 3 Ã¢â‚¬â€� Pointer Wrapper and Alias Enforcement
 
 To prevent users from bypassing ownership rules using raw memory manipulation, the adapter now enforces usage through a controlled object boundary using Pointer Wrapper Objects.
 
@@ -368,7 +368,7 @@ This architecture ensures that even if a user keeps a reference to an old wrappe
 
 ---
 
-## Prompt 04 Part 1 â€” Structure Layout Verification Engine
+## Prompt 04 Part 1 Ã¢â‚¬â€� Structure Layout Verification Engine
 
 One of the most dangerous failure modes in FFI is an ABI mismatch between Python's `ctypes.Structure` definitions and the actual memory layout expected by native code. Such mismatches cause silent memory corruption and crashes.
 
@@ -393,7 +393,7 @@ Verification occurs during the initialization of the Python adapter. If any mism
 
 ---
 
-## Prompt 04 Part 2 â€” Advanced Structure Validation and Mutation Enforcement
+## Prompt 04 Part 2 Ã¢â‚¬â€� Advanced Structure Validation and Mutation Enforcement
 
 Real-world FFI boundary risks extend beyond simple layout mismatches. The advanced validation system now handles complex structural patterns and enforces behavioral constraints like immutability.
 
@@ -415,7 +415,7 @@ All structure and field verifications are performed in a strict, deterministic o
 
 ---
 
-## Prompt 04 Part 3 â€” Structure Verification Caching and Dynamic Guard
+## Prompt 04 Part 3 Ã¢â‚¬â€� Structure Verification Caching and Dynamic Guard
 
 Ensuring ABI safety is critical, but repeated reflection on every FFI call is prohibitively expensive. Part 3 introduces a tiered enforcement architecture that balances safety with performance.
 
@@ -437,7 +437,7 @@ For immutable field enforcement, the system now caches the contract definition l
 
 ---
 
-## Prompt 05 Part 1 â€” Memory Pinning Controller
+## Prompt 05 Part 1 Ã¢â‚¬â€� Memory Pinning Controller
 
 A critical safety risk in Python FFI is the potential for garbage collection or movement of objects that are backing memory shared with native code. Part 1 introduces a dedicated **Memory Pinning Controller** to guarantee buffer stability.
 
@@ -457,7 +457,7 @@ While `ctypes` handles some liveliness validation, the pinning controller provid
 
 ---
 
-## Prompt 05 Part 2 â€” Buffer Boundary Defense System
+## Prompt 05 Part 2 Ã¢â‚¬â€� Buffer Boundary Defense System
 
 While memory pinning prevents deallocation, it does not prevent a native function from writing beyond the bounds of a buffer. Part 2 introduces the **Buffer Boundary Defense System** to enforce contractual length limits and data integrity.
 
@@ -478,7 +478,7 @@ The system differentiates between `write_allowed` (mutable) and `read-only` buff
 
 ---
 
-## Prompt 05 Part 3 â€” Crash Isolation and Deterministic Diagnostics
+## Prompt 05 Part 3 Ã¢â‚¬â€� Crash Isolation and Deterministic Diagnostics
 
 The final layer of Phase 1 enforcement addresses the reality of native runtime failures. FFI boundaries are inherently unstable; a crash in C code can bring down the entire Python interpreter if not carefully managed.
 
@@ -500,7 +500,7 @@ To aid debugging without introducing nondeterminism into logs:
 
 ---
 
-## Prompt 06 Part 1 â€” Concurrency Model and Registry Lock Discipline
+## Prompt 06 Part 1 Ã¢â‚¬â€� Concurrency Model and Registry Lock Discipline
 
 As the system moves toward high-concurrency FFI environments, simple reliance on the Python Global Interpreter Lock (GIL) is insufficient for managing the shared state of the Ownership Registry. Part 1 introduces a robust, thread-safe concurrency model.
 
@@ -523,7 +523,7 @@ The implementation follows a strict "Single Lock Discipline":
 
 ---
 
-## Prompt 06 Part 2 â€” Invocation Context and Transactional Ownership Model
+## Prompt 06 Part 2 Ã¢â‚¬â€� Invocation Context and Transactional Ownership Model
 
 Nested FFI calls (where Function A calls Function B through the adapter) introduce a risk of partial state corruption if an inner call fails. Part 2 introduces isolated invocation contexts and transactional semantics.
 
@@ -544,12 +544,12 @@ Epoch increments are tied to the commit phase. A pointer's epoch is only increme
 
 ---
 
-## Prompt 06 Part 3 â€” Performance Fast Path and Clause Plan Precompilation
+## Prompt 06 Part 3 Ã¢â‚¬â€� Performance Fast Path and Clause Plan Precompilation
 
 FFI enforcement naturally introduces overhead. Part 3 introduces a precompiled execution model to minimize "hot path" latency for trivial function calls while maintaining strict safety for complex ones.
 
 ### Fast-Path Philosophy
-The adapter identifies "trivial" functionsâ€”those with no relational rules, no buffer boundaries, and no complex ownership transitions.
+The adapter identifies "trivial" functionsÃ¢â‚¬â€�those with no relational rules, no buffer boundaries, and no complex ownership transitions.
 - **Bypass Mode**: For these functions, the adapter executes a "Fast Path" that skips validation branching and directly dispatches to the raw native symbol.
 - **Zero-Overhead**: Trivial calls in production mode perform with near-native speed, incurring minimal Python-side stack overhead.
 
@@ -564,7 +564,7 @@ The Fast Path is automatically disabled if the system is in `DEBUG` mode or if a
 
 ---
 
-## Prompt 07 Part 1 â€” Multi-Library Orchestration and Namespace Isolation
+## Prompt 07 Part 1 Ã¢â‚¬â€� Multi-Library Orchestration and Namespace Isolation
 
 As the system matures, it must handle multiple independent native libraries and contracts simultaneously without state leakage or pointer collisions.
 
@@ -585,7 +585,7 @@ By enforcing fingerprint-prefixed identity for all managed objects (pointers, st
 
 ---
 
-## Prompt 07 Part 2 â€” Sandboxed Execution and Crash Isolation
+## Prompt 07 Part 2 Ã¢â‚¬â€� Sandboxed Execution and Crash Isolation
 
 To prevent native crashes from terminating the main Python process, the adapter supports an out-of-process execution mode.
 
@@ -600,7 +600,7 @@ Sandboxing is mandatory for libraries with uncertain stability or those handling
 
 ---
 
-## Prompt 07 Part 3 â€” Observability and Runtime Telemetry
+## Prompt 07 Part 3 Ã¢â‚¬â€� Observability and Runtime Telemetry
 
 Continuous monitoring of FFI boundaries is essential for detecting subtle contract drift or exploitation attempts.
 
@@ -618,7 +618,7 @@ The adapter provides cumulative snapshots of its health state, including success
 
 ---
 
-## Prompt 08 Part 1 â€” Dynamic Runtime Configuration Controller
+## Prompt 08 Part 1 Ã¢â‚¬â€� Dynamic Runtime Configuration Controller
 
 The system now supports real-time tuning of its enforcement policies without requiring an application restart.
 
@@ -633,7 +633,7 @@ By centralizing configuration management, the system ensures that enforcement lo
 
 ---
 
-## Prompt 08 Part 2 â€” Long-Run Stability and Registry Sweep Policy
+## Prompt 08 Part 2 Ã¢â‚¬â€� Long-Run Stability and Registry Sweep Policy
 
 To support production workloads running for months or years, the adapter implements rigorous memory pressure management for its internal state.
 
@@ -650,7 +650,7 @@ Instead of non-deterministic background garbage collection, the system implement
 
 ---
 
-## Prompt 08 Part 3 â€” Contract Integrity Hardening and Tamper Resistance
+## Prompt 08 Part 3 Ã¢â‚¬â€� Contract Integrity Hardening and Tamper Resistance
 
 The adapter's architectural security is reinforced through immutability and strict attribute isolation.
 
@@ -670,7 +670,7 @@ The system provides a `verify_integrity()` method that performs a deep scan of t
 
 ---
 
-## Prompt 09 Part 1 â€” Advanced Relational Constraint Engine
+## Prompt 09 Part 1 Ã¢â‚¬â€� Advanced Relational Constraint Engine
 
 The Relational Constraint Engine has been upgraded from simple pairwise checks to a sophisticated multi-parameter expression evaluation system.
 
@@ -693,7 +693,7 @@ The engine enforces strict rules to ensure consistent behavior across different 
 
 ---
 
-## Prompt 09 Part 2 â€” Pointer Alias Detection and Wrapper Canonicalization
+## Prompt 09 Part 2 Ã¢â‚¬â€� Pointer Alias Detection and Wrapper Canonicalization
 
 The memory safety model has been hardened to detect conflicting management of the same native memory address across different Python objects.
 
@@ -713,7 +713,7 @@ When a Python wrapper is garbage-collected or explicitly disposed of, it signals
 
 ---
 
-## Prompt 09 Part 3 â€” Deterministic Reproducibility and Trace Mode
+## Prompt 09 Part 3 Ã¢â‚¬â€� Deterministic Reproducibility and Trace Mode
 
 To support the "Mission Critical" requirements, the adapter provides a bit-for-bit reproducible execution log through the Deterministic Trace Mode.
 
@@ -738,7 +738,7 @@ The `TraceRecorder` instance is managed atomically by the `ConfigurationControll
 The system guarantees that the sequence of events in the trace is determined solely by the native call graph and the contract rules, which are themselves sorted alphabetically or by `clause_id`. This makes the trace an authoritative, mathematical proof of the execution path.
 ---
 
-## Prompt 10 Part 1 â€” Formal Pointer Lifecycle State Machine
+## Prompt 10 Part 1 Ã¢â‚¬â€� Formal Pointer Lifecycle State Machine
 
 The pointer ownership logic has been re-architected from procedural checks into a **Formal State Machine** governed by a static transition matrix. This ensures that every pointer lifecycle event is deterministic, auditable, and impossible to bypass.
 
@@ -763,7 +763,7 @@ The system now recognizes advanced states to cover complex FFI patterns:
 
 ---
 
-## Prompt 10 Part 2 â€” Structure Mutation Governance Engine
+## Prompt 10 Part 2 Ã¢â‚¬â€� Structure Mutation Governance Engine
 
 To prevent "hidden" side effects in native code, the adapter now enforces field-level immutability and recursive structural stability.
 
@@ -784,7 +784,7 @@ Upon return from native execution, the `StructureMutationValidator` performs a r
 
 ---
 
-## Prompt 10 Part 3 â€” Buffer Boundary Defense System
+## Prompt 10 Part 3 Ã¢â‚¬â€� Buffer Boundary Defense System
 
 Beyond simple length checks, the system now implements an active spatial defense mechanism to protect against out-of-bounds writes and heap corruption.
 
@@ -804,18 +804,18 @@ Both the Structure Mutation and Buffer Defense engines are integrated into the F
 - **State Preservation**: The system ensures that the Python-side state remains consistent with a "failed call" even if the native side partially succeeded, preventing the propagation of corrupted data.
 ---
 
-## Prompt 11 Part 1 — Concurrency Hardening Framework
+## Prompt 11 Part 1 â€” Concurrency Hardening Framework
 
 To ensure deterministic behavior under massive multi-threaded load, the adapter has been refactored with a formal concurrency model and strict lock hierarchy.
 
 ### Formal Lock Hierarchy
 The system enforces a strict acquisition order to prevent circular waits and deadlocks:
-1.  **Level 1: Configuration Lock** — Guards adapter-wide mode shifts.
-2.  **Level 2: Registry Global (Segment) Lock** — Guards structural changes to the internal registry partitions.
-3.  **Level 3: Pointer-Specific Lock** — Guards state transitions for a single memory allocation.
-4.  **Level 4: Alias Map Lock** — Guards the mapping between wrappers and pointers.
-5.  **Level 5: Lifecycle Transition Lock** — Guards the atomic transition logic.
-6.  **Level 6: Trace Recorder Lock** — Guards ordered log emission.
+1.  **Level 1: Configuration Lock** â€” Guards adapter-wide mode shifts.
+2.  **Level 2: Registry Global (Segment) Lock** â€” Guards structural changes to the internal registry partitions.
+3.  **Level 3: Pointer-Specific Lock** â€” Guards state transitions for a single memory allocation.
+4.  **Level 4: Alias Map Lock** â€” Guards the mapping between wrappers and pointers.
+5.  **Level 5: Lifecycle Transition Lock** â€” Guards the atomic transition logic.
+6.  **Level 6: Trace Recorder Lock** â€” Guards ordered log emission.
 
 ### Segmented Registry Locking
 The `OwnershipRegistry` utilizes N independent locks (defaults to 16) to partition the pointer space. This drastically reduces lock contention when multiple threads are managing disjoint sets of pointers, while maintaining full safety within each segment.
@@ -825,7 +825,7 @@ All ownership state mutations and epoch increments are performed as atomic trans
 
 ---
 
-## Prompt 11 Part 2 — Multi-Contract Isolation Architecture
+## Prompt 11 Part 2 â€” Multi-Contract Isolation Architecture
 
 In complex applications utilizing multiple independent native libraries, the adapter guarantees complete isolation between enforcement states, registries, and observability pipelines.
 
@@ -844,7 +844,7 @@ The system maintains a thread-local stack of active contexts. This enables corre
 
 ---
 
-## Prompt 11 Part 3 — Production Observability Pipeline
+## Prompt 11 Part 3 â€” Production Observability Pipeline
 
 Reporting layer upgrade.
 
@@ -859,7 +859,7 @@ JSON format description.
 
 ---
 
-## Prompt 12 Part 1 — Deterministic Performance Profiling and Enforcement Metrics Model
+## Prompt 12 Part 1 â€” Deterministic Performance Profiling and Enforcement Metrics Model
 
 The adapter now formalizes performance introspection through a deterministic, counter-based profiling subsystem. This avoids wall-clock timing to ensure reproducibility across environments.
 
@@ -875,7 +875,7 @@ The adapter now formalizes performance introspection through a deterministic, co
 
 ---
 
-## Prompt 12 Part 2 — Dynamic Enforcement Policy and Adaptive Strictness Model
+## Prompt 12 Part 2 â€” Dynamic Enforcement Policy and Adaptive Strictness Model
 
 The enforcement severity is no longer static. The dynamic policy engine enables clause-level reclassification and adaptive strictness.
 
@@ -891,7 +891,7 @@ Violations can escalate severity based on occurrence counts. For example, a clau
 
 ---
 
-## Prompt 12 Part 3 — Contract Hot-Reload and Atomic Rebinding Protocol
+## Prompt 12 Part 3 â€” Contract Hot-Reload and Atomic Rebinding Protocol
 
 To support zero-downtime updates, the adapter implements a safe hot-reload protocol with atomic context rebinding.
 
@@ -906,7 +906,7 @@ Before a new contract is applied, it must pass a compatibility check against the
 Active pointers and their lifecycle states are preserved across compatible reloads, ensuring continuity of enforcement without losing track of existing memory allocations.
 ---
 
-## Prompt 13 Part 1 � Sandboxed Execution Isolation and Crash-Resilient Invocation Supervisor
+## Prompt 13 Part 1 — Sandboxed Execution Isolation and Crash-Resilient Invocation Supervisor
 
 To guarantee absolute crash isolation, the adapter supports a subprocess-based sandbox execution layer. This prevents native crashes (SEGV, stack corruption) from terminating the parent Python process.
 
@@ -923,7 +923,7 @@ To guarantee absolute crash isolation, the adapter supports a subprocess-based s
 
 ---
 
-## Prompt 13 Part 2 � Memory Pressure Governance and Deterministic Registry Compaction Model
+## Prompt 13 Part 2 — Memory Pressure Governance and Deterministic Registry Compaction Model
 
 Long-running production systems are protected from metadata growth through a deterministic memory pressure governance model.
 
@@ -938,7 +938,7 @@ Long-running production systems are protected from metadata growth through a det
 
 ---
 
-## Prompt 13 Part 3 � Deterministic Replay Engine and Invocation Journaling Model
+## Prompt 13 Part 3 — Deterministic Replay Engine and Invocation Journaling Model
 
 The adapter provides a "black box" recording facility for high-assurance debugging and forensic analysis.
 
@@ -953,7 +953,7 @@ The adapter provides a "black box" recording facility for high-assurance debuggi
 
 ---
 
-## Prompt 14 Part 1 � Security Hardening and Tamper-Resistant Enforcement Boundary
+## Prompt 14 Part 1 — Security Hardening and Tamper-Resistant Enforcement Boundary
 
 The adapter implements a robust security hardening layer to prevent runtime tampering and bypass attempts.
 
@@ -967,7 +967,7 @@ The adapter implements a robust security hardening layer to prevent runtime tamp
 
 ---
 
-## Prompt 14 Part 2 � Adversarial Misuse Defense and Fail-Closed Execution Strategy
+## Prompt 14 Part 2 — Adversarial Misuse Defense and Fail-Closed Execution Strategy
 
 To protect against malicious or malformed inputs, the adapter adopts a fail-closed defense posture.
 
@@ -981,7 +981,7 @@ To protect against malicious or malformed inputs, the adapter adopts a fail-clos
 
 ---
 
-## Prompt 14 Part 3 � Formal Invariant Assertion Framework and Internal Consistency Model
+## Prompt 14 Part 3 — Formal Invariant Assertion Framework and Internal Consistency Model
 
 The adapter maintains internal rigor through a formal invariant assertion framework that validates cross-subsystem consistency.
 
@@ -996,7 +996,7 @@ The adapter maintains internal rigor through a formal invariant assertion framew
 
 ---
 
-## Prompt 15 Part 1 � Cross-Language Semantic Equivalence and Behavior Normalization Model
+## Prompt 15 Part 1 — Cross-Language Semantic Equivalence and Behavior Normalization Model
 
 The Python adapter is normalized to ensure semantic parity with C++ and Rust implementations.
 
@@ -1011,7 +1011,7 @@ The Python adapter is normalized to ensure semantic parity with C++ and Rust imp
 
 ---
 
-## Prompt 15 Part 2 � ABI Conformance Validation and Structural Layout Fingerprinting Model
+## Prompt 15 Part 2 — ABI Conformance Validation and Structural Layout Fingerprinting Model
 
 The adapter enforces binary fidelity through structural layout validation and calling convention verification.
 
@@ -1027,7 +1027,7 @@ The adapter enforces binary fidelity through structural layout validation and ca
 
 ---
 
-## Prompt 15 Part 3 � Deterministic Call Graph Orchestration and Nested FFI Transaction Model
+## Prompt 15 Part 3 — Deterministic Call Graph Orchestration and Nested FFI Transaction Model
 
 The adapter manages complex nested invocation chains through a formal transaction model.
 
@@ -1042,7 +1042,7 @@ The adapter manages complex nested invocation chains through a formal transactio
 
 ---
 
-## Prompt 16 Part 1 � Observability Export Pipeline and Structured Telemetry Model
+## Prompt 16 Part 1 — Observability Export Pipeline and Structured Telemetry Model
 
 The Python adapter implements a unified observability contract for production governance.
 
@@ -1058,7 +1058,7 @@ The Python adapter implements a unified observability contract for production go
 
 ---
 
-## Prompt 16 Part 2 � Metrics Aggregation and Deterministic Anomaly Detection Model
+## Prompt 16 Part 2 — Metrics Aggregation and Deterministic Anomaly Detection Model
 
 The system provides operational insights through count-based sliding window statistics.
 
@@ -1073,7 +1073,7 @@ The system provides operational insights through count-based sliding window stat
 
 ---
 
-## Prompt 16 Part 3 � Configuration Governance and Deterministic Feature Flag Architecture
+## Prompt 16 Part 3 — Configuration Governance and Deterministic Feature Flag Architecture
 
 Configuration is managed as a governed, versioned contract within the runtime.
 
@@ -1089,7 +1089,7 @@ Configuration is managed as a governed, versioned contract within the runtime.
 
 ---
 
-## Prompt 17 Part 1 � Formal Error Taxonomy and Deterministic Failure Semantics Model
+## Prompt 17 Part 1 — Formal Error Taxonomy and Deterministic Failure Semantics Model
 
 The Python adapter enforces a formalized failure semantics model to ensure cross-language alignment and deterministic replayability.
 
@@ -1105,7 +1105,7 @@ The Python adapter enforces a formalized failure semantics model to ensure cross
 
 ---
 
-## Prompt 17 Part 2 � Crash Forensics and Deterministic Post-Mortem Snapshot Model
+## Prompt 17 Part 2 — Crash Forensics and Deterministic Post-Mortem Snapshot Model
 
 A structured forensics framework provides reproducible insights into native crashes.
 
@@ -1121,7 +1121,7 @@ A structured forensics framework provides reproducible insights into native cras
 
 ---
 
-## Prompt 17 Part 3 � Long-Run Stability and Resource Governance Model
+## Prompt 17 Part 3 — Long-Run Stability and Resource Governance Model
 
 Resource governance ensures the adapter remains stable and predictable across millions of invocations.
 
@@ -1137,7 +1137,7 @@ Resource governance ensures the adapter remains stable and predictable across mi
 
 ---
 
-## Prompt 18 Part 1 � Deterministic State Snapshot and Offline Validation Model
+## Prompt 18 Part 1 — Deterministic State Snapshot and Offline Validation Model
 
 The Python adapter supports exporting its entire enforcement state into a deterministic snapshot artifact for offline auditing and compliance analysis.
 
@@ -1153,7 +1153,7 @@ The Python adapter supports exporting its entire enforcement state into a determ
 
 ---
 
-## Prompt 18 Part 2 � Deterministic Regression Baseline and State Drift Detection Model
+## Prompt 18 Part 2 — Deterministic Regression Baseline and State Drift Detection Model
 
 To ensure enforcement behavior remains stable across upgrades, the adapter establishes a canonical regression baseline framework.
 
@@ -1169,7 +1169,7 @@ To ensure enforcement behavior remains stable across upgrades, the adapter estab
 
 ---
 
-## Prompt 18 Part 3 � Deterministic Simulation Mode and Pre-Deployment Safety Validation Model
+## Prompt 18 Part 3 — Deterministic Simulation Mode and Pre-Deployment Safety Validation Model
 
 The adapter introduces a dry-run execution engine to validate contract behavior and policy escalation without invoking native logic.
 
@@ -1182,7 +1182,7 @@ The adapter introduces a dry-run execution engine to validate contract behavior 
 - **Deterministic Reports**: Dry-runs emit a stable simulation report fingerprinting the outcome.
 - **Regression Integration**: Simulated runs can be compared against the regression baseline before deploying new physical binaries.
 
-## Prompt 19 Part 1 � Deterministic Concurrency Discipline and Thread-Safety Verification Model
+## Prompt 19 Part 1 — Deterministic Concurrency Discipline and Thread-Safety Verification Model
 
 The adapter now enforces a formal concurrency discipline to guarantee thread-safety and deterministic behavior under multi-threaded invocation.
 
@@ -1206,7 +1206,7 @@ Acquiring a lower-level lock while holding a higher-level lock triggers a determ
 - **Deadlock Risk Detection**: Operation counters track lock hold duration (in terms of internal operations); exceeding a deterministic threshold triggers DeadlockRiskDetectedError.
 - **Stress Validation Mode**: Deterministic yield points can be inserted to increase race condition detection likelihood during validation.
 
-## Prompt 19 Part 2 � Multi-Process Isolation Governance and Inter-Process Determinism Model
+## Prompt 19 Part 2 — Multi-Process Isolation Governance and Inter-Process Determinism Model
 
 The adapter guarantees deterministic isolation across process boundaries (e.g., fork, subprocess workers) to ensure scaling does not compromise contract integrity.
 
@@ -1222,7 +1222,7 @@ The adapter guarantees deterministic isolation across process boundaries (e.g., 
 ### Consistency Verification
 - **Clone Consistency**: Simulated process cloning verifies that state distribution produces identical snapshots across different logical process identities.
 
-## Prompt 19 Part 3 � Formal Memory Model Consistency and Pointer Semantics Canonicalization
+## Prompt 19 Part 3 — Formal Memory Model Consistency and Pointer Semantics Canonicalization
 
 The memory model consistency layer transforms low-level FFI interaction into a formally specified, safe memory discipline.
 
@@ -1262,27 +1262,27 @@ Enforcement follows a canonical sequence of stages, managed by a prioritized res
 - **Stage Ordering**: Immutable sequence from ABI negotiation to metrics emission.
 - **Clause Priority Resolution**: Deterministic tie-breaking when multiple contract clauses are violated simultaneously.
 - **Violation Suppression**: Lower-priority violations are suppressed in favor of high-severity primary violations.
-## Prompt 21 Part 1 — Formal Contract Evolution and Version Transition Governance
+## Prompt 21 Part 1 â€” Formal Contract Evolution and Version Transition Governance
 Contracts are managed as immutable versioned entities. Every transition between contract versions is formally validated against a compatibility matrix.
 - **Version Metadata Model**: Each contract carries semantic versioning, schema version, and subsystem-specific version identifiers.
 - **Change Classification**: Automated classification of transitions as PATCH_SAFE, MINOR_EXTENSION, MINOR_RESTRICTION, or MAJOR_BREAKING.
 - **Compatibility Matrix**: Rejects incompatible transitions (e.g., ABI changes) unless explicit overrides are provided.
 - **Replay & Baseline Invalidation**: Breaking upgrades automatically invalidate past baselines and replay journals to prevent stale state usage.
 
-## Prompt 21 Part 2 — Deterministic Deprecation Governance and Feature Sunset Enforcement
+## Prompt 21 Part 2 â€” Deterministic Deprecation Governance and Feature Sunset Enforcement
 Features (functions, parameters, rules) follow a formally governed sunset lifecycle.
 - **Deprecation Phases**: Features transition through ANNOUNCED, WARNING, ENFORCED, and SUNSET phases based on version metadata.
 - **Deterministic Warning Engine**: Emits telemetry events for deprecated features without wall-clock dependencies.
 - **Fail-Closed Sunset Enforcement**: Features in the SUNSET phase are physically blocked from execution, ensuring dead code removal.
 - **Deprecation Audit Report**: Provides a deterministic summary of all used deprecated features per contract lifecycle.
 
-## Prompt 21 Part 3 — Formal Contract Termination and Hard Reset Governance Model
+## Prompt 21 Part 3 â€” Formal Contract Termination and Hard Reset Governance Model
 Contracts have a formal termination protocol to ensure clean resource release and state finalization.
 - **Lifecycle States**: Contracts transition through ACTIVE, TERMINATING, and TERMINATED states.
 - **Graceful Finalization**: Ensures in-flight invocations complete before flushing registries and invalidating artifacts.
 - **Hard Reset Guarantee**: Provides a mechanism for full state wiping and re-initialization of the enforcement context.
 - **Deterministic Termination Report**: A final, fingerprint-stabilized audit report capturing the terminal state of the contract boundary.
-## Prompt 22 Part 1 — Formal Trust Boundary and Supply-Chain Verification Model
+## Prompt 22 Part 1 â€” Formal Trust Boundary and Supply-Chain Verification Model
 The adapter enforces a strictly governed trust boundary between the enforcement engine and external artifacts.
 - **Trust Boundary Definition**: All inputs (contracts, baselines, configurations, journals) are treated as untrusted until verified.
 - **Artifact Fingerprint Model**: Deterministic computation of SHA256 fingerprints for all artifact types (contracts, snapshots, etc.).
@@ -1291,7 +1291,7 @@ The adapter enforces a strictly governed trust boundary between the enforcement 
 - **Cross-Environment Mismatch Detection**: Identifies environmental drift through fingerprint comparison.
 - **Deterministic Integrity Report**: Summary of verification status across the entire artifact supply chain.
 
-## Prompt 22 Part 2 — Formal Audit Trail Consolidation and Deterministic Evidence Export
+## Prompt 22 Part 2 â€” Formal Audit Trail Consolidation and Deterministic Evidence Export
 Every enforcement decision and lifecycle event is captured in a high-integrity, tamper-evident audit trail.
 - **Audit Entry Schema**: Standardized log entries containing fingerprints, event types, policy stages, and severity levels.
 - **Hash-Chain Integrity**: Audit entries are cryptographically chained (previous_chain_fingerprint) to ensure immutability.
@@ -1299,10 +1299,66 @@ Every enforcement decision and lifecycle event is captured in a high-integrity, 
 - **Deterministic Evidence Export**: Structured, timestamp-free export of the audit trail for compliance and forensic use.
 - **Cross-Subsystem Consolidation**: Centralized logging for violations, crashes, version transitions, and integrity events.
 
-## Prompt 22 Part 3 — Formal Governance Model and Deterministic Authorization Layer
+## Prompt 22 Part 3 â€” Formal Governance Model and Deterministic Authorization Layer
 Runtime role segmentation ensures that sensitive enforcement actions are governed by formal authorization rules.
 - **Canonical Runtime Roles**: Strict roles including ROLE_OBSERVER, ROLE_OPERATOR, ROLE_ENGINEER, ROLE_SECURITY, ROLE_AUDITOR, ROLE_ADMIN, and ROLE_SYSTEM.
 - **Deterministic Permission Mapping**: Role-based access control for actions like baseline regeneration, breaking overrides, and simulation enablement.
 - **Sensitive Action Protection**: Permission checks enforced at the authorization layer before execution.
 - **Authorization Audit Integration**: Every authorization decision is captured in the immutable audit trail.
 - **Fail-Closed Authorization Model**: Default 'deny' posture if roles or permissions are ambiguous.
+
+## Prompt 23 Part 1 — Deterministic Recovery and Failure Containment Model
+
+The adapter implements a **Formal Deterministic Recovery Model** to handle partial failures during the enforcement lifecycle. This model ensures that any failure (e.g., native crash, policy violation, memory corruption) is contained within the current invocation and does not corrupt the global contract state.
+
+### Invocation State Machine
+Each invocation transitions through a series of canonical states:
+- `INVOCATION_INITIALIZED`: Initial setup.
+- `INVOCATION_VALIDATING`: Pre-call contract validation.
+- `INVOCATION_EXECUTING`: Native code execution.
+- `INVOCATION_POST_VALIDATING`: Post-call results validation.
+- `INVOCATION_COMMITTING`: Finalizing state transitions.
+- `INVOCATION_COMPLETED`: Success state.
+- `INVOCATION_FAILED`: Failure detected.
+- `INVOCATION_RECOVERING`: Rollback in progress.
+- `INVOCATION_RECOVERED`: Rollback completed.
+- `INVOCATION_ABORTED`: Terminal failure state.
+
+### Transactional Rollback Rules
+- **Ownership Registry**: Discards uncommitted pointer transitions and orphan entries.
+- **Audit Trail**: Appends a deterministic `RECOVERY_EVENT` to the immutable hash-chain.
+- **Performance Counters**: Reverts per-invocation usage metrics to prevent baseline pollution.
+- **Memory Model**: Discards staged buffer mutation tracking.
+- **Self-Healing**: Triggers a full system consistency check after every recovery.
+
+---
+
+## Prompt 23 Part 2 — Formal System Consistency and Invariant Saturation Model
+
+To guarantee the long-term integrity of the enforcement boundary, the system employs an **Invariant Saturation Engine** that performs global health checks.
+
+### Global Invariant Domains
+- **Ownership Invariants**: Ensures no duplicate keys or illegal pointer states.
+- **Audit Invariants**: Validates the cryptographic continuity of the hash-chain.
+- **Resource Invariants**: Ensures no negative counters or exceeded ceilings.
+- **Lifecycle Invariants**: Guarantees consistency between metadata and active state.
+
+### Health Classification
+- `SYSTEM_HEALTH_OK`: All invariants satisfied.
+- `SYSTEM_HEALTH_WARNING`: Minor drift detected (e.g., performance warning).
+- `SYSTEM_HEALTH_CRITICAL`: Critical integrity breach (e.g., audit break). Triggers fail-closed escalation.
+
+---
+
+## Prompt 23 Part 3 — Formal Long-Run Resilience and Continuous Operation Certification Model
+
+The adapter is designed for continuous, long-run operation through a proactive resilience framework.
+
+### Resource Governance
+- **Deterministic Ceilings**: Hard limits on audit entries, replay journals, and registry size.
+- **Audit Compaction**: Truncates the hash-chain tail while preserving head integrity and fingerprint continuity.
+- **Replay Rotation**: Implements a sliding window for deterministic replay logs.
+- **Drift Detection**: Monitors validation overhead and recovery frequency to identify performance degradation.
+
+### Certification Fingerprint
+The `ContinuousOperationCertificationEngine` generates a Reproducible Certification Fingerprint based on the entire system history, ensuring that the adapter remains in a provably stable state after millions of invocations.
